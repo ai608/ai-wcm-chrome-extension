@@ -1,4 +1,5 @@
 import { Providers } from '@/app/providers'
+import { CallMode } from '@/components/panel/CallMode'
 import { LoginScreen } from '@/components/panel/LoginScreen'
 import { NoAccessScreen } from '@/components/panel/NoAccessScreen'
 import { NoContactScreen } from '@/components/panel/NoContactScreen'
@@ -40,16 +41,7 @@ function Panel() {
   if (configQuery.isError) return <LoadingScreen />
   if (contact.locationId !== configQuery.data.ghlLocationId) return <WrongAccountScreen />
 
-  return (
-    <div className="flex min-h-screen flex-col">
-      <PanelHeader />
-      <main className="flex-1 p-3">
-        <p className="text-xs text-muted-foreground">
-          locationId={contact.locationId} contactId={contact.contactId}
-        </p>
-      </main>
-    </div>
-  )
+  return <CallMode key={contact.contactId} activeContact={contact} />
 }
 
 export default function App() {
