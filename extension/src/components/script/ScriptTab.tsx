@@ -1,9 +1,11 @@
+import { useMemo } from 'react'
 import { SectionBlock } from '@/components/script/SectionBlock'
 import { Accordion } from '@/components/ui/accordion'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { useScriptState } from '@/hooks/use-script-state'
+import { computeRecap, missingForBooking } from '@/lib/script/readiness'
 import type { TemplateCtx } from '@/lib/script/template'
 import { relativeTime } from '@/lib/time'
 import { usePanelStore } from '@/stores/panel-store'
@@ -11,10 +13,11 @@ import { usePanelStore } from '@/stores/panel-store'
 interface ScriptTabProps {
   contactId: string
   callerFirstName: string
+  bookingWidgetUrl: string
   state: ReturnType<typeof useScriptState>
 }
 
-export function ScriptTab({ contactId, callerFirstName, state }: ScriptTabProps) {
+export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state }: ScriptTabProps) {
   const {
     definition,
     definitionPending,
@@ -66,14 +69,41 @@ export function ScriptTab({ contactId, callerFirstName, state }: ScriptTabProps)
   const enriched = context.enrichment.status === 'enriched'
   const slotsPending = status === 'generating' || (status === 'none' && enriched)
 
+  const recap = useMemo(
+    () => computeRecap(definition, context),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [definition, context.fieldValues, context.contact],
+  )
+  const missing = useMemo(
+    () => missingForBooking(definition, context.fieldValues),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [definition, context.fieldValues],
+  )
+
   const ctx: TemplateCtx = {
     contact: context.contact,
     fields: context.fieldValues,
-    computed: {},
+    computed: recap.computed,
     slots: script?.slots ?? {},
     slotsPending,
     omitAi: status === 'none' && !enriched,
     callerFirstName,
+  }
+
+  function jumpToField(fieldKey: string) {
+    const section = definition?.sections.find((s) =>
+      s.blocks.some((b) => b.type === 'question' && b.fieldKey === fieldKey),
+    )
+    if (section) setSectionOpen(section.id, true)
+    requestAnimationFrame(() => {
+      const el = document.querySelector(
+        `[data-field="${CSS.escape(fieldKey)}"] input, [data-field="${CSS.escape(fieldKey)}"] textarea, [data-field="${CSS.escape(fieldKey)}"] button, [data-field="${CSS.escape(fieldKey)}"] [role="radio"]`,
+      )
+      if (el) {
+        el.scrollIntoView({ block: 'center' })
+        ;(el as HTMLElement).focus()
+      }
+    })
   }
 
   const openIds = definition.sections
@@ -141,11 +171,15 @@ export function ScriptTab({ contactId, callerFirstName, state }: ScriptTabProps)
             key={section.id}
             section={section}
             contactId={contactId}
+            contact={context.contact}
             ctx={ctx}
             fieldValues={context.fieldValues}
+            recapRows={recap.rows}
+            missing={missing}
+            bookingWidgetUrl={bookingWidgetUrl}
             ticked={ticked}
             onToggleResponse={(blockId) => toggleResponse(contactId, blockId)}
-            onCommitField={() => undefined}
+            onJumpToField={jumpToField}
           />
         ))}
       </Accordion>
