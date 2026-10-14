@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { login } from '@/hooks/use-auth'
@@ -46,61 +45,59 @@ export function LoginScreen() {
     <div className="flex min-h-screen flex-col">
       <PanelHeader />
       <main className="flex flex-1 items-center justify-center p-4">
-        <Card className="w-full">
-          <CardContent className="pt-4">
-            <p className="text-sm font-medium">Sign in</p>
-            <form onSubmit={submit} className="mt-3 flex flex-col gap-3">
+        <div className="w-3/4">
+          <h1 className="text-center text-xl font-semibold">Sign in</h1>
+          <form onSubmit={submit} className="mt-5 flex flex-col gap-3">
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="login-email">Email</Label>
+              <Input
+                id="login-email"
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1">
+              <Label htmlFor="login-password">Password</Label>
+              <Input
+                id="login-password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
+            {totpRequired ? (
               <div className="flex flex-col gap-1">
-                <Label htmlFor="login-email">Email</Label>
+                <Label htmlFor="login-totp">6-digit code</Label>
                 <Input
-                  id="login-email"
-                  type="email"
-                  autoComplete="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  id="login-totp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  value={totpCode}
+                  onChange={(e) => setTotpCode(e.target.value)}
                   required
                 />
+                {codeError ? (
+                  <Alert variant="destructive">
+                    <AlertDescription>{codeError}</AlertDescription>
+                  </Alert>
+                ) : null}
               </div>
-              <div className="flex flex-col gap-1">
-                <Label htmlFor="login-password">Password</Label>
-                <Input
-                  id="login-password"
-                  type="password"
-                  autoComplete="current-password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  required
-                />
-              </div>
-              {totpRequired ? (
-                <div className="flex flex-col gap-1">
-                  <Label htmlFor="login-totp">6-digit code</Label>
-                  <Input
-                    id="login-totp"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    value={totpCode}
-                    onChange={(e) => setTotpCode(e.target.value)}
-                    required
-                  />
-                  {codeError ? (
-                    <Alert variant="destructive">
-                      <AlertDescription>{codeError}</AlertDescription>
-                    </Alert>
-                  ) : null}
-                </div>
-              ) : null}
-              {formError ? (
-                <Alert variant="destructive">
-                  <AlertDescription>{formError}</AlertDescription>
-                </Alert>
-              ) : null}
-              <Button type="submit" disabled={pending}>
-                {pending ? 'Signing in…' : 'Sign in'}
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+            ) : null}
+            {formError ? (
+              <Alert variant="destructive">
+                <AlertDescription>{formError}</AlertDescription>
+              </Alert>
+            ) : null}
+            <Button type="submit" size="lg" className="w-full" disabled={pending}>
+              {pending ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
+        </div>
       </main>
     </div>
   )

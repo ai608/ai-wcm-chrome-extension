@@ -1,12 +1,10 @@
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { HistoryTab } from '@/components/history/HistoryTab'
 import { ContactHeader } from '@/components/panel/ContactHeader'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { StatusBanner } from '@/components/panel/StatusBanner'
-import { ResearchTab } from '@/components/research/ResearchTab'
 import { ScriptTab } from '@/components/script/ScriptTab'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useRefreshContact } from '@/hooks/queries'
@@ -16,6 +14,8 @@ import type { ActiveContact } from '@/lib/storage'
 import { lastTabItem } from '@/lib/storage'
 import { useAutosaveStore } from '@/stores/autosave-store'
 import { usePanelStore } from '@/stores/panel-store'
+
+const ResearchTab = lazy(() => import('@/components/research/ResearchTab'))
 
 function envLabel(): string {
   const env = getEnv()
@@ -69,7 +69,7 @@ export function CallMode({
   const bannerError = scriptState.contextError ?? autosaveError ?? null
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex h-screen flex-col overflow-hidden">
       <PanelHeader
         onRefresh={() => refreshContact(contactId)}
         onSettings={() => setView('settings')}
@@ -88,7 +88,7 @@ export function CallMode({
         </div>
       )}
       {pendingConfirm === 'regenerate' ? (
-        <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-xs">
+        <div className="flex items-center gap-2 border-b border-border px-3 py-2 text-[13px]">
           <span className="flex-1">Regenerate personalized lines?</span>
           <Button variant="outline" size="xs" onClick={() => setPendingConfirm(null)}>
             Cancel
@@ -112,15 +112,15 @@ export function CallMode({
         }}
       />
       <Tabs value={activeTab} onValueChange={changeTab} className="flex min-h-0 flex-1 flex-col">
-        <div className="border-b border-border px-3 pt-2">
-          <TabsList>
+        <div className="border-b border-border px-4 py-2.5">
+          <TabsList className="w-full">
             <TabsTrigger value="script">Script</TabsTrigger>
             <TabsTrigger value="history">History</TabsTrigger>
             <TabsTrigger value="research">Research</TabsTrigger>
           </TabsList>
         </div>
-        <ScrollArea className="min-h-0 flex-1">
-          <div className="p-3">
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="px-4 py-3">
             <TabsContent value="script">
               <ScriptTab
                 contactId={contactId}
@@ -133,12 +133,14 @@ export function CallMode({
               <HistoryTab contactId={contactId} />
             </TabsContent>
             <TabsContent value="research">
-              <ResearchTab />
+              <Suspense fallback={<Skeleton className="h-32 w-full" />}>
+                <ResearchTab contactId={contactId} />
+              </Suspense>
             </TabsContent>
           </div>
-        </ScrollArea>
+        </div>
       </Tabs>
-      <footer className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[11px] text-muted-foreground">
+      <footer className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[12px] text-muted-foreground">
         <span>Call Mode</span>
         <span>{envLabel()}</span>
       </footer>

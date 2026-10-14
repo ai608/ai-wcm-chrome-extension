@@ -40,10 +40,15 @@ export function SectionBlock({
   onJumpToField,
 }: SectionBlockProps) {
   return (
-    <AccordionItem value={section.id}>
-      <AccordionTrigger>{section.title}</AccordionTrigger>
+    <AccordionItem
+      value={section.id}
+      className="border-t border-border first:border-t-0 not-last:border-b-0"
+    >
+      <AccordionTrigger className="flex-row-reverse justify-end py-2 text-[14px] font-semibold leading-normal text-foreground **:data-[slot=accordion-trigger-icon]:ml-0 **:data-[slot=accordion-trigger-icon]:size-3.5">
+        {section.title}
+      </AccordionTrigger>
       <AccordionContent>
-        <div className="flex flex-col gap-3">
+        <div className="flex flex-col gap-2.5 pb-1">
           {section.blocks.map((block) => (
             <BlockView
               key={block.id}

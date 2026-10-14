@@ -17,7 +17,7 @@ export function RecapBlock({ rows, sayItBack, ctx, onJumpToField }: RecapBlockPr
       <Card className="px-3 py-2">
         <div className="flex flex-col gap-1">
           {rows.map((row) => (
-            <div key={row.label} className="flex items-baseline justify-between gap-2 text-xs">
+            <div key={row.label} className="flex items-baseline justify-between gap-2 text-[13px]">
               <span className="text-muted-foreground">{row.label}</span>
               {row.value != null ? (
                 <span className="text-right font-medium">{row.value}</span>
@@ -28,7 +28,7 @@ export function RecapBlock({ rows, sayItBack, ctx, onJumpToField }: RecapBlockPr
                     <Button
                       variant="link"
                       size="xs"
-                      className="h-auto p-0 text-[11px]"
+                      className="h-auto p-0 text-[12px]"
                       onClick={() => onJumpToField(row.fieldKey as string)}
                     >
                       change
@@ -40,7 +40,7 @@ export function RecapBlock({ rows, sayItBack, ctx, onJumpToField }: RecapBlockPr
           ))}
         </div>
       </Card>
-      <Card className="border-primary/30 bg-primary/5 px-3 py-2 text-[13px] leading-relaxed">
+      <Card className="border-primary/30 bg-primary/5 px-3 py-2 text-[14px] leading-relaxed">
         <Segments segments={renderTemplate(sayItBack, ctx)} />
       </Card>
     </div>

@@ -1,5 +1,6 @@
 import { defineExtensionMessaging } from '@webext-core/messaging'
 import { ApiError } from '@/lib/api/errors'
+import type { Audit, ContactResearch, Report, SendReportResult } from '@/lib/api/research-types'
 import type {
   Config,
   ContactContext,
@@ -29,6 +30,17 @@ export interface ProtocolMap {
   }): SaveOutcomeResult
   enrichContact(data: { contactId: string }): { status: 'enriching' }
   getHistory(data: { contactId: string }): ContactHistory
+  startAudit(data: { url: string; force?: boolean }): Audit
+  getAudit(data: { auditId: string }): Audit
+  getLatestAudit(data: { domain: string }): Audit | null
+  runDomainOverview(data: { auditId: string }): Audit
+  runLocalCompetitors(data: { auditId: string; query?: string; location?: string }): Audit
+  runAiVisibility(data: { auditId: string; prompts: string[] }): Audit
+  getReport(data: { auditId: string }): Report
+  sendReport(data: { auditId: string; email: string; note?: string }): SendReportResult
+  getContactResearch(data: { contactId: string }): ContactResearch
+  startContactResearch(data: { contactId: string; force?: boolean }): ContactResearch
+  openReport(data: { auditId: string }): void
 }
 
 export const { sendMessage, onMessage } = defineExtensionMessaging<ProtocolMap>()

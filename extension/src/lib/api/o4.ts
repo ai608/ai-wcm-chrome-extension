@@ -272,3 +272,4 @@ export async function getHistory(contactId: string): Promise<ContactHistory> {
     lastContactedAt: data.last_contacted_at,
   }
 }
+export * from '@/lib/api/o4-research'

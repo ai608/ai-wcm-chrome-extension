@@ -16,7 +16,7 @@ export function BriefCard({
   return (
     <Card className="border-primary/30 bg-primary/5 px-3 py-2">
       <div className="flex items-center gap-2">
-        <p className="flex-1 text-xs font-semibold">Brief</p>
+        <p className="flex-1 text-[13px] font-semibold">Brief</p>
         {stale ? (
           <Badge variant="warning">
             {lastContactedAt == null
@@ -25,8 +25,8 @@ export function BriefCard({
           </Badge>
         ) : null}
       </div>
-      <p className="mt-1 text-xs leading-relaxed">{brief.text}</p>
-      <p className="mt-1 text-[11px] text-muted-foreground">
+      <p className="mt-1 text-[13px] leading-relaxed">{brief.text}</p>
+      <p className="mt-1 text-[12px] text-muted-foreground">
         generated {relativeTime(brief.generatedAt)}
       </p>
     </Card>

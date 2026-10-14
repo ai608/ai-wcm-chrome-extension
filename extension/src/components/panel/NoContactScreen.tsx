@@ -9,7 +9,7 @@ export function NoContactScreen() {
         <Card className="w-full">
           <CardContent className="pt-4 text-center">
             <p className="text-sm font-medium">Open a contact in GoHighLevel</p>
-            <p className="mt-1 text-xs text-muted-foreground">
+            <p className="mt-1 text-[13px] text-muted-foreground">
               The assistant appears when a contact record is open.
             </p>
           </CardContent>

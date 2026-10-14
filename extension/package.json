@@ -8,6 +8,7 @@
     "dev": "wxt",
     "build": "wxt build",
     "zip": "wxt zip",
+    "zip:br": "wxt build && node scripts/pack-br.mjs",
     "postinstall": "wxt prepare",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",

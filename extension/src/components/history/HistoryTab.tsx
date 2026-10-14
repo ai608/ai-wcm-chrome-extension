@@ -41,15 +41,13 @@ export function HistoryTab({ contactId }: { contactId: string }) {
     <div className="flex flex-col gap-3">
       {brief ? <BriefCard brief={brief} lastContactedAt={lastContactedAt} /> : null}
       {sorted.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No activity yet</p>
+        <p className="text-[13px] text-muted-foreground">No activity yet</p>
       ) : (
         sorted.map((a) => <ActivityCard key={a.id} activity={a} />)
       )}
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-        Opportunities
-      </p>
+      <p className="text-[14px] font-semibold text-foreground">Opportunities</p>
       {opportunities.length === 0 ? (
-        <p className="text-xs text-muted-foreground">No opportunities</p>
+        <p className="text-[13px] text-muted-foreground">No opportunities</p>
       ) : (
         <div>
           {opportunities.map((o) => (

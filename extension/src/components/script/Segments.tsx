@@ -1,5 +1,4 @@
 import { Fragment } from 'react'
-import { Skeleton } from '@/components/ui/skeleton'
 import type { Segment } from '@/lib/script/template'
 
 export function Segments({ segments }: { segments: Segment[] }) {
@@ -21,7 +20,7 @@ export function Segments({ segments }: { segments: Segment[] }) {
           )
         }
         if (s.kind === 'pending') {
-          return <Skeleton key={i} className="inline-block h-3 w-16 align-middle" />
+          return <span key={i} className="inline-block h-3 w-16 rounded-md bg-muted align-middle" />
         }
         return <Fragment key={i}>{s.value}</Fragment>
       })}

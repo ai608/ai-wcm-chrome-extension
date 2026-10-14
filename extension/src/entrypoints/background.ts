@@ -1,28 +1,16 @@
 import { defineBackground } from 'wxt/utils/define-background'
+import { classifyTab } from '@/lib/active-tab'
 import { ApiError } from '@/lib/api/errors'
 import * as mockApi from '@/lib/api/mock/handlers'
 import * as realApi from '@/lib/api/o4'
 import { getEnv } from '@/lib/env'
-import { parseGhlUrl } from '@/lib/ghl-url'
 import { onMessage } from '@/lib/messaging'
-import { type ActiveContact, activeContactItem, authItem, authUserItem } from '@/lib/storage'
+import { activeTabItem, authItem, authUserItem } from '@/lib/storage'
 
 async function syncTab(tab: chrome.tabs.Tab | undefined) {
-  const env = getEnv()
-  if (tab?.id == null) return
-  const tabId = tab.id
-  const url = tab.url ?? ''
-  const ref = parseGhlUrl(url, env.ghlHost)
-  if (ref) {
-    await browser.sidePanel.setOptions({ tabId, path: 'sidepanel.html', enabled: true })
-  } else {
-    await browser.sidePanel.setOptions({ tabId, enabled: false })
-  }
-  if (tab.active && tab.windowId != null) {
-    const value: ActiveContact | null =
-      ref == null ? null : { tabId, url, locationId: ref.locationId, contactId: ref.contactId }
-    await activeContactItem(tab.windowId).setValue(value)
-  }
+  if (tab?.id == null || !tab.active || tab.windowId == null) return
+  const value = classifyTab(tab.id, tab.url ?? '', getEnv().ghlHost)
+  await activeTabItem(tab.windowId).setValue(value)
 }
 
 async function syncWindow(windowId: number) {
@@ -131,30 +119,119 @@ function registerApiHandlers() {
       serializeError(err)
     }
   })
+
+  onMessage('startAudit', async ({ data }) => {
+    try {
+      return await api.startAudit(data.url, data.force)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('getAudit', async ({ data }) => {
+    try {
+      return await api.getAudit(data.auditId)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('getLatestAudit', async ({ data }) => {
+    try {
+      return await api.getLatestAudit(data.domain)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('runDomainOverview', async ({ data }) => {
+    try {
+      return await api.runDomainOverview(data.auditId)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('runLocalCompetitors', async ({ data }) => {
+    try {
+      return await api.runLocalCompetitors(data.auditId, data.query, data.location)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('runAiVisibility', async ({ data }) => {
+    try {
+      return await api.runAiVisibility(data.auditId, data.prompts)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('getReport', async ({ data }) => {
+    try {
+      return await api.getReport(data.auditId)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('sendReport', async ({ data }) => {
+    try {
+      return await api.sendReport(data.auditId, data.email, data.note)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('getContactResearch', async ({ data }) => {
+    try {
+      return await api.getContactResearch(data.contactId)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('startContactResearch', async ({ data }) => {
+    try {
+      return await api.startContactResearch(data.contactId, data.force)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('openReport', async ({ data }) => {
+    await browser.tabs.create({
+      url: browser.runtime.getURL(
+        `/report.html?audit=${encodeURIComponent(data.auditId)}` as never,
+      ),
+    })
+  })
+}
+
+async function syncAllTabs() {
+  const tabs = await browser.tabs.query({})
+  await Promise.all(tabs.map((tab) => syncTab(tab).catch(console.error)))
+}
+
+async function init() {
+  await browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true })
+  await browser.sidePanel.setOptions({ path: 'sidepanel.html', enabled: true })
+  // Tabs opened before install/reload/startup never fire onUpdated for us.
+  await syncAllTabs()
 }
 
 function main() {
   registerApiHandlers()
   browser.runtime.onInstalled.addListener(() => {
-    browser.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {})
-    browser.sidePanel.setOptions({ enabled: false }).catch(() => {})
+    init().catch(console.error)
+  })
+  browser.runtime.onStartup.addListener(() => {
+    init().catch(console.error)
   })
 
   browser.tabs.onUpdated.addListener((_tabId, changeInfo, tab) => {
     if (changeInfo.url == null && changeInfo.status !== 'complete') return
-    syncTab(tab).catch(() => {})
+    syncTab(tab).catch(console.error)
   })
 
   browser.tabs.onActivated.addListener((activeInfo) => {
-    browser.tabs
-      .get(activeInfo.tabId)
-      .then(syncTab)
-      .catch(() => {})
+    browser.tabs.get(activeInfo.tabId).then(syncTab).catch(console.error)
   })
 
   browser.windows.onFocusChanged.addListener((windowId) => {
     if (windowId < 0) return
-    syncWindow(windowId).catch(() => {})
+    syncWindow(windowId).catch(console.error)
   })
 }
 

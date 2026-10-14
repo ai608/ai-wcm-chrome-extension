@@ -39,6 +39,30 @@ https://<WXT_GHL_HOST>/v2/location/MOCK_LOCATION/contacts/detail/c_glow
 | `c_fail` | Script failed; `annual_revenue` PATCH always 422 |
 | anything else | 404 contact-not-found |
 
+## Research Mode
+
+The side panel is enabled on every tab. On a GHL contact it shows Call Mode; on any other
+`http(s)` website it shows **Research Mode** (a website + local visibility audit). Audits only run
+when you click **Run audit** / **Run research** / **Re-run** or an on-demand check. The extension
+never reads page content — the O4 backend crawls the site.
+
+In mock mode, open one of these sites and click **Run audit** (sections fill in over ~6 s):
+
+| Site | Scenario |
+| --- | --- |
+| `glowaesthetics.com` | Strong site, grade B (78), GBP matched, Boulevard booking |
+| any other (e.g. `example.com`) | Weak site, grade F (32), provisional (no GBP match), 0 city pages |
+| `fail.example` | Site section fails, audit ends `partial` |
+| `blocked.example` | `url_not_allowed` ("This address can't be audited") |
+
+Other mock behaviour: on-demand checks (domain overview, local competitors, AI visibility) run for
+2–4 s; send-report to `bounce@…` is rejected; the Call Mode **Research** tab shows `c_glow` (ready),
+`c_peak` (run on demand) and `c_vital` (no website). **Generate prospect report (PDF)** opens
+`report.html` in a new tab — use **Save as PDF** there.
+
+`npm run size` budgets (gzipped): side panel (incl. lazy/shared chunks) ≤ 300 KB, background ≤ 40 KB,
+report page own chunks ≤ 60 KB.
+
 ## Load unpacked / release
 
 ```bash

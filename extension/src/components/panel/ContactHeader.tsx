@@ -22,13 +22,13 @@ export function ContactHeader({
     .filter(Boolean)
     .join(' · ')
   return (
-    <div className="border-b border-border px-3 py-2">
+    <div className="border-b border-border px-4 py-3">
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold">
+          <p className="truncate text-xl font-semibold leading-tight">
             {contact.companyName || 'Unknown company'}
           </p>
-          {sub ? <p className="truncate text-xs text-muted-foreground">{sub}</p> : null}
+          {sub ? <p className="truncate text-[15px] text-muted-foreground">{sub}</p> : null}
         </div>
         <div className="flex shrink-0 items-center gap-1">
           {definitionVersion != null ? (
@@ -48,7 +48,7 @@ export function ContactHeader({
         </div>
       </div>
       {script?.generatedAt ? (
-        <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="mt-1 text-[13px] text-muted-foreground">
           generated {relativeTime(script.generatedAt)}
         </p>
       ) : null}

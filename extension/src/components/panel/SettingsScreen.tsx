@@ -31,13 +31,13 @@ export function SettingsScreen() {
       <PanelHeader />
       <main className="flex flex-1 flex-col gap-3 p-3">
         <Card>
-          <CardContent className="flex flex-col gap-1 pt-4 text-xs">
+          <CardContent className="flex flex-col gap-1 pt-4 text-[13px]">
             <p className="text-sm font-medium">{user?.fullName ?? 'Signed in'}</p>
             <p className="text-muted-foreground">{user?.email}</p>
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="flex flex-col gap-1 pt-4 text-xs text-muted-foreground">
+          <CardContent className="flex flex-col gap-1 pt-4 text-[13px] text-muted-foreground">
             <p>Version {version}</p>
             <p>API {env.apiBaseUrl}</p>
             <p>Mock {env.apiMock ? 'on' : 'off'}</p>
@@ -45,7 +45,7 @@ export function SettingsScreen() {
         </Card>
         {confirming ? (
           <div className="flex flex-col gap-2">
-            <p className="text-xs">Sign out?</p>
+            <p className="text-[13px]">Sign out?</p>
             <div className="flex gap-2">
               <Button variant="outline" size="sm" onClick={() => setConfirming(false)}>
                 Cancel

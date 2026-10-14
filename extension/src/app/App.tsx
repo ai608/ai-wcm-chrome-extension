@@ -1,3 +1,4 @@
+import { lazy, Suspense } from 'react'
 import { Providers } from '@/app/providers'
 import { CallMode } from '@/components/panel/CallMode'
 import { LoginScreen } from '@/components/panel/LoginScreen'
@@ -5,11 +6,13 @@ import { NoAccessScreen } from '@/components/panel/NoAccessScreen'
 import { NoContactScreen } from '@/components/panel/NoContactScreen'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { SettingsScreen } from '@/components/panel/SettingsScreen'
+import { UnsupportedScreen } from '@/components/panel/UnsupportedScreen'
 import { WrongAccountScreen } from '@/components/panel/WrongAccountScreen'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useConfigQuery } from '@/hooks/queries'
-import { useActiveContact } from '@/hooks/use-active-contact'
+import { useActiveTab } from '@/hooks/use-active-tab'
 import { useAuth } from '@/hooks/use-auth'
+import { asActiveContact } from '@/lib/active-tab'
 import { usePanelStore } from '@/stores/panel-store'
 
 function LoadingScreen() {
@@ -25,9 +28,11 @@ function LoadingScreen() {
   )
 }
 
+const ResearchMode = lazy(() => import('@/components/research/ResearchMode'))
+
 function Panel() {
   const { user, isLoading } = useAuth()
-  const contact = useActiveContact()
+  const tab = useActiveTab()
   const view = usePanelStore((s) => s.view)
   const configQuery = useConfigQuery(user?.hasExtensionAccess ?? false)
 
@@ -35,8 +40,18 @@ function Panel() {
   if (user === null) return <LoginScreen />
   if (!user.hasExtensionAccess) return <NoAccessScreen />
   if (view === 'settings') return <SettingsScreen />
-  if (contact === undefined) return <LoadingScreen />
-  if (contact === null) return <NoContactScreen />
+  if (tab === undefined) return <LoadingScreen />
+  if (tab === null || tab.kind === 'unsupported') return <UnsupportedScreen />
+  if (tab.kind === 'ghl_other') return <NoContactScreen />
+  if (tab.kind === 'website') {
+    return (
+      <Suspense fallback={<LoadingScreen />}>
+        <ResearchMode key={tab.domain} tab={tab} />
+      </Suspense>
+    )
+  }
+  const contact = asActiveContact(tab)
+  if (!contact) return <NoContactScreen />
   if (configQuery.isPending) return <LoadingScreen />
   if (configQuery.isError) return <LoadingScreen />
   if (contact.locationId !== configQuery.data.ghlLocationId) return <WrongAccountScreen />

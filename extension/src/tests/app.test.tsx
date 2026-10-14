@@ -9,7 +9,7 @@ async function renderApp() {
 }
 
 const authState: { user: unknown; isLoading: boolean } = { user: undefined, isLoading: true }
-let activeContact: unknown
+let activeTab: unknown
 let config: unknown
 
 vi.mock('@/hooks/use-auth', () => ({
@@ -18,8 +18,8 @@ vi.mock('@/hooks/use-auth', () => ({
   logout: vi.fn(),
 }))
 
-vi.mock('@/hooks/use-active-contact', () => ({
-  useActiveContact: () => activeContact,
+vi.mock('@/hooks/use-active-tab', () => ({
+  useActiveTab: () => activeTab,
 }))
 
 vi.mock('@/hooks/queries', async (importOriginal) => {
@@ -117,7 +117,7 @@ describe('App view switch', () => {
   it('shows no-contact without a contact page', async () => {
     authState.user = USER
     authState.isLoading = false
-    activeContact = null
+    activeTab = { tabId: 1, url: 'https://app.example.com/', kind: 'ghl_other' }
     config = { ghlLocationId: 'L1', bookingWidgetUrl: 'about:blank', scriptVersion: 3 }
     await renderApp()
     expect(screen.getByText('Open a contact in GoHighLevel')).toBeDefined()
@@ -126,7 +126,7 @@ describe('App view switch', () => {
   it('blocks the wrong ghl account', async () => {
     authState.user = USER
     authState.isLoading = false
-    activeContact = { tabId: 1, url: 'x', locationId: 'OTHER', contactId: 'c1' }
+    activeTab = { tabId: 1, url: 'x', kind: 'ghl_contact', locationId: 'OTHER', contactId: 'c1' }
     config = { ghlLocationId: 'L1', bookingWidgetUrl: 'about:blank', scriptVersion: 3 }
     await renderApp()
     expect(screen.getByText('Wrong GHL account')).toBeDefined()
@@ -135,10 +135,18 @@ describe('App view switch', () => {
   it('renders call mode on the sales account', async () => {
     authState.user = USER
     authState.isLoading = false
-    activeContact = { tabId: 1, url: 'x', locationId: 'L1', contactId: 'c1' }
+    activeTab = { tabId: 1, url: 'x', kind: 'ghl_contact', locationId: 'L1', contactId: 'c1' }
     config = { ghlLocationId: 'L1', bookingWidgetUrl: 'about:blank', scriptVersion: 3 }
     await renderApp()
     expect(screen.getByText('Script body')).toBeDefined()
     expect(screen.getAllByText('Call Mode').length).toBeGreaterThan(0)
+  })
+
+  it('shows the unsupported screen on chrome:// pages', async () => {
+    authState.user = USER
+    authState.isLoading = false
+    activeTab = { tabId: 1, url: 'chrome://extensions', kind: 'unsupported' }
+    await renderApp()
+    expect(screen.getByText('Open a clinic website or a GHL contact')).toBeDefined()
   })
 })

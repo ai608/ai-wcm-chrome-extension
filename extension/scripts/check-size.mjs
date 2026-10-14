@@ -1,7 +1,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { gzipSync } from 'node:zlib'
+import { brotliCompressSync, gzipSync } from 'node:zlib'
 
 const outDir = fileURLToPath(new URL('../.output/chrome-mv3/', import.meta.url))
 
@@ -17,22 +17,26 @@ function jsFiles(dir) {
 }
 
 const files = jsFiles(outDir)
-const rows = files.map((f) => ({ file: f.replace(outDir, ''), gz: gzipSync(readFileSync(f)).length }))
+const rows = files.map((f) => ({ file: f.replace(outDir, ''), gz: gzipSync(readFileSync(f)).length, br: brotliCompressSync(readFileSync(f)).length }))
 
-console.log('file\tgzipped bytes')
-for (const r of rows) console.log(`${r.file}\t${r.gz}`)
-const sidepanel = rows.filter((r) => r.file.includes('sidepanel')).reduce((a, r) => a + r.gz, 0)
-const background = rows.filter((r) => r.file.includes('background')).reduce((a, r) => a + r.gz, 0)
-console.log(`sidepanel total gz: ${sidepanel}`)
+console.log('file\tgzip\tbrotli')
+for (const r of rows) console.log(`${r.file}\t${r.gz}\t${r.br}`)
+const sum = (pred) => rows.filter(pred).reduce((a, r) => a + r.gz, 0)
+const background = sum((r) => r.file.includes('background'))
+const report = sum((r) => /(^|\/)report-/.test(r.file))
+const panel = sum((r) => !r.file.includes('background') && !/(^|\/)report-/.test(r.file))
+console.log(`side panel total gz (incl. lazy + shared chunks): ${panel}`)
+console.log(`report page own chunks gz: ${report}`)
 console.log(`background total gz: ${background}`)
 
 let fail = false
-if (sidepanel > 250 * 1024) {
-  console.error('FAIL: side-panel JS exceeds 250 KB gzipped')
-  fail = true
+const limit = (name, value, kb) => {
+  if (value > kb * 1024) {
+    console.error(`FAIL: ${name} exceeds ${kb} KB gzipped`)
+    fail = true
+  }
 }
-if (background > 40 * 1024) {
-  console.error('FAIL: background JS exceeds 40 KB gzipped')
-  fail = true
-}
+limit('side-panel JS', panel, 300)
+limit('background JS', background, 40)
+limit('report page JS', report, 60)
 process.exit(fail ? 1 : 0)

@@ -73,7 +73,7 @@ export function OutcomeBlock({
 
   return (
     <div className="flex flex-col gap-2">
-      <Label htmlFor={`${contactId}-outcome`} className="text-xs font-medium">
+      <Label htmlFor={`${contactId}-outcome`} className="text-[13px] font-medium">
         How did the call go?
       </Label>
       <Select value={outcomeId} onValueChange={(v) => v && select(v)}>
@@ -91,7 +91,7 @@ export function OutcomeBlock({
 
       {showGate ? (
         <Alert className="border-amber-500/40 bg-amber-50 text-amber-900">
-          <AlertDescription className="flex flex-col gap-2 text-xs">
+          <AlertDescription className="flex flex-col gap-2 text-[13px]">
             <p className="font-medium">Fill these before booking</p>
             <ul className="list-disc pl-4">
               {missing.map((m) => (
@@ -113,7 +113,7 @@ export function OutcomeBlock({
       {showWidget ? (
         <>
           <BookingWidget widgetUrl={bookingWidgetUrl} contact={contact} />
-          <Label className="flex cursor-pointer items-center gap-2 text-xs">
+          <Label className="flex cursor-pointer items-center gap-2 text-[13px]">
             <Checkbox checked={booked} onCheckedChange={(v) => setBooked(v === true)} />
             Appointment booked
           </Label>

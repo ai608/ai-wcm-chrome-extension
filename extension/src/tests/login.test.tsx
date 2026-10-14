@@ -9,6 +9,10 @@ vi.mock('@/hooks/use-auth', () => ({
   login: (...args: unknown[]) => loginMock(...args),
 }))
 
+vi.mock('@/hooks/use-theme', () => ({
+  useTheme: () => ({ theme: 'light', isDark: false, toggle: () => {} }),
+}))
+
 describe('LoginScreen', () => {
   beforeEach(() => {
     loginMock.mockReset()

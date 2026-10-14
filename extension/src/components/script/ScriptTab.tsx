@@ -10,6 +10,9 @@ import type { TemplateCtx } from '@/lib/script/template'
 import { relativeTime } from '@/lib/time'
 import { usePanelStore } from '@/stores/panel-store'
 
+// Stable fallback: a fresh `[]` per render makes zustand re-render forever (React #185).
+const NO_TICKS: string[] = []
+
 interface ScriptTabProps {
   contactId: string
   callerFirstName: string
@@ -36,8 +39,20 @@ export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state 
 
   const openSections = usePanelStore((s) => s.openSections)
   const setSectionOpen = usePanelStore((s) => s.setSectionOpen)
-  const ticked = usePanelStore((s) => s.tickedResponses[contactId] ?? [])
+  const ticked = usePanelStore((s) => s.tickedResponses[contactId] ?? NO_TICKS)
   const toggleResponse = usePanelStore((s) => s.toggleResponse)
+
+  const recap = useMemo(
+    () =>
+      definition && context
+        ? computeRecap(definition, context)
+        : { rows: [], computed: {} as Record<string, number | null> },
+    [definition, context],
+  )
+  const missing = useMemo(
+    () => (definition && context ? missingForBooking(definition, context.fieldValues) : []),
+    [definition, context],
+  )
 
   if (definitionPending || contextPending || scriptPending) {
     return (
@@ -68,17 +83,6 @@ export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state 
   const status = script?.status ?? 'none'
   const enriched = context.enrichment.status === 'enriched'
   const slotsPending = status === 'generating' || (status === 'none' && enriched)
-
-  const recap = useMemo(
-    () => computeRecap(definition, context),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [definition, context.fieldValues, context.contact],
-  )
-  const missing = useMemo(
-    () => missingForBooking(definition, context.fieldValues),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [definition, context.fieldValues],
-  )
 
   const ctx: TemplateCtx = {
     contact: context.contact,
@@ -113,7 +117,7 @@ export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state 
   return (
     <div className="flex flex-col gap-3">
       {status === 'generating' && !timedOut ? (
-        <p className="text-xs text-muted-foreground">Personalizing script…</p>
+        <p className="text-[13px] text-muted-foreground">Personalizing script…</p>
       ) : null}
       {timedOut ? (
         <Alert>
@@ -163,7 +167,10 @@ export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state 
         multiple
         value={openIds}
         onValueChange={(ids) => {
-          for (const s of definition.sections) setSectionOpen(s.id, ids.includes(s.id))
+          for (const s of definition.sections) {
+            const open = ids.includes(s.id)
+            if (open !== (openSections[s.id] ?? s.defaultOpen)) setSectionOpen(s.id, open)
+          }
         }}
       >
         {definition.sections.map((section) => (
@@ -183,7 +190,7 @@ export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state 
           />
         ))}
       </Accordion>
-      <p className="text-[11px] text-muted-foreground">
+      <p className="text-[12px] text-muted-foreground">
         Script v{definition.version}
         {script?.generatedAt ? ` · personalized ${relativeTime(script.generatedAt)}` : ''}
       </p>

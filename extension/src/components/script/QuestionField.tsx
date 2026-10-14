@@ -90,7 +90,7 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
             }
           }}
         />
-        {numberError ? <p className="text-[11px] text-destructive">Enter a number</p> : null}
+        {numberError ? <p className="text-[12px] text-destructive">Enter a number</p> : null}
       </>
     )
   } else if (block.input === 'select') {
@@ -114,7 +114,7 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
     input = (
       <RadioGroup value={current} onValueChange={(v) => commit(v)}>
         {(block.options ?? []).map((o) => (
-          <Label key={o.value} className="flex cursor-pointer items-center gap-2 text-xs">
+          <Label key={o.value} className="flex cursor-pointer items-center gap-2 text-[13px]">
             <RadioGroupItem value={o.value} />
             {o.label}
           </Label>
@@ -128,7 +128,7 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
         {(block.options ?? []).map((o) => {
           const checked = current.includes(o.value)
           return (
-            <Label key={o.value} className="flex cursor-pointer items-center gap-2 text-xs">
+            <Label key={o.value} className="flex cursor-pointer items-center gap-2 text-[13px]">
               <Checkbox
                 checked={checked}
                 onCheckedChange={(v) => {
@@ -147,10 +147,10 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
 
   return (
     <div className="flex flex-col gap-1" data-field={block.fieldKey}>
-      <Label htmlFor={id} className="text-xs font-medium">
+      <Label htmlFor={id} className="text-[13px] font-semibold">
         {block.label}
       </Label>
-      {block.help ? <p className="text-[11px] text-muted-foreground">{block.help}</p> : null}
+      {block.help ? <p className="text-[12px] text-muted-foreground">{block.help}</p> : null}
       {input}
       <FieldStatus
         status={status}

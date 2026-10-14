@@ -23,14 +23,14 @@ export function ActivityCard({ activity }: { activity: Activity }) {
     <Card className="px-3 py-2">
       <div className="flex items-center gap-1.5">
         <Icon className="size-3.5 text-muted-foreground" />
-        <p className="flex-1 truncate text-xs font-semibold">{activity.source}</p>
-        <p className="shrink-0 text-[11px] text-muted-foreground">
+        <p className="flex-1 truncate text-[13px] font-semibold">{activity.source}</p>
+        <p className="shrink-0 text-[12px] text-muted-foreground">
           {formatDateTime(activity.createdAt)}
         </p>
       </div>
       <div
         className={cn(
-          'mt-1 text-xs leading-relaxed whitespace-pre-wrap',
+          'mt-1 text-[13px] leading-relaxed whitespace-pre-wrap',
           !expanded && 'line-clamp-12',
         )}
       >
@@ -40,7 +40,7 @@ export function ActivityCard({ activity }: { activity: Activity }) {
         <Button
           variant="link"
           size="xs"
-          className="h-auto p-0 text-[11px]"
+          className="h-auto p-0 text-[12px]"
           onClick={() => setExpanded((v) => !v)}
         >
           {expanded ? 'Show less' : 'Show more'}

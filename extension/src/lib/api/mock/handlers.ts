@@ -7,6 +7,7 @@ import {
   vitalEnrichedContext,
   vitalSlots,
 } from '@/lib/api/mock/fixtures'
+import { __resetResearchMock } from '@/lib/api/mock/research-handlers'
 import type {
   AuthTokens,
   Config,
@@ -209,7 +210,10 @@ export async function getHistory(contactId: string): Promise<ContactHistory> {
   return structuredClone(stateFor(contactId).history)
 }
 
+export * from '@/lib/api/mock/research-handlers'
+
 export function __resetMock() {
+  __resetResearchMock()
   states.clear()
   currentUser = demoUser('sdr@wellnessclinicmarketing.com')
 }

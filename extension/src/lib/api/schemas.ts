@@ -117,3 +117,34 @@ export const patchFieldsResponseSchema = z.object({
   field_values: z.record(z.string(), fieldValueSchema),
   updated_at: z.string(),
 })
+
+const sectionStateSchema = z.union([
+  z.literal('pending'),
+  z.literal('running'),
+  z.literal('ready'),
+  z.literal('failed'),
+  z.literal('skipped'),
+])
+
+export const auditSchema = z.object({
+  id: z.string(),
+  url: z.string(),
+  domain: z.string(),
+  status: z.union([
+    z.literal('queued'),
+    z.literal('running'),
+    z.literal('ready'),
+    z.literal('partial'),
+    z.literal('failed'),
+  ]),
+  sectionState: z.record(z.string(), sectionStateSchema),
+  overview: z.nullable(z.optional(z.object({ score: z.number(), grade: z.string() }))),
+})
+
+export const reportSchema = z.object({
+  audit: auditSchema,
+  preparedFor: z.string(),
+  preparedBy: z.string(),
+  generatedAt: z.string(),
+  intro: z.string(),
+})

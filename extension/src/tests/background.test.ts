@@ -40,7 +40,7 @@ describe('background', () => {
   it('enables the panel on ghl contact tabs, disables elsewhere, tracks the active contact', async () => {
     const { setOptions, setPanelBehavior } = stubBrowser()
     await startBackground()
-    const { activeContactItem } = await import('@/lib/storage')
+    const { activeTabItem } = await import('@/lib/storage')
 
     await fakeBrowser.runtime.onInstalled.trigger({ reason: 'install' })
     expect(setPanelBehavior).toHaveBeenCalledWith({ openPanelOnActionClick: true })
@@ -50,14 +50,11 @@ describe('background', () => {
       { url: contactUrl('L1', 'c_1') },
       tab({ id: 7, windowId: 1, active: true, url: contactUrl('L1', 'c_1') }),
     )
-    expect(setOptions).toHaveBeenCalledWith({
-      tabId: 7,
-      path: 'sidepanel.html',
-      enabled: true,
-    })
-    await expect(activeContactItem(1).getValue()).resolves.toEqual({
+    expect(setOptions).toHaveBeenCalledWith({ path: 'sidepanel.html', enabled: true })
+    await expect(activeTabItem(1).getValue()).resolves.toEqual({
       tabId: 7,
       url: contactUrl('L1', 'c_1'),
+      kind: 'ghl_contact',
       locationId: 'L1',
       contactId: 'c_1',
     })
@@ -67,8 +64,10 @@ describe('background', () => {
       { url: 'https://example.com/' },
       tab({ id: 8, windowId: 1, active: true, url: 'https://example.com/' }),
     )
-    expect(setOptions).toHaveBeenCalledWith({ tabId: 8, enabled: false })
-    await expect(activeContactItem(1).getValue()).resolves.toBeNull()
+    await expect(activeTabItem(1).getValue()).resolves.toMatchObject({
+      kind: 'website',
+      domain: 'example.com',
+    })
 
     const smartList = `https://${GHL_HOST}/v2/location/L1/contacts/smart_list`
     await fakeBrowser.tabs.onUpdated.trigger(
@@ -76,24 +75,26 @@ describe('background', () => {
       { url: smartList },
       tab({ id: 9, windowId: 1, active: true, url: smartList }),
     )
-    expect(setOptions).toHaveBeenCalledWith({ tabId: 9, enabled: false })
+    await expect(activeTabItem(1).getValue()).resolves.toMatchObject({ kind: 'ghl_other' })
 
     await fakeBrowser.tabs.onUpdated.trigger(
       11,
       { url: contactUrl('L9', 'c_glow') },
       tab({ id: 11, windowId: 4, active: true, url: contactUrl('L9', 'c_glow') }),
     )
-    await expect(activeContactItem(4).getValue()).resolves.toEqual({
+    await expect(activeTabItem(4).getValue()).resolves.toEqual({
       tabId: 11,
       url: contactUrl('L9', 'c_glow'),
+      kind: 'ghl_contact',
       locationId: 'L9',
       contactId: 'c_glow',
     })
 
     await fakeBrowser.tabs.onActivated.trigger({ tabId: 12, windowId: 4 })
-    await expect(activeContactItem(4).getValue()).resolves.toEqual({
+    await expect(activeTabItem(4).getValue()).resolves.toEqual({
       tabId: 11,
       url: contactUrl('L9', 'c_glow'),
+      kind: 'ghl_contact',
       locationId: 'L9',
       contactId: 'c_glow',
     })

@@ -1,19 +1,20 @@
 import { useEffect, useState } from 'react'
-import { type ActiveContact, activeContactItem } from '@/lib/storage'
+import type { ActiveTab } from '@/lib/active-tab'
+import { activeTabItem } from '@/lib/storage'
 
-export function useActiveContact() {
-  const [contact, setContact] = useState<ActiveContact | null | undefined>(undefined)
+export function useActiveTab() {
+  const [tab, setTab] = useState<ActiveTab | null | undefined>(undefined)
 
   useEffect(() => {
     let unwatch: (() => void) | undefined
     let cancelled = false
     browser.windows.getCurrent().then((win) => {
       if (cancelled || win.id == null) return
-      const item = activeContactItem(win.id)
+      const item = activeTabItem(win.id)
       item.getValue().then((v) => {
-        if (!cancelled) setContact(v)
+        if (!cancelled) setTab(v)
       })
-      unwatch = item.watch((v) => setContact(v))
+      unwatch = item.watch((v) => setTab(v))
     })
     return () => {
       cancelled = true
@@ -21,5 +22,5 @@ export function useActiveContact() {
     }
   }, [])
 
-  return contact
+  return tab
 }
