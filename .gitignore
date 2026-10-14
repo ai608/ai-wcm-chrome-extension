@@ -1,0 +1,17 @@
+node_modules/
+.output/
+.wxt/
+coverage/
+.DS_Store
+*.local
+extension/node_modules/
+extension/.output/
+extension/.wxt/
+extension/dist/
+backend/
+.env
+.env.*
+!.env.example
+extension/.env
+extension/.env.*
+!extension/.env.example
