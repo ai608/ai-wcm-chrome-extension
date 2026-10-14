@@ -1,8 +1,9 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { gzipSync } from 'node:zlib'
 
-const outDir = new URL('../.output/chrome-mv3/', import.meta.url).pathname
+const outDir = fileURLToPath(new URL('../.output/chrome-mv3/', import.meta.url))
 
 function jsFiles(dir) {
   const out = []
