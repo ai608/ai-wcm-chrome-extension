@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { HistoryTab } from '@/components/history/HistoryTab'
 import { ContactHeader } from '@/components/panel/ContactHeader'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { StatusBanner } from '@/components/panel/StatusBanner'
@@ -128,7 +129,7 @@ export function CallMode({
               />
             </TabsContent>
             <TabsContent value="history">
-              <p className="text-xs text-muted-foreground">History coming soon.</p>
+              <HistoryTab contactId={contactId} />
             </TabsContent>
             <TabsContent value="research">
               <p className="text-xs text-muted-foreground">Research coming soon.</p>
