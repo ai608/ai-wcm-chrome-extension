@@ -1,7 +1,12 @@
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QuestionField } from '@/components/script/QuestionField'
-import type { Block } from '@/lib/api/types'
+import type { Block, FieldValue } from '@/lib/api/types'
+import { __resetAutosave, useAutosaveStore } from '@/stores/autosave-store'
+
+vi.mock('@/lib/messaging', () => ({
+  call: async () => ({ fieldValues: {}, updatedAt: '2026-10-14T00:00:00Z' }),
+}))
 
 type Question = Extract<Block, { type: 'question' }>
 
@@ -16,107 +21,78 @@ function question(overrides: Partial<Question> & { input: Question['input'] }): 
   }
 }
 
+function renderField(block: Question, initialValue: FieldValue | undefined = null) {
+  return render(<QuestionField contactId="c1" block={block} initialValue={initialValue} />)
+}
+
+function queued(): FieldValue | undefined {
+  return useAutosaveStore.getState().queue.c1?.['contact.test_field']
+}
+
 describe('QuestionField', () => {
-  afterEach(() => cleanup())
+  afterEach(() => {
+    cleanup()
+    __resetAutosave()
+  })
 
   it('commits text input', () => {
-    const onCommit = vi.fn()
-    render(
-      <QuestionField
-        contactId="c1"
-        block={question({ input: 'text' })}
-        initialValue={null}
-        onCommit={onCommit}
-      />,
-    )
+    renderField(question({ input: 'text' }))
     fireEvent.change(screen.getByLabelText('Test field'), { target: { value: 'hello' } })
-    expect(onCommit).toHaveBeenLastCalledWith('contact.test_field', 'hello')
+    expect(queued()).toBe('hello')
   })
 
   it('commits textarea input', () => {
-    const onCommit = vi.fn()
-    render(
-      <QuestionField
-        contactId="c1"
-        block={question({ input: 'textarea' })}
-        initialValue={null}
-        onCommit={onCommit}
-      />,
-    )
+    renderField(question({ input: 'textarea' }))
     fireEvent.change(screen.getByLabelText('Test field'), { target: { value: 'why now' } })
-    expect(onCommit).toHaveBeenLastCalledWith('contact.test_field', 'why now')
+    expect(queued()).toBe('why now')
   })
 
   it('commits numbers and rejects invalid input', () => {
-    const onCommit = vi.fn()
-    render(
-      <QuestionField
-        contactId="c1"
-        block={question({ input: 'number' })}
-        initialValue={null}
-        onCommit={onCommit}
-      />,
-    )
+    renderField(question({ input: 'number' }))
     const input = screen.getByLabelText('Test field')
     fireEvent.change(input, { target: { value: '42' } })
-    expect(onCommit).toHaveBeenLastCalledWith('contact.test_field', 42)
+    expect(queued()).toBe(42)
     fireEvent.change(input, { target: { value: 'abc' } })
     expect(screen.getByText('Enter a number')).toBeDefined()
-    expect(onCommit).toHaveBeenLastCalledWith('contact.test_field', 42)
+    expect(queued()).toBe(42)
   })
 
   it('commits currency as a number', () => {
-    const onCommit = vi.fn()
-    render(
-      <QuestionField
-        contactId="c1"
-        block={question({ input: 'currency' })}
-        initialValue={null}
-        onCommit={onCommit}
-      />,
-    )
+    renderField(question({ input: 'currency' }))
     fireEvent.change(screen.getByLabelText('Test field'), { target: { value: '350' } })
-    expect(onCommit).toHaveBeenLastCalledWith('contact.test_field', 350)
+    expect(queued()).toBe(350)
   })
 
-  it('commits select and radio choices', () => {
-    const onCommit = vi.fn()
-    const options = [
-      { value: 'a', label: 'A' },
-      { value: 'b', label: 'B' },
-    ]
-    const { unmount } = render(
-      <QuestionField
-        contactId="c1"
-        block={question({ input: 'radio', options })}
-        initialValue={null}
-        onCommit={onCommit}
-      />,
+  it('commits radio choices', () => {
+    renderField(
+      question({
+        input: 'radio',
+        options: [
+          { value: 'a', label: 'A' },
+          { value: 'b', label: 'B' },
+        ],
+      }),
     )
     fireEvent.click(screen.getByRole('radio', { name: 'B' }))
-    expect(onCommit).toHaveBeenLastCalledWith('contact.test_field', 'b')
-    unmount()
+    expect(queued()).toBe('b')
   })
 
   it('toggles checkbox group values', () => {
-    const onCommit = vi.fn()
-    render(
-      <QuestionField
-        contactId="c1"
-        block={question({
-          input: 'checkbox_group',
-          options: [
-            { value: 'x', label: 'X' },
-            { value: 'y', label: 'Y' },
-          ],
-        })}
-        initialValue={['x']}
-        onCommit={onCommit}
-      />,
+    const spy = vi.spyOn(useAutosaveStore.getState(), 'setField')
+    renderField(
+      question({
+        input: 'checkbox_group',
+        options: [
+          { value: 'x', label: 'X' },
+          { value: 'y', label: 'Y' },
+        ],
+      }),
+      ['x'],
     )
     fireEvent.click(screen.getByRole('checkbox', { name: 'Y' }))
     // happy-dom forwards label clicks to the nested control, toggling twice;
     // the first toggle is the real user intent.
-    expect(onCommit.mock.calls[0]).toEqual(['contact.test_field', ['x', 'y']])
+    expect(spy.mock.calls[0]).toEqual(['c1', 'contact.test_field', ['x', 'y'], 'fast'])
+    spy.mockRestore()
   })
 })

@@ -12,6 +12,7 @@ import { useScriptState } from '@/hooks/use-script-state'
 import { getEnv } from '@/lib/env'
 import type { ActiveContact } from '@/lib/storage'
 import { lastTabItem } from '@/lib/storage'
+import { useAutosaveStore } from '@/stores/autosave-store'
 import { usePanelStore } from '@/stores/panel-store'
 
 function envLabel(): string {
@@ -39,13 +40,29 @@ export function CallMode({
     lastTabItem.getValue().then(setActiveTab)
   }, [setActiveTab])
 
+  useEffect(() => {
+    const flush = () => useAutosaveStore.getState().flush(contactId)
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') useAutosaveStore.getState().flushAll()
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('pagehide', flush)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('pagehide', flush)
+      flush()
+    }
+  }, [contactId])
+
   function changeTab(v: string) {
     if (v !== 'script' && v !== 'history' && v !== 'research') return
     setActiveTab(v)
     lastTabItem.setValue(v).catch(() => {})
   }
 
-  const bannerError = scriptState.contextError ?? null
+  const autosaveError = useAutosaveStore((s) => s.lastError[contactId] ?? null)
+
+  const bannerError = scriptState.contextError ?? autosaveError ?? null
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -83,7 +100,13 @@ export function CallMode({
           </Button>
         </div>
       ) : null}
-      <StatusBanner error={bannerError} onRetry={() => refreshContact(contactId)} />
+      <StatusBanner
+        error={bannerError}
+        onRetry={() => {
+          if (scriptState.contextError) refreshContact(contactId)
+          else useAutosaveStore.getState().flush(contactId)
+        }}
+      />
       <Tabs value={activeTab} onValueChange={changeTab} className="flex min-h-0 flex-1 flex-col">
         <div className="border-b border-border px-3 pt-2">
           <TabsList>

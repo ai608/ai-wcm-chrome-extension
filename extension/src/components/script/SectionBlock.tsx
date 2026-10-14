@@ -15,7 +15,6 @@ interface SectionBlockProps {
   fieldValues: Record<string, FieldValue>
   ticked: string[]
   onToggleResponse: (blockId: string) => void
-  onCommitField: (fieldKey: string, value: FieldValue) => void
 }
 
 export function SectionBlock({
@@ -25,7 +24,6 @@ export function SectionBlock({
   fieldValues,
   ticked,
   onToggleResponse,
-  onCommitField,
 }: SectionBlockProps) {
   return (
     <AccordionItem value={section.id}>
@@ -41,7 +39,6 @@ export function SectionBlock({
               fieldValues={fieldValues}
               ticked={ticked}
               onToggleResponse={onToggleResponse}
-              onCommitField={onCommitField}
             />
           ))}
         </div>
@@ -59,7 +56,6 @@ function BlockView({
   fieldValues,
   ticked,
   onToggleResponse,
-  onCommitField,
 }: Omit<SectionBlockProps, 'section'> & { block: Block }) {
   switch (block.type) {
     case 'say':
@@ -84,7 +80,6 @@ function BlockView({
           contactId={contactId}
           block={block}
           initialValue={fieldValues[block.fieldKey]}
-          onCommit={onCommitField}
         />
       )
     case 'faq':

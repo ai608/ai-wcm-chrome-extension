@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { FieldStatus } from '@/components/script/FieldStatus'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -13,6 +14,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import type { Block, FieldValue } from '@/lib/api/types'
 import { formatCurrency } from '@/lib/time'
+import { type InputClass, useAutosaveStore } from '@/stores/autosave-store'
 
 type Question = Extract<Block, { type: 'question' }>
 
@@ -20,7 +22,12 @@ interface QuestionFieldProps {
   contactId: string
   block: Question
   initialValue: FieldValue | undefined
-  onCommit: (fieldKey: string, value: FieldValue) => void
+}
+
+function inputClassFor(block: Question): InputClass {
+  return block.input === 'select' || block.input === 'radio' || block.input === 'checkbox_group'
+    ? 'fast'
+    : 'slow'
 }
 
 function toText(value: FieldValue | undefined): string {
@@ -29,15 +36,20 @@ function toText(value: FieldValue | undefined): string {
   return String(value)
 }
 
-export function QuestionField({ contactId, block, initialValue, onCommit }: QuestionFieldProps) {
+export function QuestionField({ contactId, block, initialValue }: QuestionFieldProps) {
   const id = `${contactId}-${block.id}`
+  const setField = useAutosaveStore((st) => st.setField)
+  const retry = useAutosaveStore((st) => st.retry)
+  const status = useAutosaveStore((st) => st.status[contactId]?.[block.fieldKey] ?? 'idle')
+  const saveError = useAutosaveStore((st) => st.errors[contactId]?.[block.fieldKey])
+  const inputClass = inputClassFor(block)
   const [draft, setDraft] = useState<FieldValue | undefined>(initialValue)
   const [text, setText] = useState(() => toText(initialValue))
   const [numberError, setNumberError] = useState(false)
 
   function commit(value: FieldValue) {
     setDraft(value)
-    onCommit(block.fieldKey, value)
+    setField(contactId, block.fieldKey, value, inputClass)
   }
 
   function commitText(raw: string) {
@@ -142,6 +154,11 @@ export function QuestionField({ contactId, block, initialValue, onCommit }: Ques
       </Label>
       {block.help ? <p className="text-[11px] text-muted-foreground">{block.help}</p> : null}
       {input}
+      <FieldStatus
+        status={status}
+        error={saveError}
+        onRetry={() => retry(contactId, block.fieldKey)}
+      />
     </div>
   )
 }
