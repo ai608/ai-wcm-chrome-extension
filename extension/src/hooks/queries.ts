@@ -35,15 +35,16 @@ export function useScriptDefinitionQuery(enabled: boolean) {
   })
 }
 
-export function useContactContextQuery(contactId: string) {
+export function useContactContextQuery(contactId: string, pollEnrichment = false) {
   return useQuery({
     queryKey: qk.contactContext(contactId),
     queryFn: () => call('getContactContext', { contactId }),
+    refetchInterval: pollEnrichment ? 3000 : false,
     retry: retryRule,
   })
 }
 
-export function usePersonalizedScriptQuery(contactId: string, generating: boolean) {
+export function usePersonalizedScriptQuery(contactId: string, generating = false) {
   return useQuery({
     queryKey: qk.contactScript(contactId),
     queryFn: () => call('getPersonalizedScript', { contactId }),

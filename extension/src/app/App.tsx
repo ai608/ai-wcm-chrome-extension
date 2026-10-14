@@ -41,7 +41,10 @@ function Panel() {
   if (configQuery.isError) return <LoadingScreen />
   if (contact.locationId !== configQuery.data.ghlLocationId) return <WrongAccountScreen />
 
-  return <CallMode key={contact.contactId} activeContact={contact} />
+  const callerFirstName = user.fullName.split(' ')[0] ?? ''
+  return (
+    <CallMode key={contact.contactId} activeContact={contact} callerFirstName={callerFirstName} />
+  )
 }
 
 export default function App() {

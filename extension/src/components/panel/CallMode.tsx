@@ -2,17 +2,13 @@ import { useEffect } from 'react'
 import { ContactHeader } from '@/components/panel/ContactHeader'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { StatusBanner } from '@/components/panel/StatusBanner'
-import { Alert, AlertDescription } from '@/components/ui/alert'
+import { ScriptTab } from '@/components/script/ScriptTab'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import {
-  useContactContextQuery,
-  usePersonalizedScriptQuery,
-  useRefreshContact,
-  useRegenerateScriptMutation,
-} from '@/hooks/queries'
+import { useRefreshContact } from '@/hooks/queries'
+import { useScriptState } from '@/hooks/use-script-state'
 import { getEnv } from '@/lib/env'
 import type { ActiveContact } from '@/lib/storage'
 import { lastTabItem } from '@/lib/storage'
@@ -23,7 +19,13 @@ function envLabel(): string {
   return env.apiMock ? 'mock' : env.apiBaseUrl
 }
 
-export function CallMode({ activeContact }: { activeContact: ActiveContact }) {
+export function CallMode({
+  activeContact,
+  callerFirstName,
+}: {
+  activeContact: ActiveContact
+  callerFirstName: string
+}) {
   const { contactId } = activeContact
   const activeTab = usePanelStore((s) => s.activeTab)
   const setActiveTab = usePanelStore((s) => s.setActiveTab)
@@ -31,7 +33,7 @@ export function CallMode({ activeContact }: { activeContact: ActiveContact }) {
   const pendingConfirm = usePanelStore((s) => s.pendingConfirm)
   const setPendingConfirm = usePanelStore((s) => s.setPendingConfirm)
   const refreshContact = useRefreshContact()
-  const regenerate = useRegenerateScriptMutation(contactId)
+  const scriptState = useScriptState(contactId)
 
   useEffect(() => {
     lastTabItem.getValue().then(setActiveTab)
@@ -43,10 +45,7 @@ export function CallMode({ activeContact }: { activeContact: ActiveContact }) {
     lastTabItem.setValue(v).catch(() => {})
   }
 
-  const contextQuery = useContactContextQuery(contactId)
-  const scriptQuery = usePersonalizedScriptQuery(contactId, false)
-
-  const bannerError = contextQuery.error ?? scriptQuery.error ?? null
+  const bannerError = scriptState.contextError ?? null
 
   return (
     <div className="flex min-h-screen flex-col">
@@ -54,11 +53,11 @@ export function CallMode({ activeContact }: { activeContact: ActiveContact }) {
         onRefresh={() => refreshContact(contactId)}
         onSettings={() => setView('settings')}
       />
-      {contextQuery.data ? (
+      {scriptState.context ? (
         <ContactHeader
-          contact={contextQuery.data.contact}
-          definitionVersion={undefined}
-          script={scriptQuery.data}
+          contact={scriptState.context.contact}
+          definitionVersion={scriptState.definition?.version}
+          script={scriptState.script}
           onRegenerate={() => setPendingConfirm('regenerate')}
         />
       ) : (
@@ -77,7 +76,7 @@ export function CallMode({ activeContact }: { activeContact: ActiveContact }) {
             size="xs"
             onClick={() => {
               setPendingConfirm(null)
-              regenerate.mutate()
+              scriptState.startRegenerate()
             }}
           >
             Regenerate
@@ -96,18 +95,11 @@ export function CallMode({ activeContact }: { activeContact: ActiveContact }) {
         <ScrollArea className="min-h-0 flex-1">
           <div className="p-3">
             <TabsContent value="script">
-              {contextQuery.isPending ? (
-                <div className="flex flex-col gap-2">
-                  <Skeleton className="h-20 w-full" />
-                  <Skeleton className="h-20 w-full" />
-                </div>
-              ) : contextQuery.isError ? (
-                <Alert variant="destructive">
-                  <AlertDescription>Contact not found in GHL</AlertDescription>
-                </Alert>
-              ) : (
-                <p className="text-xs text-muted-foreground">Script coming soon.</p>
-              )}
+              <ScriptTab
+                contactId={contactId}
+                callerFirstName={callerFirstName}
+                state={scriptState}
+              />
             </TabsContent>
             <TabsContent value="history">
               <p className="text-xs text-muted-foreground">History coming soon.</p>
