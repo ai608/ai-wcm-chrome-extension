@@ -43,7 +43,12 @@ function Panel() {
 
   const callerFirstName = user.fullName.split(' ')[0] ?? ''
   return (
-    <CallMode key={contact.contactId} activeContact={contact} callerFirstName={callerFirstName} />
+    <CallMode
+      key={contact.contactId}
+      activeContact={contact}
+      callerFirstName={callerFirstName}
+      bookingWidgetUrl={configQuery.data.bookingWidgetUrl}
+    />
   )
 }
 

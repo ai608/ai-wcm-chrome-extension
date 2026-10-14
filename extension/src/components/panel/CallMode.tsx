@@ -23,9 +23,11 @@ function envLabel(): string {
 export function CallMode({
   activeContact,
   callerFirstName,
+  bookingWidgetUrl,
 }: {
   activeContact: ActiveContact
   callerFirstName: string
+  bookingWidgetUrl: string
 }) {
   const { contactId } = activeContact
   const activeTab = usePanelStore((s) => s.activeTab)
@@ -121,6 +123,7 @@ export function CallMode({
               <ScriptTab
                 contactId={contactId}
                 callerFirstName={callerFirstName}
+                bookingWidgetUrl={bookingWidgetUrl}
                 state={scriptState}
               />
             </TabsContent>
