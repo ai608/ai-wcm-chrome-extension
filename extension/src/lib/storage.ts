@@ -1,4 +1,5 @@
 import { storage } from 'wxt/utils/storage'
+import type { AuthTokens, User } from '@/lib/api/types'
 
 export interface ActiveContact {
   tabId: number
@@ -26,3 +27,7 @@ export function activeContactItem(windowId: number) {
 }
 
 export const lastTabItem = storage.defineItem<LastTab>('local:lastTab', { fallback: 'script' })
+
+export const authItem = storage.defineItem<AuthTokens | null>('session:auth', { fallback: null })
+
+export const authUserItem = storage.defineItem<User | null>('session:authUser', { fallback: null })
