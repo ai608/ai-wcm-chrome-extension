@@ -12,11 +12,9 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
-import type { Block, FieldValue } from '@/lib/api/types'
+import type { FieldValue, Question } from '@/lib/api/types'
 import { formatCurrency } from '@/lib/time'
 import { type InputClass, useAutosaveStore } from '@/stores/autosave-store'
-
-type Question = Extract<Block, { type: 'question' }>
 
 interface QuestionFieldProps {
   contactId: string

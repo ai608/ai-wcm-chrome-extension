@@ -64,6 +64,8 @@ export interface Outcome {
   books: boolean
 }
 
+export type Question = Extract<Block, { type: 'question' }>
+
 export interface Section {
   id: string
   title: string
