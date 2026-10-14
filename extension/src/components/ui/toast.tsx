@@ -21,7 +21,9 @@ function ToastViewport() {
           >
             <ToastPrimitive.Content className="flex-1">
               {t.title ? (
-                <ToastPrimitive.Title className="text-xs font-medium">{t.title}</ToastPrimitive.Title>
+                <ToastPrimitive.Title className="text-xs font-medium">
+                  {t.title}
+                </ToastPrimitive.Title>
               ) : null}
               {t.description ? (
                 <ToastPrimitive.Description className="text-xs text-muted-foreground">

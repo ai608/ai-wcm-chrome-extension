@@ -9,8 +9,8 @@ async function renderApp() {
 }
 
 const authState: { user: unknown; isLoading: boolean } = { user: undefined, isLoading: true }
-let activeContact: unknown = undefined
-let config: unknown = undefined
+let activeContact: unknown
+let config: unknown
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => authState,
@@ -37,11 +37,27 @@ vi.mock('@/hooks/use-script-state', () => ({
     definitionError: null,
     context: {
       contact: {
-        id: 'c1', firstName: 'M', lastName: 'R', companyName: 'Glow', email: '', phone: '',
-        city: 'Austin', state: 'TX', postalCode: '', website: '', tags: [],
+        id: 'c1',
+        firstName: 'M',
+        lastName: 'R',
+        companyName: 'Glow',
+        email: '',
+        phone: '',
+        city: 'Austin',
+        state: 'TX',
+        postalCode: '',
+        website: '',
+        tags: [],
       },
       fieldValues: {},
-      enrichment: { status: 'enriched', services: [], googleRating: null, googleReviewCount: null, score: null, updatedAt: null },
+      enrichment: {
+        status: 'enriched',
+        services: [],
+        googleRating: null,
+        googleReviewCount: null,
+        score: null,
+        updatedAt: null,
+      },
     },
     contextPending: false,
     contextError: null,
@@ -59,7 +75,13 @@ vi.mock('@/components/script/ScriptTab', () => ({
   ScriptTab: () => <p>Script body</p>,
 }))
 
-const USER = { id: 'u1', email: 'sdr@example.com', fullName: 'Sam Rivera', role: 'user', hasExtensionAccess: true }
+const USER = {
+  id: 'u1',
+  email: 'sdr@example.com',
+  fullName: 'Sam Rivera',
+  role: 'user',
+  hasExtensionAccess: true,
+}
 
 describe('App view switch', () => {
   beforeEach(() => {

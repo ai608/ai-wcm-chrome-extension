@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { renderTemplate, type TemplateCtx } from '@/lib/script/template'
 import type { Contact } from '@/lib/api/types'
+import { renderTemplate, type TemplateCtx } from '@/lib/script/template'
 
 const contact: Contact = {
   id: 'c_1',
@@ -31,7 +31,9 @@ function ctx(overrides: Partial<TemplateCtx> = {}): TemplateCtx {
 
 describe('renderTemplate', () => {
   it('renders contact placeholders as values', () => {
-    expect(renderTemplate('Hey {{contact.first_name}} from {{contact.company_name}}', ctx())).toEqual([
+    expect(
+      renderTemplate('Hey {{contact.first_name}} from {{contact.company_name}}', ctx()),
+    ).toEqual([
       { kind: 'text', value: 'Hey ' },
       { kind: 'value', value: 'Maya' },
       { kind: 'text', value: ' from ' },
@@ -114,6 +116,8 @@ describe('renderTemplate', () => {
       { kind: 'value', value: '+15125550134' },
       { kind: 'text', value: 'y' },
     ])
-    expect(renderTemplate('{{ contact.city }}', ctx())).toEqual([{ kind: 'value', value: 'Austin' }])
+    expect(renderTemplate('{{ contact.city }}', ctx())).toEqual([
+      { kind: 'value', value: 'Austin' },
+    ])
   })
 })

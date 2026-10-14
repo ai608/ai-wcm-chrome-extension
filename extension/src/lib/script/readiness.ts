@@ -1,9 +1,4 @@
-import type {
-  ContactContext,
-  FieldValue,
-  Question,
-  ScriptDefinition,
-} from '@/lib/api/types'
+import type { ContactContext, FieldValue, Question, ScriptDefinition } from '@/lib/api/types'
 import { formatCurrency } from '@/lib/time'
 
 export interface RecapRowValue {
