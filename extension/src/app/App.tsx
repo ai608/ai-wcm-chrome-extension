@@ -39,7 +39,7 @@ function Panel() {
   if (isLoading || user === undefined) return <LoadingScreen />
   if (user === null) return <LoginScreen />
   if (!user.hasExtensionAccess) return <NoAccessScreen />
-  if (view === 'settings') return <SettingsScreen />
+  if (view === 'settings') return <SettingsScreen user={user} />
   if (tab === undefined) return <LoadingScreen />
   if (tab === null || tab.kind === 'unsupported') return <UnsupportedScreen />
   if (tab.kind === 'ghl_other') return <NoContactScreen />

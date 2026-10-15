@@ -39,5 +39,10 @@ export function useTheme() {
     return () => m.removeEventListener('change', onChange)
   }, [theme])
 
-  return { theme, isDark, toggle: () => themeItem.setValue(isDark ? 'light' : 'dark') }
+  return {
+    theme,
+    isDark,
+    toggle: () => themeItem.setValue(isDark ? 'light' : 'dark'),
+    setTheme: (next: Theme) => themeItem.setValue(next),
+  }
 }

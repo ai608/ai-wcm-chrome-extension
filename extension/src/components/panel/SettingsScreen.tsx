@@ -1,69 +1,177 @@
+import { ArrowLeft, LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { useState } from 'react'
 import { queryClient } from '@/app/providers'
 import { PanelHeader } from '@/components/panel/PanelHeader'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
-import { logout, useAuth } from '@/hooks/use-auth'
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { logout } from '@/hooks/use-auth'
+import { type Theme, useTheme } from '@/hooks/use-theme'
+import type { User } from '@/lib/api/types'
 import { getEnv } from '@/lib/env'
 import { usePanelStore } from '@/stores/panel-store'
 
-export function SettingsScreen() {
-  const { user } = useAuth()
+const themes = [
+  { value: 'system', label: 'System', icon: Monitor },
+  { value: 'light', label: 'Light', icon: Sun },
+  { value: 'dark', label: 'Dark', icon: Moon },
+] as const
+
+export function SettingsScreen({ user }: { user: User }) {
   const setView = usePanelStore((s) => s.setView)
+  const { theme, setTheme } = useTheme()
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
+  const [signOutError, setSignOutError] = useState<string | null>(null)
   const env = getEnv()
   const version = browser.runtime.getManifest().version
+  const name = user.fullName.trim() || 'Signed in'
+  const initial = (user.fullName.trim() || user.email).charAt(0).toUpperCase()
 
   async function signOut() {
     setPending(true)
+    setSignOutError(null)
     try {
       await logout()
-    } finally {
       queryClient.clear()
       setView('main')
+    } catch (error) {
+      setSignOutError(error instanceof Error ? error.message : 'Could not sign out. Try again.')
+    } finally {
       setPending(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <PanelHeader />
-      <main className="flex flex-1 flex-col gap-3 p-3">
-        <Card>
-          <CardContent className="flex flex-col gap-1 pt-4 text-[13px]">
-            <p className="text-sm font-medium">{user?.fullName ?? 'Signed in'}</p>
-            <p className="text-muted-foreground">{user?.email}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="flex flex-col gap-1 pt-4 text-[13px] text-muted-foreground">
-            <p>Version {version}</p>
-            <p>API {env.apiBaseUrl}</p>
-            <p>Mock {env.apiMock ? 'on' : 'off'}</p>
-          </CardContent>
-        </Card>
-        {confirming ? (
-          <div className="flex flex-col gap-2">
-            <p className="text-[13px]">Sign out?</p>
-            <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => setConfirming(false)}>
-                Cancel
-              </Button>
-              <Button size="sm" onClick={signOut} disabled={pending}>
-                {pending ? 'Signing out…' : 'Sign out'}
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <Button variant="outline" onClick={() => setConfirming(true)}>
-            Sign out
+    <div className="flex h-screen flex-col overflow-hidden">
+      <PanelHeader mode="Settings" />
+      <main className="min-h-0 flex-1 overflow-y-auto bg-muted/30 px-4 py-4">
+        <div className="mx-auto flex w-full max-w-lg flex-col gap-6">
+          <Button
+            variant="ghost"
+            className="-ml-2 h-9 self-start px-2 text-muted-foreground hover:text-foreground"
+            onClick={() => setView('main')}
+          >
+            <ArrowLeft aria-hidden="true" />
+            Back to assistant
           </Button>
-        )}
-        <Button variant="ghost" onClick={() => setView('main')}>
-          Back
-        </Button>
+
+          <section aria-labelledby="settings-account">
+            <h1 id="settings-account" className="mb-3 text-sm font-semibold">
+              Account
+            </h1>
+            <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-4">
+              <div
+                aria-hidden="true"
+                className="flex size-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-base font-semibold text-primary"
+              >
+                {initial}
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold">{name}</p>
+                <p className="break-all text-[12px] leading-5 text-muted-foreground">
+                  {user.email}
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section aria-labelledby="settings-appearance">
+            <h2 id="settings-appearance" className="text-sm font-semibold">
+              Appearance
+            </h2>
+            <p className="mt-1 text-[12px] text-muted-foreground">
+              Choose how the extension looks.
+            </p>
+            <RadioGroup
+              value={theme}
+              onValueChange={(value) => setTheme(value as Theme)}
+              aria-label="Appearance"
+              className="mt-3 grid grid-cols-3 gap-2"
+            >
+              {themes.map(({ value, label, icon: Icon }) => (
+                <label
+                  key={value}
+                  htmlFor={`settings-theme-${value}`}
+                  className={`flex min-h-12 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 text-[12px] font-medium has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 ${
+                    theme === value
+                      ? 'border-primary bg-primary/5 text-primary'
+                      : 'border-border bg-card text-foreground hover:bg-muted'
+                  }`}
+                >
+                  <RadioGroupItem
+                    id={`settings-theme-${value}`}
+                    value={value}
+                    className="sr-only"
+                  />
+                  <Icon aria-hidden="true" className="size-4 shrink-0" />
+                  {label}
+                </label>
+              ))}
+            </RadioGroup>
+          </section>
+
+          <section aria-labelledby="settings-connection">
+            <h2 id="settings-connection" className="mb-3 text-sm font-semibold">
+              Connection
+            </h2>
+            <dl className="divide-y divide-border rounded-xl border border-border bg-card px-4">
+              <div className="flex items-center justify-between gap-3 py-3">
+                <dt className="text-[12px] text-muted-foreground">Data source</dt>
+                <dd className="text-[12px] font-medium">
+                  {env.apiMock ? 'Mock data' : 'Live API'}
+                </dd>
+              </div>
+              <div className="py-3">
+                <dt className="text-[12px] text-muted-foreground">API endpoint</dt>
+                <dd className="mt-1 break-all text-[12px] font-medium leading-5">
+                  {env.apiBaseUrl}
+                </dd>
+              </div>
+            </dl>
+          </section>
+
+          <section aria-labelledby="settings-session" className="pb-2">
+            <h2 id="settings-session" className="mb-3 text-sm font-semibold">
+              Session
+            </h2>
+            {confirming ? (
+              <div className="rounded-xl border border-border bg-card p-4">
+                <p className="text-sm font-medium">Sign out of this extension?</p>
+                <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
+                  You’ll need to sign in again to use it.
+                </p>
+                {signOutError ? (
+                  <Alert variant="destructive" className="mt-3">
+                    <AlertDescription>{signOutError}</AlertDescription>
+                  </Alert>
+                ) : null}
+                <div className="mt-4 flex justify-end gap-2">
+                  <Button variant="outline" onClick={() => setConfirming(false)} disabled={pending}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" onClick={signOut} disabled={pending}>
+                    {pending ? 'Signing out…' : 'Sign out'}
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <Button
+                variant="outline"
+                className="w-full justify-start"
+                onClick={() => setConfirming(true)}
+              >
+                <LogOut aria-hidden="true" />
+                Sign out
+              </Button>
+            )}
+          </section>
+        </div>
       </main>
+      <footer className="flex items-center justify-between border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+        <span>WCM Sales Assistant</span>
+        <span>Version {version}</span>
+      </footer>
     </div>
   )
 }
