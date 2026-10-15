@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { usePanelStore } from '@/stores/panel-store'
@@ -86,6 +86,9 @@ const USER = {
 describe('App view switch', () => {
   beforeEach(() => {
     fakeBrowser.reset()
+    vi.spyOn(fakeBrowser.runtime, 'getManifest').mockReturnValue({
+      version: '0.1.0',
+    } as ReturnType<typeof fakeBrowser.runtime.getManifest>)
     vi.stubGlobal('browser', fakeBrowser)
     vi.stubGlobal('chrome', fakeBrowser)
     vi.stubEnv('WXT_GHL_HOST', 'app.example.com')
@@ -96,6 +99,7 @@ describe('App view switch', () => {
 
   afterEach(() => {
     cleanup()
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.unstubAllEnvs()
   })
@@ -112,6 +116,10 @@ describe('App view switch', () => {
     authState.isLoading = false
     await renderApp()
     expect(screen.getByText('No extension access')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
+    expect(screen.getByText('Appearance')).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Back to assistant' }))
+    expect(screen.getByText('No extension access')).toBeDefined()
   })
 
   it('shows no-contact without a contact page', async () => {
@@ -121,6 +129,7 @@ describe('App view switch', () => {
     config = { ghlLocationId: 'L1', bookingWidgetUrl: 'about:blank', scriptVersion: 3 }
     await renderApp()
     expect(screen.getByText('Open a contact in GoHighLevel')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined()
   })
 
   it('blocks the wrong ghl account', async () => {
@@ -130,6 +139,7 @@ describe('App view switch', () => {
     config = { ghlLocationId: 'L1', bookingWidgetUrl: 'about:blank', scriptVersion: 3 }
     await renderApp()
     expect(screen.getByText('Wrong GHL account')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined()
   })
 
   it('renders call mode on the sales account', async () => {
@@ -148,5 +158,6 @@ describe('App view switch', () => {
     activeTab = { tabId: 1, url: 'chrome://extensions', kind: 'unsupported' }
     await renderApp()
     expect(screen.getByText('Open a clinic website or a GHL contact')).toBeDefined()
+    expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined()
   })
 })

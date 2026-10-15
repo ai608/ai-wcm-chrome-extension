@@ -1,10 +1,12 @@
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { Card, CardContent } from '@/components/ui/card'
+import { usePanelStore } from '@/stores/panel-store'
 
 export function WrongAccountScreen() {
+  const setView = usePanelStore((s) => s.setView)
   return (
     <div className="flex min-h-screen flex-col">
-      <PanelHeader />
+      <PanelHeader onSettings={() => setView('settings')} />
       <main className="flex flex-1 items-center justify-center p-4">
         <Card className="w-full">
           <CardContent className="pt-4 text-center">

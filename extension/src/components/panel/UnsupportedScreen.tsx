@@ -1,9 +1,11 @@
 import { PanelHeader } from '@/components/panel/PanelHeader'
+import { usePanelStore } from '@/stores/panel-store'
 
 export function UnsupportedScreen() {
+  const setView = usePanelStore((s) => s.setView)
   return (
     <div className="flex min-h-screen flex-col">
-      <PanelHeader />
+      <PanelHeader onSettings={() => setView('settings')} />
       <main className="flex flex-1 flex-col items-center justify-center gap-1 px-6 text-center">
         <p className="text-base font-semibold">Open a clinic website or a GHL contact</p>
         <p className="text-[14px] text-muted-foreground">
