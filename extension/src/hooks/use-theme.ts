@@ -43,6 +43,5 @@ export function useTheme() {
     theme,
     isDark,
     toggle: () => themeItem.setValue(isDark ? 'light' : 'dark'),
-    setTheme: (next: Theme) => themeItem.setValue(next),
   }
 }

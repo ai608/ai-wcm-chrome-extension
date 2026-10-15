@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import type { User } from '@/lib/api/types'
@@ -38,14 +38,11 @@ describe('SettingsScreen', () => {
     vi.unstubAllEnvs()
   })
 
-  it('saves the selected appearance and returns to the call screen', async () => {
+  it('shows the account and returns to the assistant', async () => {
     const { SettingsScreen } = await import('@/components/panel/SettingsScreen')
-    const { themeItem } = await import('@/lib/storage')
     render(<SettingsScreen user={user} />)
     expect(screen.getByText('Sam Rivera')).toBeDefined()
-
-    fireEvent.click(screen.getByRole('radio', { name: 'Dark' }))
-    await waitFor(async () => expect(await themeItem.getValue()).toBe('dark'))
+    expect(screen.queryByRole('radio')).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to assistant' }))
     expect(usePanelStore.getState().view).toBe('main')

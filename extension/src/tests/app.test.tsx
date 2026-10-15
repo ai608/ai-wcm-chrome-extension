@@ -117,7 +117,7 @@ describe('App view switch', () => {
     await renderApp()
     expect(screen.getByText('No extension access')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'Settings' }))
-    expect(screen.getByText('Appearance')).toBeDefined()
+    expect(screen.getByText('Connection')).toBeDefined()
     fireEvent.click(screen.getByRole('button', { name: 'Back to assistant' }))
     expect(screen.getByText('No extension access')).toBeDefined()
   })

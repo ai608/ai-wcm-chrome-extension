@@ -1,25 +1,16 @@
-import { ArrowLeft, LogOut, Monitor, Moon, Sun } from 'lucide-react'
+import { ArrowLeft, LogOut } from 'lucide-react'
 import { useState } from 'react'
 import { queryClient } from '@/app/providers'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
 import { logout } from '@/hooks/use-auth'
-import { type Theme, useTheme } from '@/hooks/use-theme'
 import type { User } from '@/lib/api/types'
 import { getEnv } from '@/lib/env'
 import { usePanelStore } from '@/stores/panel-store'
 
-const themes = [
-  { value: 'system', label: 'System', icon: Monitor },
-  { value: 'light', label: 'Light', icon: Sun },
-  { value: 'dark', label: 'Dark', icon: Moon },
-] as const
-
 export function SettingsScreen({ user }: { user: User }) {
   const setView = usePanelStore((s) => s.setView)
-  const { theme, setTheme } = useTheme()
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
@@ -74,41 +65,6 @@ export function SettingsScreen({ user }: { user: User }) {
                 </p>
               </div>
             </div>
-          </section>
-
-          <section aria-labelledby="settings-appearance">
-            <h2 id="settings-appearance" className="text-sm font-semibold">
-              Appearance
-            </h2>
-            <p className="mt-1 text-[12px] text-muted-foreground">
-              Choose how the extension looks.
-            </p>
-            <RadioGroup
-              value={theme}
-              onValueChange={(value) => setTheme(value as Theme)}
-              aria-label="Appearance"
-              className="mt-3 grid grid-cols-3 gap-2"
-            >
-              {themes.map(({ value, label, icon: Icon }) => (
-                <label
-                  key={value}
-                  htmlFor={`settings-theme-${value}`}
-                  className={`flex min-h-12 cursor-pointer items-center justify-center gap-1.5 rounded-lg border px-2 text-[12px] font-medium has-[:focus-visible]:ring-3 has-[:focus-visible]:ring-ring/50 ${
-                    theme === value
-                      ? 'border-primary bg-primary/5 text-primary'
-                      : 'border-border bg-card text-foreground hover:bg-muted'
-                  }`}
-                >
-                  <RadioGroupItem
-                    id={`settings-theme-${value}`}
-                    value={value}
-                    className="sr-only"
-                  />
-                  <Icon aria-hidden="true" className="size-4 shrink-0" />
-                  {label}
-                </label>
-              ))}
-            </RadioGroup>
           </section>
 
           <section aria-labelledby="settings-connection">
