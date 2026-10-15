@@ -19,8 +19,11 @@ def rate_limit(key: str, limit: int, window_s: int) -> None:
 
 def prune(window_s: int = 86400) -> None:
     cutoff = time.monotonic() - window_s
-    for key, hits in list(_hits.items()):
+    stale: list[str] = []
+    for key, hits in _hits.items():
         while hits and hits[0] <= cutoff:
             hits.popleft()
         if not hits:
-            del _hits[key]
+            stale.append(key)
+    for key in stale:
+        del _hits[key]
