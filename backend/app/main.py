@@ -28,8 +28,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     if settings.DATABASE_URL:
         pool = await asyncpg.create_pool(
             dsn=settings.DATABASE_URL,
-            min_size=1,
-            max_size=5,
+            min_size=settings.DB_POOL_SIZE,
+            max_size=settings.DB_POOL_SIZE + settings.DB_MAX_OVERFLOW,
+            timeout=settings.DB_POOL_TIMEOUT,
+            command_timeout=settings.DB_COMMAND_TIMEOUT,
+            max_inactive_connection_lifetime=settings.DB_MAX_INACTIVE_LIFETIME,
             statement_cache_size=0,
         )
         try:
@@ -61,6 +64,7 @@ app.add_middleware(
     allow_origins=[
         s.strip() for s in settings.CORS_ALLOWED_ORIGINS.split(",") if s.strip()
     ],
+    allow_origin_regex=settings.CORS_ALLOWED_ORIGIN_REGEX or None,
     allow_methods=["GET", "POST", "PATCH"],
     allow_headers=["Authorization", "Content-Type"],
 )

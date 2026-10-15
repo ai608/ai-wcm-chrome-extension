@@ -4,11 +4,17 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     ENV: str = "local"
     DATABASE_URL: str = ""
+    DB_POOL_SIZE: int = 2
+    DB_MAX_OVERFLOW: int = 3
+    DB_POOL_TIMEOUT: float = 30.0
+    DB_COMMAND_TIMEOUT: float = 30.0
+    DB_MAX_INACTIVE_LIFETIME: float = 120.0
     SUPABASE_URL: str = ""
     SUPABASE_PUBLISHABLE_KEY: str = ""
     ENCRYPTION_KEY: str = ""
     FULL_ACCESS_EMAILS: str = "raj.gajjar@e2m.solutions"
     CORS_ALLOWED_ORIGINS: str = ""
+    CORS_ALLOWED_ORIGIN_REGEX: str = ""
     GHL_PIT: str = ""
     GHL_SALES_LOCATION_ID: str = ""
     GHL_BOOKING_WIDGET_URL: str = ""

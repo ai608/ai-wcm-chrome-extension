@@ -14,6 +14,8 @@ uv run mypy app
 
 Use the same Supabase project, Postgres database, and `ENCRYPTION_KEY` as the AI Lead Pipeline. The backend reads `public.profiles`; it never writes that table. Grant `chrome_extension` through the AI Lead Pipeline Access Control screen.
 
+Use the Supabase transaction pooler on port 6543 for `DATABASE_URL`. Configure pool size, overflow, acquire timeout, command timeout, and idle lifetime with the `DB_*` settings in `.env.example`. Set `CORS_ALLOWED_ORIGINS` to the extension's `chrome-extension://` origin. For local builds whose IDs change, `CORS_ALLOWED_ORIGIN_REGEX=^chrome-extension://[a-p]{32}$` permits extension origins during development.
+
 App data stays in the separate `extension` schema. Applied filenames are recorded in `extension.schema_migrations`; concurrent instances serialize migration runs with a Postgres advisory lock. Roll back application code without dropping the schema or its data. Database changes need a new forward migration.
 
 `orjson` handles provider JSON and non-model API responses. Auth responses with Pydantic models use FastAPI's built-in serializer.
