@@ -2,7 +2,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { QuestionField } from '@/components/script/QuestionField'
 import type { Block, FieldValue } from '@/lib/api/types'
-import { __resetAutosave, useAutosaveStore } from '@/stores/autosave-store'
+import { resetAutosave, useAutosaveStore } from '@/stores/autosave-store'
 
 vi.mock('@/lib/messaging', () => ({
   call: async () => ({ fieldValues: {}, updatedAt: '2026-10-14T00:00:00Z' }),
@@ -32,13 +32,24 @@ function queued(): FieldValue | undefined {
 describe('QuestionField', () => {
   afterEach(() => {
     cleanup()
-    __resetAutosave()
+    resetAutosave()
   })
 
   it('commits text input', () => {
     renderField(question({ input: 'text' }))
     fireEvent.change(screen.getByLabelText('Test field'), { target: { value: 'hello' } })
     expect(queued()).toBe('hello')
+  })
+
+  it('shows refreshed values without replacing an unsaved draft', () => {
+    const block = question({ input: 'text' })
+    const view = renderField(block, 'first')
+    view.rerender(<QuestionField contactId="c1" block={block} initialValue="refreshed" />)
+    expect((screen.getByLabelText('Test field') as HTMLInputElement).value).toBe('refreshed')
+
+    fireEvent.change(screen.getByLabelText('Test field'), { target: { value: 'draft' } })
+    view.rerender(<QuestionField contactId="c1" block={block} initialValue="older" />)
+    expect((screen.getByLabelText('Test field') as HTMLInputElement).value).toBe('draft')
   })
 
   it('commits textarea input', () => {

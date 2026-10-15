@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { FieldStatus } from '@/components/script/FieldStatus'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
@@ -44,8 +44,18 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
   const [draft, setDraft] = useState<FieldValue | undefined>(initialValue)
   const [text, setText] = useState(() => toText(initialValue))
   const [numberError, setNumberError] = useState(false)
+  const lastValue = useRef(initialValue)
+
+  useEffect(() => {
+    if (status === 'pending' || status === 'saving' || status === 'error' || numberError) return
+    if (JSON.stringify(initialValue) === JSON.stringify(lastValue.current)) return
+    lastValue.current = initialValue
+    setDraft(initialValue)
+    setText(toText(initialValue))
+  }, [initialValue, status, numberError])
 
   function commit(value: FieldValue) {
+    lastValue.current = value
     setDraft(value)
     setField(contactId, block.fieldKey, value, inputClass)
   }

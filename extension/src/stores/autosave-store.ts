@@ -32,6 +32,7 @@ interface AutosaveActions {
 const timers = new Map<string, ReturnType<typeof setTimeout>>()
 const batchTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const savedTimers = new Map<string, ReturnType<typeof setTimeout>>()
+let session = 0
 
 function timerKey(contactId: string, fieldKey: string) {
   return `${contactId}::${fieldKey}`
@@ -59,6 +60,7 @@ function writeCache(contactId: string, fields: Record<string, FieldValue>) {
 }
 
 async function sendPatch(contactId: string) {
+  const patchSession = session
   const store = useAutosaveStore.getState()
   if (store.inFlight[contactId]) return
   const fields = store.queue[contactId]
@@ -69,16 +71,21 @@ async function sendPatch(contactId: string) {
 
   try {
     const result = await call('patchFields', { contactId, fields })
-    writeCache(contactId, result.fieldValues)
+    if (patchSession !== session) return
     useAutosaveStore.setState((s) => {
       const queue = { ...s.queue }
       const remaining = { ...(queue[contactId] ?? {}) }
-      for (const key of Object.keys(fields)) delete remaining[key]
+      for (const [key, value] of Object.entries(fields)) {
+        if (JSON.stringify(remaining[key]) === JSON.stringify(value)) delete remaining[key]
+      }
       if (Object.keys(remaining).length === 0) delete queue[contactId]
       else queue[contactId] = remaining
       return { queue, failStreak: { ...s.failStreak, [contactId]: 0 } }
     })
+    const remaining = useAutosaveStore.getState().queue[contactId] ?? {}
+    writeCache(contactId, { ...result.fieldValues, ...remaining })
     for (const key of Object.keys(fields)) {
+      if (key in remaining) continue
       setStatus(contactId, key, 'saved')
       const tk = timerKey(contactId, key)
       clearTimer(tk, savedTimers)
@@ -92,6 +99,7 @@ async function sendPatch(contactId: string) {
       )
     }
   } catch (err) {
+    if (patchSession !== session) return
     const message = err instanceof ApiError ? err.message : 'Could not save'
     useAutosaveStore.setState((s) => {
       const streak = (s.failStreak[contactId] ?? 0) + 1
@@ -113,12 +121,14 @@ async function sendPatch(contactId: string) {
     })
     for (const key of Object.keys(fields)) setStatus(contactId, key, 'error')
   } finally {
-    useAutosaveStore.setState((s) => ({ inFlight: { ...s.inFlight, [contactId]: false } }))
-    const current = useAutosaveStore.getState().queue[contactId] ?? {}
-    const changed =
-      Object.keys(current).length !== Object.keys(fields).length ||
-      Object.entries(fields).some(([k, v]) => JSON.stringify(current[k]) !== JSON.stringify(v))
-    if (changed) void sendPatch(contactId)
+    if (patchSession === session) {
+      useAutosaveStore.setState((s) => ({ inFlight: { ...s.inFlight, [contactId]: false } }))
+      const current = useAutosaveStore.getState().queue[contactId] ?? {}
+      const changed =
+        Object.keys(current).length !== Object.keys(fields).length ||
+        Object.entries(fields).some(([k, v]) => JSON.stringify(current[k]) !== JSON.stringify(v))
+      if (changed) void sendPatch(contactId)
+    }
   }
 }
 
@@ -185,7 +195,8 @@ export const useAutosaveStore = create<AutosaveState & AutosaveActions>()((set, 
   },
 }))
 
-export function __resetAutosave() {
+export function resetAutosave() {
+  session += 1
   for (const t of timers.values()) clearTimeout(t)
   for (const t of batchTimers.values()) clearTimeout(t)
   for (const t of savedTimers.values()) clearTimeout(t)

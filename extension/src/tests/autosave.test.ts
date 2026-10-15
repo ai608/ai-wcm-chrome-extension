@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { queryClient } from '@/app/providers'
 import { qk } from '@/hooks/queries'
 import type { ContactContext } from '@/lib/api/types'
-import { __resetAutosave, useAutosaveStore } from '@/stores/autosave-store'
+import { resetAutosave, useAutosaveStore } from '@/stores/autosave-store'
 
 const callMock = vi.fn()
 
@@ -47,7 +47,7 @@ function status(contactId: string, fieldKey: string) {
 describe('autosave store', () => {
   beforeEach(() => {
     vi.useFakeTimers()
-    __resetAutosave()
+    resetAutosave()
     queryClient.clear()
     callMock.mockReset()
     callMock.mockImplementation(
@@ -129,5 +129,43 @@ describe('autosave store', () => {
     await vi.advanceTimersByTimeAsync(100)
     expect(callMock).toHaveBeenCalledTimes(2)
     expect(callMock.mock.calls[1]?.[1]).toEqual({ contactId: 'c1', fields: { 'contact.b': '2' } })
+  })
+
+  it('keeps a newer edit to the same field while a PATCH is in flight', async () => {
+    let release!: () => void
+    callMock.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = () => resolve({ fieldValues: { 'contact.a': 'old' }, updatedAt: 'x' })
+      }),
+    )
+    const { setField } = useAutosaveStore.getState()
+    setField('c1', 'contact.a', 'old', 'fast')
+    await vi.advanceTimersByTimeAsync(400)
+    setField('c1', 'contact.a', 'new', 'fast')
+    await vi.advanceTimersByTimeAsync(400)
+    release()
+    await vi.advanceTimersByTimeAsync(100)
+
+    expect(callMock.mock.calls[1]?.[1]).toEqual({ contactId: 'c1', fields: { 'contact.a': 'new' } })
+    expect(queryClient.getQueryData<ContactContext>(qk.contactContext('c1'))?.fieldValues['contact.a']).toBe('new')
+    expect(useAutosaveStore.getState().queue.c1).toBeUndefined()
+  })
+
+  it('ignores a PATCH response after account state is cleared', async () => {
+    let release!: () => void
+    callMock.mockImplementationOnce(
+      () => new Promise((resolve) => {
+        release = () => resolve({ fieldValues: { 'contact.a': 'old' }, updatedAt: 'x' })
+      }),
+    )
+    useAutosaveStore.getState().setField('c1', 'contact.a', 'old', 'fast')
+    await vi.advanceTimersByTimeAsync(400)
+    resetAutosave()
+    queryClient.clear()
+    release()
+    await vi.advanceTimersByTimeAsync(0)
+
+    expect(useAutosaveStore.getState().queue.c1).toBeUndefined()
+    expect(queryClient.getQueryData(qk.contactContext('c1'))).toBeUndefined()
   })
 })
