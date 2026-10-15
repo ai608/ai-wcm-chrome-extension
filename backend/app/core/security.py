@@ -1,4 +1,3 @@
-# Copied from AI Lead Pipeline backend app/core/security.py, trimmed for the Sales Assistant.
 import ssl
 
 import certifi

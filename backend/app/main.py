@@ -11,6 +11,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1 import auth, stubs
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
+from app.core.json import OrjsonResponse
+from app.core.migrate import run_migrations
 from app.core.rate_limit import prune
 
 
@@ -22,16 +24,20 @@ async def prune_rate_limits() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
-    app.state.pool = (
-        await asyncpg.create_pool(
+    pool: asyncpg.Pool | None = None
+    if settings.DATABASE_URL:
+        pool = await asyncpg.create_pool(
             dsn=settings.DATABASE_URL,
             min_size=1,
             max_size=5,
             statement_cache_size=0,
         )
-        if settings.DATABASE_URL
-        else None
-    )
+        try:
+            await run_migrations(pool)
+        except Exception:
+            await pool.close()
+            raise
+    app.state.pool = pool
     async with httpx.AsyncClient(timeout=10) as client:
         app.state.http_client = client
         prune_task = asyncio.create_task(prune_rate_limits())
@@ -41,11 +47,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             prune_task.cancel()
             with suppress(asyncio.CancelledError):
                 await prune_task
-            if app.state.pool is not None:
-                await app.state.pool.close()
+            if pool is not None:
+                await pool.close()
 
 
-app = FastAPI(title="WCM Sales Assistant API", lifespan=lifespan)
+app = FastAPI(
+    title="WCM Sales Assistant API",
+    lifespan=lifespan,
+    default_response_class=OrjsonResponse,
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

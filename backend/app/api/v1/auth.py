@@ -1,9 +1,9 @@
-# Copied from AI Lead Pipeline backend app/api/v1/auth.py, trimmed for the Sales Assistant.
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpx
 import jwt
+import orjson
 from fastapi import APIRouter, Depends, Request, Response
 
 from app.core.config import settings
@@ -62,7 +62,7 @@ def _auth_response(tokens: dict[str, Any], profile: UserProfile) -> AuthResponse
 
 def _tokens(response: httpx.Response) -> dict[str, Any]:
     try:
-        payload = response.json()
+        payload = orjson.loads(response.content)
     except ValueError as exc:
         raise AppError(
             502, "upstream_error", "Invalid Supabase token response"

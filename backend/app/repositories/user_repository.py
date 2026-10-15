@@ -1,4 +1,3 @@
-# Copied from AI Lead Pipeline backend app/repositories/user_repository.py, trimmed for the Sales Assistant.
 import asyncpg
 
 from app.core.encryption import decrypt_value

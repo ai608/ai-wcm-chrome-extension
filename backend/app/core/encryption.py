@@ -1,4 +1,3 @@
-# Copied from AI Lead Pipeline backend app/core/encryption.py, trimmed for the Sales Assistant.
 from __future__ import annotations
 
 from cryptography.fernet import Fernet, InvalidToken

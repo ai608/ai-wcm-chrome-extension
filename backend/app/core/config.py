@@ -24,8 +24,6 @@ class Settings(BaseSettings):
     APIFY_GMAPS_ACTOR_ID: str = ""
     APOLLO_API_KEY: str = ""
     AHREFS_API_KEY: str = ""
-    MAILGUN_API_KEY: str = ""
-    MAILGUN_DOMAIN: str = ""
     REPORT_FROM_EMAIL: str = ""
     SLACK_MARKETING_ALERTS_WEBHOOK: str = ""
 

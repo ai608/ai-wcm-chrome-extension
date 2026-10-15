@@ -1,8 +1,8 @@
-# Copied from AI Lead Pipeline backend app/models/user.py, trimmed for the Sales Assistant.
-import json
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+
+import orjson
 
 from app.core.config import settings
 
@@ -26,7 +26,7 @@ def _parse_dt_opt(value: Any) -> datetime | None:
 def _parse_automation_access(value: Any) -> dict[str, Any]:
     if isinstance(value, str):
         try:
-            parsed = json.loads(value)
+            parsed = orjson.loads(value)
         except ValueError:
             return {}
         value = parsed if isinstance(parsed, dict) else {}
@@ -37,7 +37,7 @@ def _parse_automation_access(value: Any) -> dict[str, Any]:
     for key, grant in value.items():
         if isinstance(grant, str):
             try:
-                grant = json.loads(grant)
+                grant = orjson.loads(grant)
             except ValueError:
                 continue
         if isinstance(grant, dict):

@@ -1,4 +1,3 @@
-# Copied from AI Lead Pipeline backend app/services/totp.py, trimmed for the Sales Assistant.
 import pyotp
 
 

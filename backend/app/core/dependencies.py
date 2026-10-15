@@ -1,4 +1,3 @@
-# Copied from AI Lead Pipeline backend app/core/dependencies.py, trimmed for the Sales Assistant.
 from typing import Any
 
 import asyncpg
