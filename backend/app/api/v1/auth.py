@@ -16,6 +16,7 @@ from app.core.exceptions import AppError
 from app.core.rate_limit import rate_limit
 from app.core.security import verify_token
 from app.models.user import UserProfile
+from app.repositories.auth_session_repository import AuthSessionRepository
 from app.repositories.user_repository import UserRepository
 from app.schemas.auth import AuthResponse, LoginRequest, RefreshRequest, UserResponse
 from app.services.totp import verify_code
@@ -122,9 +123,25 @@ async def login(
 @router.post("/auth/refresh", response_model=AuthResponse)
 async def refresh(
     body: RefreshRequest,
+    request: Request,
     user_repo: UserRepository = Depends(get_user_repository),
     client: httpx.AsyncClient = Depends(get_http_client),
 ) -> AuthResponse:
+    if body.refresh_token.startswith("wcm_rt_"):
+        result = await AuthSessionRepository(request.app.state.pool).rotate(body.refresh_token)
+        if result is None:
+            raise AppError(401, "unauthorized", "Session expired")
+        user_id, access, next_refresh, expires = result
+        profile = await user_repo.get_by_id(user_id)
+        if profile is None or not profile.is_active or not profile.can_open("chrome_extension"):
+            await AuthSessionRepository(request.app.state.pool).revoke_access(access)
+            raise AppError(403, "no_extension_access", "Extension access is not enabled")
+        return AuthResponse(
+            access_token=access,
+            refresh_token=next_refresh,
+            expires_at=expires,
+            user=_user(profile),
+        )
     try:
         supabase_resp = await client.post(
             f"{settings.SUPABASE_URL}/auth/v1/token",
@@ -147,6 +164,9 @@ async def logout(
     client: httpx.AsyncClient = Depends(get_http_client),
 ) -> Response:
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
+    if scheme.lower() == "bearer" and token.startswith("wcm_at_"):
+        await AuthSessionRepository(request.app.state.pool).revoke_access(token.strip())
+        return Response(status_code=204)
     if scheme.lower() == "bearer" and token.strip() and settings.SUPABASE_URL:
         try:
             await client.post(

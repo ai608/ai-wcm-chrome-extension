@@ -111,6 +111,10 @@ export async function request<T>(
     }
 
     const code = (payload as ErrorEnvelope | null)?.error?.code
+    if (res.status === 403 && auth && code === 'no_extension_access') {
+      await clearAuth()
+      throw toApiError(res.status, payload, code)
+    }
     if (
       res.status === 401 &&
       auth &&

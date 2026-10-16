@@ -19,7 +19,14 @@ npm run dev   # opens Chrome with the extension loaded
 | --- | --- |
 | `WXT_GHL_HOST` | White-labeled GHL host, no protocol (e.g. `app.example.com`) |
 | `WXT_API_BASE_URL` | O4 backend base URL, no trailing slash |
+| `WXT_O1_WEB_URL` | O1 web app URL for account sign-in |
 | `WXT_API_MOCK` | `true` = answer every API call from in-memory mock data |
+
+## Live sign-in (`WXT_API_MOCK=false`)
+
+Start O1's backend on port 8000, O4's backend on port 8001, and O1's frontend on port 5173. Set the same `EXTENSION_HANDOFF_SECRET` on both backends. Add this installed extension's ID to `EXTENSION_ALLOWED_IDS` on both backends.
+
+Open the extension and select **Continue with WCM**. Sign in on O1 if needed. O1 checks the `chrome_extension` grant and connects the extension. The extension receives its own session; O1's web cookies stay in the web app. The O4 backend applies the session-table migration on startup.
 
 ## Mock mode (`WXT_API_MOCK=true`)
 
@@ -70,6 +77,8 @@ npm run build  # .output/chrome-mv3  — chrome://extensions → Developer mode 
 npm run size   # fails if sidepanel JS > 250 KB or background > 40 KB gzipped
 npm run zip    # release zip for the Chrome Web Store (private listing)
 ```
+
+Release packaging requires deployed HTTPS values for `WXT_API_BASE_URL` and `WXT_O1_WEB_URL`, plus `WXT_API_MOCK=false`. It fails if either URL points to localhost.
 
 ## Checks
 

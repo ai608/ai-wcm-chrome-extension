@@ -6,7 +6,7 @@ The app applies pending SQL migrations on startup when `DATABASE_URL` is set.
 ```bash
 cp .env.example .env
 uv sync
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:app --reload --port 8001
 uv run pytest
 uv run ruff check app tests
 uv run mypy app
@@ -20,4 +20,6 @@ App data stays in the separate `extension` schema. Applied filenames are recorde
 
 `orjson` handles provider JSON and non-model API responses. Auth responses with Pydantic models use FastAPI's built-in serializer.
 
-Point the extension's `WXT_API_BASE_URL` to this server and set `WXT_API_MOCK=false`. Real-account 2FA login requires valid Supabase credentials and cannot run in offline tests.
+Set the same `EXTENSION_HANDOFF_SECRET` in this backend and the AI Lead Pipeline backend. Add the installed extension ID to `EXTENSION_ALLOWED_IDS` in both. O1 runs on port 8000 and the O1 frontend runs on port 5173 locally. Point `WXT_API_BASE_URL` at this server on port 8001, set `WXT_O1_WEB_URL` to the O1 frontend, and set `WXT_API_MOCK=false`.
+
+The extension opens O1 for sign-in. O1 issues a one-time code after checking the user's grant. This backend exchanges the code for an extension session. The migration creates `extension.auth_sessions`; tokens are stored as hashes. Existing password endpoints remain for compatibility during rollout.

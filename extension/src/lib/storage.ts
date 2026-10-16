@@ -29,6 +29,12 @@ export const authItem = storage.defineItem<AuthTokens | null>('session:auth', { 
 
 export const authUserItem = storage.defineItem<User | null>('session:authUser', { fallback: null })
 
+export const authHandoffItem = storage.defineItem<{
+  state: string
+  verifier: string
+  createdAt: number
+} | null>('session:authHandoff', { fallback: null })
+
 export const themeItem = storage.defineItem<'light' | 'dark' | 'system'>('local:theme', {
   fallback: 'system',
 })

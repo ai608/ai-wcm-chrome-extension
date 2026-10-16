@@ -107,6 +107,28 @@ describe('api client', () => {
     await expect(authUserItem.getValue()).resolves.toBeNull()
   })
 
+  it('clears auth when extension access is revoked', async () => {
+    const { request, authItem, authUserItem } = await load()
+    await authItem.setValue(TOKENS)
+    await authUserItem.setValue({
+      id: 'u1',
+      email: 'sdr@example.com',
+      fullName: 'Sam Rep',
+      role: 'user',
+      hasExtensionAccess: true,
+    })
+    const fetchFn = vi.fn(async () =>
+      jsonResponse(403, { error: { code: 'no_extension_access', message: 'Access revoked' } }),
+    )
+    await expect(request('GET', '/config', {}, fetchFn)).rejects.toMatchObject({
+      status: 403,
+      code: 'no_extension_access',
+    })
+    await expect(authItem.getValue()).resolves.toBeNull()
+    await expect(authUserItem.getValue()).resolves.toBeNull()
+    expect(fetchFn).toHaveBeenCalledTimes(1)
+  })
+
   it('retries GET on 429 then succeeds', async () => {
     const { request } = await load()
     let calls = 0

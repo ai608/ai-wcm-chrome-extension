@@ -9,6 +9,10 @@ vi.mock('@/hooks/use-auth', () => ({
   login: (...args: unknown[]) => loginMock(...args),
 }))
 
+vi.mock('@/lib/env', () => ({
+  getEnv: () => ({ apiMock: true }),
+}))
+
 vi.mock('@/hooks/use-theme', () => ({
   useTheme: () => ({ theme: 'light', isDark: false, toggle: () => {} }),
 }))

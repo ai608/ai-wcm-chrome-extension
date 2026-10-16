@@ -3,9 +3,61 @@ import { classifyTab } from '@/lib/active-tab'
 import { ApiError } from '@/lib/api/errors'
 import * as mockApi from '@/lib/api/mock/handlers'
 import * as realApi from '@/lib/api/o4'
-import { getEnv } from '@/lib/env'
+import { getEnv, getO1WebUrl } from '@/lib/env'
 import { onMessage } from '@/lib/messaging'
-import { activeTabItem, authItem, authUserItem } from '@/lib/storage'
+import { activeTabItem, authHandoffItem, authItem, authUserItem } from '@/lib/storage'
+
+function base64url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes))
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '')
+}
+
+async function startWebSignIn() {
+  const state = base64url(crypto.getRandomValues(new Uint8Array(32)))
+  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
+  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
+  const challenge = base64url(new Uint8Array(hash))
+  await authHandoffItem.setValue({ state, verifier, createdAt: Date.now() })
+  const url = new URL('/extension/connect', getO1WebUrl())
+  url.searchParams.set('extension_id', browser.runtime.id)
+  url.searchParams.set('state', state)
+  url.searchParams.set('code_challenge', challenge)
+  await browser.tabs.create({ url: url.toString() })
+}
+
+async function acceptWebSignIn(
+  message: unknown,
+  sender: chrome.runtime.MessageSender,
+): Promise<{ ok: boolean }> {
+  if (!sender.url || new URL(sender.url).origin !== new URL(getO1WebUrl()).origin) {
+    return { ok: false }
+  }
+  if (!message || typeof message !== 'object') return { ok: false }
+  const data = message as Record<string, unknown>
+  if (data.type !== 'wcm-extension-handoff' || typeof data.code !== 'string') {
+    return { ok: false }
+  }
+  const pending = await authHandoffItem.getValue()
+  if (!pending || Date.now() - pending.createdAt > 10 * 60_000 || data.state !== pending.state) {
+    return { ok: false }
+  }
+  await authHandoffItem.setValue(null)
+  try {
+    const { tokens, user } = await realApi.exchangeWeb(
+      data.code,
+      pending.state,
+      pending.verifier,
+      browser.runtime.id,
+    )
+    await authItem.setValue(tokens)
+    await authUserItem.setValue(user)
+    return { ok: true }
+  } catch {
+    return { ok: false }
+  }
+}
 
 async function syncTab(tab: chrome.tabs.Tab | undefined) {
   if (tab?.id == null || !tab.active || tab.windowId == null) return
@@ -26,6 +78,8 @@ function serializeError(err: unknown): never {
 function registerApiHandlers() {
   const env = getEnv()
   const api = env.apiMock ? mockApi : realApi
+
+  onMessage('connectWeb', startWebSignIn)
 
   onMessage('login', async ({ data }) => {
     try {
@@ -213,6 +267,12 @@ async function init() {
 
 function main() {
   registerApiHandlers()
+  browser.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+    acceptWebSignIn(message, sender)
+      .then(sendResponse)
+      .catch(() => sendResponse({ ok: false }))
+    return true
+  })
   browser.runtime.onInstalled.addListener(() => {
     init().catch(console.error)
   })

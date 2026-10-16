@@ -8,6 +8,7 @@ from fastapi import Depends, Request
 from app.core.exceptions import AppError
 from app.core.security import verify_token
 from app.models.user import UserProfile
+from app.repositories.auth_session_repository import AuthSessionRepository
 from app.repositories.user_repository import UserRepository
 
 
@@ -29,6 +30,14 @@ async def get_current_user(request: Request) -> dict[str, Any]:
     scheme, _, token = request.headers.get("Authorization", "").partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise AppError(401, "unauthorized", "Authorization required")
+    if token.startswith("wcm_at_"):
+        pool: asyncpg.Pool | None = getattr(request.app.state, "pool", None)
+        if pool is None:
+            raise AppError(503, "upstream_error", "Database is not configured")
+        user_id = await AuthSessionRepository(pool).user_id_for_access(token)
+        if user_id is None:
+            raise AppError(401, "token_expired", "Session expired")
+        return {"sub": user_id}
     try:
         return verify_token(token.strip())
     except jwt.ExpiredSignatureError as exc:

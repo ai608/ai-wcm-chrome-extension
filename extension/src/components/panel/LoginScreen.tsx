@@ -6,8 +6,51 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { login } from '@/hooks/use-auth'
 import { ApiError } from '@/lib/api/errors'
+import { getEnv } from '@/lib/env'
+import { call } from '@/lib/messaging'
 
 export function LoginScreen() {
+  return getEnv().apiMock ? <MockLoginScreen /> : <WebLoginScreen />
+}
+
+function WebLoginScreen() {
+  const [pending, setPending] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function connect() {
+    setPending(true)
+    setError(null)
+    try {
+      await call('connectWeb')
+    } catch {
+      setError('Could not open WCM sign-in. Try again.')
+    } finally {
+      setPending(false)
+    }
+  }
+
+  return (
+    <div className="flex min-h-screen flex-col">
+      <PanelHeader />
+      <main className="flex flex-1 flex-col items-center justify-center gap-4 p-6 text-center">
+        <h1 className="text-xl font-semibold">Connect your WCM account</h1>
+        <p className="text-sm text-muted-foreground dark:text-white">
+          Sign in on the WCM website. The extension will connect after sign-in.
+        </p>
+        <Button onClick={connect} disabled={pending} className="font-semibold dark:text-white">
+          {pending ? 'Opening WCM…' : 'Continue with WCM'}
+        </Button>
+        {error ? (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        ) : null}
+      </main>
+    </div>
+  )
+}
+
+function MockLoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [totpCode, setTotpCode] = useState('')

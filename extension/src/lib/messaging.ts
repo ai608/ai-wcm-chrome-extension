@@ -14,6 +14,7 @@ import type {
 } from '@/lib/api/types'
 
 export interface ProtocolMap {
+  connectWeb(): void
   login(data: { email: string; password: string; totpCode?: string }): User
   logout(): void
   getConfig(): Config

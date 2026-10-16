@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     DB_MAX_INACTIVE_LIFETIME: float = 120.0
     SUPABASE_URL: str = ""
     SUPABASE_PUBLISHABLE_KEY: str = ""
+    EXTENSION_HANDOFF_SECRET: str = ""
+    EXTENSION_ALLOWED_IDS: str = ""
     ENCRYPTION_KEY: str = ""
     FULL_ACCESS_EMAILS: str = "raj.gajjar@e2m.solutions"
     CORS_ALLOWED_ORIGINS: str = ""

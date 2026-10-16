@@ -11,6 +11,7 @@ function stubBrowser() {
   vi.stubEnv('WXT_GHL_HOST', GHL_HOST)
   vi.stubEnv('WXT_API_BASE_URL', 'http://localhost:8000')
   vi.stubEnv('WXT_API_MOCK', 'true')
+  vi.spyOn(fakeBrowser.runtime.onMessageExternal, 'addListener').mockImplementation(() => {})
   const setOptions = vi.fn(() => Promise.resolve())
   const setPanelBehavior = vi.fn(() => Promise.resolve())
   ;(fakeBrowser as unknown as Record<string, unknown>).sidePanel = {

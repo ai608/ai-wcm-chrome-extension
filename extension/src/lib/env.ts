@@ -18,3 +18,7 @@ export function getEnv(): Env {
     apiMock: (import.meta.env.WXT_API_MOCK as string | undefined) === 'true',
   }
 }
+
+export function getO1WebUrl(): string {
+  return required('WXT_O1_WEB_URL').replace(/\/$/, '')
+}
