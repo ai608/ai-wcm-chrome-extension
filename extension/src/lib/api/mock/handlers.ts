@@ -87,11 +87,11 @@ function stateFor(contactId: string): ContactState {
 function peakSlots(): Record<string, string> {
   return {
     opener:
-      'Your Denver locations have 341 reviews at 4.9 — that kind of reputation usually means ads scale fast.',
+      'Your Denver locations have 341 reviews at 4.9. That kind of reputation usually means ads scale fast.',
     hook: 'Multi-location chiro groups typically see cost per booked exam drop by a third once intake is centralized.',
     qualifier: 'who handles marketing across the two locations today?',
     objection_hint: 'If they mention their agency contract, ask when it renews.',
-    booking_push: 'I can hold a slot Thursday or Friday — which is calmer at the front desk?',
+    booking_push: 'I can hold a slot Thursday or Friday. Which is calmer at the front desk?',
   }
 }
 

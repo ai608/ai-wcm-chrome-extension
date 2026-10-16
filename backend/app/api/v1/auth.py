@@ -128,14 +128,22 @@ async def refresh(
     client: httpx.AsyncClient = Depends(get_http_client),
 ) -> AuthResponse:
     if body.refresh_token.startswith("wcm_rt_"):
-        result = await AuthSessionRepository(request.app.state.pool).rotate(body.refresh_token)
+        result = await AuthSessionRepository(request.app.state.pool).rotate(
+            body.refresh_token
+        )
         if result is None:
             raise AppError(401, "unauthorized", "Session expired")
         user_id, access, next_refresh, expires = result
         profile = await user_repo.get_by_id(user_id)
-        if profile is None or not profile.is_active or not profile.can_open("chrome_extension"):
+        if (
+            profile is None
+            or not profile.is_active
+            or not profile.can_open("chrome_extension")
+        ):
             await AuthSessionRepository(request.app.state.pool).revoke_access(access)
-            raise AppError(403, "no_extension_access", "Extension access is not enabled")
+            raise AppError(
+                403, "no_extension_access", "Extension access is not enabled"
+            )
         return AuthResponse(
             access_token=access,
             refresh_token=next_refresh,

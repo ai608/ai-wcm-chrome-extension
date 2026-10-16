@@ -166,7 +166,7 @@ function Speed({ audit, p }: { audit: Audit; p: OnPageSection['pagespeed'] }) {
         <div key={label}>
           <div className="flex justify-between text-[13px]">
             <span>{label} (mobile)</span>
-            <span className="font-medium">{v ?? '—'}</span>
+            <span className="font-medium">{v ?? '-'}</span>
           </div>
           <Progress
             value={v ?? 0}
@@ -176,8 +176,8 @@ function Speed({ audit, p }: { audit: Audit; p: OnPageSection['pagespeed'] }) {
           />
         </div>
       ))}
-      <Row label="LCP">{p.lcpMs != null ? `${(p.lcpMs / 1000).toFixed(1)} s` : '—'}</Row>
-      <Row label="CLS">{p.cls ?? '—'}</Row>
+      <Row label="LCP">{p.lcpMs != null ? `${(p.lcpMs / 1000).toFixed(1)} s` : '-'}</Row>
+      <Row label="CLS">{p.cls ?? '-'}</Row>
       <ExtLink href={`https://pagespeed.web.dev/analysis?url=${encodeURIComponent(audit.url)}`}>
         Open in PageSpeed
       </ExtLink>

@@ -12,7 +12,7 @@ export function WrongAccountScreen() {
           <CardContent className="pt-4 text-center">
             <p className="text-sm font-medium">Wrong GHL account</p>
             <p className="mt-1 text-[13px] text-muted-foreground">
-              This isn&apos;t the WCM Sales account — the assistant only works there.
+              This isn&apos;t the WCM Sales account. The assistant only works there.
             </p>
           </CardContent>
         </Card>

@@ -25,7 +25,7 @@ export const scriptDefinition: ScriptDefinition = {
           type: 'response',
           id: 'r-looking',
           label: 'Yes, looking for more patients',
-          text: 'Great — that is exactly what we do for clinics like {{contact.company_name}}. {{ai.hook}}',
+          text: 'Great, that is exactly what we do for clinics like {{contact.company_name}}. {{ai.hook}}',
         },
         {
           type: 'response',
@@ -37,19 +37,19 @@ export const scriptDefinition: ScriptDefinition = {
           type: 'response',
           id: 'r-what',
           label: 'What do you do?',
-          text: 'We run patient-acquisition ads and follow-up for wellness clinics — med spas, IV therapy, weight loss, HRT and chiropractic. {{ai.hook}}',
+          text: 'We run patient-acquisition ads and follow-up for wellness clinics: med spas, IV therapy, weight loss, HRT and chiropractic. {{ai.hook}}',
         },
         {
           type: 'response',
           id: 'r-leads',
           label: 'Do you sell leads?',
-          text: 'No — we never sell shared leads. Everything we generate for {{contact.company_name}} is exclusive to you.',
+          text: 'No. We never sell shared leads. Everything we generate for {{contact.company_name}} is exclusive to you.',
         },
         {
           type: 'response',
           id: 'r-timing',
           label: 'Not interested – timing',
-          text: 'Understood. When would be a better time — is it a budget cycle thing or just a busy season in {{contact.city}}?',
+          text: 'Understood. When would be a better time: is it a budget cycle thing or just a busy season in {{contact.city}}?',
         },
         {
           type: 'response',
@@ -67,14 +67,14 @@ export const scriptDefinition: ScriptDefinition = {
         {
           type: 'say',
           id: 'qual-line',
-          text: 'Quick question so I point you to the right next step — {{ai.qualifier}}',
+          text: 'Quick question so I point you to the right next step: {{ai.qualifier}}',
         },
-        { type: 'tip', id: 'qual-tip', text: "Don't say SEO or ads — lead with patient bookings." },
+        { type: 'tip', id: 'qual-tip', text: "Don't say SEO or ads. Lead with patient bookings." },
         {
           type: 'response',
           id: 'q-owner',
           label: 'Owner does it',
-          text: 'Got it — so it lives on your plate on top of running {{contact.company_name}}. How many hours a week does that eat up?',
+          text: 'Got it, so it lives on your plate on top of running {{contact.company_name}}. How many hours a week does that eat up?',
         },
         {
           type: 'response',
@@ -86,7 +86,7 @@ export const scriptDefinition: ScriptDefinition = {
           type: 'response',
           id: 'q-frustrated',
           label: 'Agency – frustrated',
-          text: 'You are not alone — that is the number one reason clinics switch to us. What is the most frustrating part?',
+          text: 'You are not alone. That is the number one reason clinics switch to us. What is the most frustrating part?',
         },
         {
           type: 'response',
@@ -225,7 +225,7 @@ export const scriptDefinition: ScriptDefinition = {
           type: 'question',
           id: 'qq-why',
           fieldKey: 'contact.their_why',
-          label: 'Their why — why grow now?',
+          label: 'Their why: why grow now?',
           input: 'textarea',
           requiredForBooking: false,
         },
@@ -281,7 +281,7 @@ export const scriptDefinition: ScriptDefinition = {
             },
           ],
           sayItBack:
-            'So just to confirm — {{contact.company_name}} is doing {{field.contact.monthly_new_patients}} new patients a month at {{field.contact.avg_patient_value}} each, so about {{computed.current_revenue}} a month, and you want to get to {{field.contact.goal_new_patients}} new patients, which is {{computed.target_revenue}}. Did I get that right?',
+            'So just to confirm, {{contact.company_name}} is doing {{field.contact.monthly_new_patients}} new patients a month at {{field.contact.avg_patient_value}} each, so about {{computed.current_revenue}} a month, and you want to get to {{field.contact.goal_new_patients}} new patients, which is {{computed.target_revenue}}. Did I get that right?',
         },
         {
           type: 'say',
@@ -291,7 +291,7 @@ export const scriptDefinition: ScriptDefinition = {
         {
           type: 'tip',
           id: 'refuse-tip',
-          text: 'If they refuse Zoom: offer the audit report instead, then book a callback — never just hang up.',
+          text: 'If they refuse Zoom: offer the audit report instead, then book a callback. Never just hang up.',
         },
         { type: 'booking', id: 'booking-widget' },
       ],
@@ -333,19 +333,19 @@ export const scriptDefinition: ScriptDefinition = {
             },
             {
               q: 'Do you guarantee patients?',
-              a: 'No agency can ethically guarantee patients. We guarantee the system: targeted ads, same-day follow-up, and a show-up process — and we track cost per booked appointment with you weekly.',
+              a: 'No agency can ethically guarantee patients. We guarantee the system: targeted ads, same-day follow-up, and a show-up process, and we track cost per booked appointment with you weekly.',
             },
             {
               q: 'We already have an agency',
-              a: 'Great — are they booking you measurable appointments each month, or reporting clicks? We can run a free audit against what they do so you can compare apples to apples.',
+              a: 'Great, are they booking you measurable appointments each month, or reporting clicks? We can run a free audit against what they do so you can compare apples to apples.',
             },
             {
               q: 'Just send me an email',
-              a: 'Happy to — what would be most useful, the audit of {{contact.company_name}} or client results? And what is the best email?',
+              a: 'Happy to. What would be most useful, the audit of {{contact.company_name}} or client results? And what is the best email?',
             },
             {
               q: 'Can we do a phone call instead of Zoom?',
-              a: 'We can, but Zoom lets us screen-share your numbers and the plan — it is 20 minutes and most owners find it 10x more useful. Morning or afternoon better?',
+              a: 'We can, but Zoom lets us screen-share your numbers and the plan. It is 20 minutes and most owners find it 10x more useful. Morning or afternoon better?',
             },
             {
               q: 'How did you get my info?',
@@ -524,11 +524,11 @@ function failContext(): ContactContext {
 
 const glowSlots = {
   opener:
-    'I saw your 4.7-star reviews keep mentioning same-week appointments — most med spas in Austin cannot say that.',
+    'I saw your 4.7-star reviews keep mentioning same-week appointments. Most med spas in Austin cannot say that.',
   hook: 'Clinics your size usually add 20–30 booked consults a month once follow-up is automatic.',
   qualifier: 'are you doing your own marketing, or is someone helping you?',
   objection_hint: 'If price comes up, anchor on one extra Botox patient covering the month.',
-  booking_push: 'We have two audit slots left this week — want me to grab one for you?',
+  booking_push: 'We have two audit slots left this week. Want me to grab one for you?',
 }
 
 export const initialStates: Record<string, MockContactState> = {
@@ -579,7 +579,7 @@ export const initialStates: Record<string, MockContactState> = {
       opportunities: [
         {
           id: 'o1',
-          name: 'Glow Aesthetics — Growth Plan',
+          name: 'Glow Aesthetics: Growth Plan',
           monetaryValue: 24000,
           status: 'open',
           pipelineName: 'WCM Sales',
@@ -627,7 +627,7 @@ export const initialStates: Record<string, MockContactState> = {
       opportunities: [
         {
           id: 'o1',
-          name: 'Peak Chiropractic — Pilot',
+          name: 'Peak Chiropractic: Pilot',
           monetaryValue: 18000,
           status: 'abandoned',
           pipelineName: 'WCM Sales',
@@ -689,7 +689,7 @@ export function vitalEnrichedContext(): ContactContext {
 
 export const vitalSlots = {
   opener:
-    'Vital IV is one of the few lounges on South Beach pushing GLP-1 support alongside drips — that combo is converting well right now.',
+    'Vital IV is one of the few lounges on South Beach pushing GLP-1 support alongside drips. That combo is converting well right now.',
   hook: 'IV lounges running weekend promos with us usually see 15–25 extra bookings a month.',
   qualifier: 'is marketing on you, or do you have someone running it?',
   objection_hint: 'If they say summer is slow, pitch the tourist-season ramp plan.',

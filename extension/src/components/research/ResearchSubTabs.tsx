@@ -17,7 +17,7 @@ const SUBS: { value: Sub; label: string }[] = [
 ]
 
 const compact = new Intl.NumberFormat('en-US', { notation: 'compact' })
-const n = (v: number | null) => (v == null ? '—' : compact.format(v))
+const n = (v: number | null) => (v == null ? '-' : compact.format(v))
 
 function State<T>({
   od,
@@ -113,7 +113,7 @@ export function CompetitorList({
             className={`rounded-md border px-2 py-1.5 ${i.isThisBusiness ? 'border-primary bg-primary/5' : 'border-border'}`}
           >
             {i.rank}. <span className="font-medium">{i.name}</span>
-            {i.rating != null ? ` — ★ ${i.rating} (${i.reviewCount ?? 0})` : ''}
+            {i.rating != null ? ` · ★ ${i.rating} (${i.reviewCount ?? 0})` : ''}
             {i.isThisBusiness ? <span className="ml-2 font-semibold">This clinic</span> : null}
           </li>
         ))}
@@ -158,7 +158,7 @@ export function ResearchSubTabs({ audit }: { audit: Audit }) {
             {(d) => (
               <div className="flex flex-col gap-3">
                 <div className="flex flex-wrap gap-2">
-                  <StatBox label="DR" value={d.domainRating ?? '—'} />
+                  <StatBox label="DR" value={d.domainRating ?? '-'} />
                   <StatBox label="Traffic" value={n(d.organicTraffic)} />
                   <StatBox label="Keywords" value={n(d.organicKeywords)} />
                   <StatBox label="Ref. domains" value={n(d.referringDomains)} />

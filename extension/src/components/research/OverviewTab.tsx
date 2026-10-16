@@ -154,7 +154,7 @@ export function OverviewTab({ audit }: { audit: Audit }) {
             <p className="text-xl font-bold leading-tight">{o.score} / 100</p>
             {o.provisional ? (
               <p className="text-[13px] text-muted-foreground">
-                Provisional — Google Business Profile not matched; GBP and reviews not scored.
+                Provisional: Google Business Profile not matched; GBP and reviews not scored.
               </p>
             ) : null}
           </div>

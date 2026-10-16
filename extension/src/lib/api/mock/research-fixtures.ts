@@ -211,7 +211,7 @@ export function buildAudit(id: string, domain: string, url: string, startedAt: D
           category: 'service_area' as const,
           title: 'No city or service-area pages',
           detail:
-            'No map-radius coverage beyond the home market — usually the biggest local SEO gap.',
+            'No map-radius coverage beyond the home market, usually the biggest local SEO gap.',
         },
         {
           category: 'getting_the_call' as const,
@@ -344,7 +344,7 @@ export function buildAudit(id: string, domain: string, url: string, startedAt: D
           label: 'Title',
           value: strong ? 'Med Spa in Austin, TX | Glow Aesthetics' : 'Home',
           status: ok(strong, true),
-          note: strong ? '41 chars' : '4 chars — too short',
+          note: strong ? '41 chars' : '4 chars, too short',
         },
         {
           key: 'meta_description',

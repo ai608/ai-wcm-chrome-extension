@@ -1,0 +1,517 @@
+{
+  "version": 3,
+  "sections": [
+    {
+      "id": "opener",
+      "title": "Opener",
+      "defaultOpen": true,
+      "blocks": [
+        {
+          "type": "say",
+          "id": "opener-line",
+          "tone": "highlight",
+          "text": "Hey {{contact.first_name}}, this is {{caller.first_name}} with WCM. {{ai.opener}}"
+        },
+        {
+          "type": "response",
+          "id": "r-looking",
+          "label": "Yes, looking for more patients",
+          "text": "Great, that is exactly what we do for clinics like {{contact.company_name}}. {{ai.hook}}"
+        },
+        {
+          "type": "response",
+          "id": "r-capacity",
+          "label": "At capacity / too busy",
+          "text": "Totally fair. Most of our best clients said the same before they added {{field.contact.goal_new_patients}} new patients a month on autopilot."
+        },
+        {
+          "type": "response",
+          "id": "r-what",
+          "label": "What do you do?",
+          "text": "We run patient-acquisition ads and follow-up for wellness clinics: med spas, IV therapy, weight loss, HRT and chiropractic. {{ai.hook}}"
+        },
+        {
+          "type": "response",
+          "id": "r-leads",
+          "label": "Do you sell leads?",
+          "text": "No. We never sell shared leads. Everything we generate for {{contact.company_name}} is exclusive to you."
+        },
+        {
+          "type": "response",
+          "id": "r-timing",
+          "label": "Not interested – timing",
+          "text": "Understood. When would be a better time: is it a budget cycle thing or just a busy season in {{contact.city}}?"
+        },
+        {
+          "type": "response",
+          "id": "r-firm",
+          "label": "Not interested – firm",
+          "text": "No problem, I will not take more of your time. Thanks {{contact.first_name}}."
+        }
+      ]
+    },
+    {
+      "id": "qualification",
+      "title": "Qualification",
+      "defaultOpen": true,
+      "blocks": [
+        {
+          "type": "say",
+          "id": "qual-line",
+          "text": "Quick question so I point you to the right next step: {{ai.qualifier}}"
+        },
+        {
+          "type": "tip",
+          "id": "qual-tip",
+          "text": "Don't say SEO or ads. Lead with patient bookings."
+        },
+        {
+          "type": "response",
+          "id": "q-owner",
+          "label": "Owner does it",
+          "text": "Got it, so it lives on your plate on top of running {{contact.company_name}}. How many hours a week does that eat up?"
+        },
+        {
+          "type": "response",
+          "id": "q-happy",
+          "label": "Agency – happy",
+          "text": "Great, glad that is working. Are they driving actual booked appointments or mostly likes and clicks?"
+        },
+        {
+          "type": "response",
+          "id": "q-frustrated",
+          "label": "Agency – frustrated",
+          "text": "You are not alone. That is the number one reason clinics switch to us. What is the most frustrating part?"
+        },
+        {
+          "type": "response",
+          "id": "q-nobody",
+          "label": "Nobody",
+          "text": "So growth is all word of mouth right now. How many new patients are you getting a month?"
+        }
+      ]
+    },
+    {
+      "id": "discovery",
+      "title": "Discovery",
+      "defaultOpen": true,
+      "blocks": [
+        {
+          "type": "question",
+          "id": "qq-practice-type",
+          "fieldKey": "contact.what_type_of_medical_practice_this_is",
+          "label": "What type of practice is this?",
+          "input": "select",
+          "options": [
+            {
+              "value": "Wellness Center",
+              "label": "Wellness Center"
+            },
+            {
+              "value": "Med Spa",
+              "label": "Med Spa"
+            },
+            {
+              "value": "Hormone Clinic",
+              "label": "Hormone Clinic"
+            },
+            {
+              "value": "Men's Health Clinic",
+              "label": "Men's Health Clinic"
+            },
+            {
+              "value": "Telemedicine",
+              "label": "Telemedicine"
+            },
+            {
+              "value": "Other",
+              "label": "Other"
+            }
+          ],
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-procedures",
+          "fieldKey": "contact.procedures_offer",
+          "label": "Which procedures do you offer?",
+          "input": "checkbox_group",
+          "options": [
+            {
+              "value": "Hormone Therapy",
+              "label": "Hormone Therapy"
+            },
+            {
+              "value": "Weight Loss",
+              "label": "Weight Loss"
+            },
+            {
+              "value": "Peptides",
+              "label": "Peptides"
+            },
+            {
+              "value": "Aesthetics",
+              "label": "Aesthetics"
+            },
+            {
+              "value": "Sexual Health",
+              "label": "Sexual Health"
+            },
+            {
+              "value": "Body Contouring",
+              "label": "Body Contouring"
+            }
+          ],
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-locations",
+          "fieldKey": "contact.how_many_locations_do_you_have",
+          "label": "How many locations do you have?",
+          "input": "number",
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-new-patients",
+          "fieldKey": "contact.monthly_new_patients",
+          "label": "How many new patients per month today?",
+          "input": "number",
+          "requiredForBooking": true
+        },
+        {
+          "type": "question",
+          "id": "qq-patient-value",
+          "fieldKey": "contact.avg_patient_value",
+          "label": "Average patient value ($)?",
+          "help": "First-visit revenue plus typical upsell.",
+          "input": "currency",
+          "requiredForBooking": true
+        },
+        {
+          "type": "question",
+          "id": "qq-goal",
+          "fieldKey": "contact.goal_new_patients",
+          "label": "Goal: new patients per month?",
+          "input": "number",
+          "requiredForBooking": true
+        },
+        {
+          "type": "question",
+          "id": "qq-sources",
+          "fieldKey": "contact.patient_sources",
+          "label": "Where do patients come from today?",
+          "input": "checkbox_group",
+          "options": [
+            {
+              "value": "referrals",
+              "label": "Referrals"
+            },
+            {
+              "value": "google_ads",
+              "label": "Google Ads"
+            },
+            {
+              "value": "meta_ads",
+              "label": "Meta Ads"
+            },
+            {
+              "value": "organic_social",
+              "label": "Instagram / TikTok organic"
+            },
+            {
+              "value": "groupon",
+              "label": "Groupon"
+            },
+            {
+              "value": "seo",
+              "label": "SEO"
+            },
+            {
+              "value": "walkins",
+              "label": "Walk-ins"
+            }
+          ],
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-spend",
+          "fieldKey": "contact.monthly_marketing_spend",
+          "label": "Monthly marketing spend?",
+          "input": "select",
+          "options": [
+            {
+              "value": "0",
+              "label": "$0"
+            },
+            {
+              "value": "1-2k",
+              "label": "$1k – $2k"
+            },
+            {
+              "value": "2-5k",
+              "label": "$2k – $5k"
+            },
+            {
+              "value": "5k-plus",
+              "label": "$5k+"
+            }
+          ],
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-contact-method",
+          "fieldKey": "contact.preferred_contact_method",
+          "label": "Best way to reach them?",
+          "input": "radio",
+          "options": [
+            {
+              "value": "phone",
+              "label": "Phone"
+            },
+            {
+              "value": "text",
+              "label": "Text"
+            },
+            {
+              "value": "email",
+              "label": "Email"
+            }
+          ],
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-decision-maker",
+          "fieldKey": "contact.decision_maker_name",
+          "label": "Decision maker name?",
+          "input": "text",
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-why",
+          "fieldKey": "contact.their_why",
+          "label": "Their why: why grow now?",
+          "input": "textarea",
+          "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-revenue",
+          "fieldKey": "contact.annual_revenue_",
+          "label": "Annual revenue ($)?",
+          "input": "currency",
+          "requiredForBooking": false
+        }
+      ]
+    },
+    {
+      "id": "confirm",
+      "title": "Confirm / Booking",
+      "defaultOpen": false,
+      "blocks": [
+        {
+          "type": "recap",
+          "id": "recap-main",
+          "rows": [
+            {
+              "label": "Clinic",
+              "source": "contact",
+              "key": "company_name"
+            },
+            {
+              "label": "City",
+              "source": "contact",
+              "key": "city"
+            },
+            {
+              "label": "New patients / mo",
+              "source": "field",
+              "fieldKey": "contact.monthly_new_patients"
+            },
+            {
+              "label": "Avg patient value",
+              "source": "field",
+              "fieldKey": "contact.avg_patient_value"
+            },
+            {
+              "label": "Goal new patients / mo",
+              "source": "field",
+              "fieldKey": "contact.goal_new_patients"
+            },
+            {
+              "label": "Current revenue",
+              "source": "computed",
+              "key": "current_revenue",
+              "formula": {
+                "op": "multiply",
+                "fields": [
+                  "contact.monthly_new_patients",
+                  "contact.avg_patient_value"
+                ]
+              }
+            },
+            {
+              "label": "Target revenue",
+              "source": "computed",
+              "key": "target_revenue",
+              "formula": {
+                "op": "multiply",
+                "fields": [
+                  "contact.goal_new_patients",
+                  "contact.avg_patient_value"
+                ]
+              }
+            }
+          ],
+          "sayItBack": "So just to confirm, {{contact.company_name}} is doing {{field.contact.monthly_new_patients}} new patients a month at {{field.contact.avg_patient_value}} each, so about {{computed.current_revenue}} a month, and you want to get to {{field.contact.goal_new_patients}} new patients, which is {{computed.target_revenue}}. Did I get that right?"
+        },
+        {
+          "type": "say",
+          "id": "confirm-next",
+          "text": "If that sounds right, the next step is a 20-minute Zoom where we map exactly how we would fill that gap for {{contact.company_name}}. {{ai.booking_push}}"
+        },
+        {
+          "type": "tip",
+          "id": "refuse-tip",
+          "text": "If they refuse Zoom: offer the audit report instead, then book a callback. Never just hang up."
+        },
+        {
+          "type": "booking",
+          "id": "booking-widget"
+        }
+      ]
+    },
+    {
+      "id": "outcome",
+      "title": "Outcome",
+      "defaultOpen": false,
+      "blocks": [
+        {
+          "type": "outcome",
+          "id": "outcome-main",
+          "outcomes": [
+            {
+              "id": "schedule_appointment",
+              "label": "Schedule Appointment",
+              "books": true
+            },
+            {
+              "id": "callback_requested",
+              "label": "Callback Requested",
+              "books": false
+            },
+            {
+              "id": "send_audit",
+              "label": "Send Audit Report",
+              "books": false
+            },
+            {
+              "id": "nurture",
+              "label": "Interested – Nurture",
+              "books": false
+            },
+            {
+              "id": "not_interested_timing",
+              "label": "Not Interested – Timing",
+              "books": false
+            },
+            {
+              "id": "not_interested_firm",
+              "label": "Not Interested – Firm",
+              "books": false
+            },
+            {
+              "id": "has_agency",
+              "label": "Has Agency / Under Contract",
+              "books": false
+            },
+            {
+              "id": "not_a_fit",
+              "label": "Not a Fit",
+              "books": false
+            },
+            {
+              "id": "gatekeeper",
+              "label": "Gatekeeper – DM Unavailable",
+              "books": false
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "faq",
+      "title": "FAQ & Objections",
+      "defaultOpen": false,
+      "blocks": [
+        {
+          "type": "faq",
+          "id": "faq-main",
+          "items": [
+            {
+              "q": "What do you do?",
+              "a": "We run Meta and Google ads plus automated follow-up that turn clicks into booked appointments for wellness clinics. You only talk to patients who already booked."
+            },
+            {
+              "q": "Do you guarantee patients?",
+              "a": "No agency can ethically guarantee patients. We guarantee the system: targeted ads, same-day follow-up, and a show-up process, and we track cost per booked appointment with you weekly."
+            },
+            {
+              "q": "We already have an agency",
+              "a": "Great, are they booking you measurable appointments each month, or reporting clicks? We can run a free audit against what they do so you can compare apples to apples."
+            },
+            {
+              "q": "Just send me an email",
+              "a": "Happy to. What would be most useful, the audit of {{contact.company_name}} or client results? And what is the best email?"
+            },
+            {
+              "q": "Can we do a phone call instead of Zoom?",
+              "a": "We can, but Zoom lets us screen-share your numbers and the plan. It is 20 minutes and most owners find it 10x more useful. Morning or afternoon better?"
+            },
+            {
+              "q": "How did you get my info?",
+              "a": "Your clinic is listed publicly in {{contact.city}} and caught our eye because {{ai.opener}} Happy to remove you if you prefer."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "do-not-book",
+      "title": "Do Not Book",
+      "defaultOpen": false,
+      "blocks": [
+        {
+          "type": "do_not_book",
+          "id": "dnb-main",
+          "items": [
+            "Wants to buy leads only, not a marketing partner",
+            "Happy and locked in with current vendor long-term",
+            "Won't share basic business info (patients, revenue, goals)",
+            "Brand-new clinic with no patients, website or Google profile yet"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "other",
+      "title": "Other Saved Fields",
+      "defaultOpen": false,
+      "blocks": [
+        {
+          "type": "question",
+          "id": "qq-website",
+          "fieldKey": "contact.your_website_url",
+          "label": "Website URL?",
+          "input": "text",
+          "requiredForBooking": false
+        }
+      ]
+    }
+  ]
+}

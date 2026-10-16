@@ -17,7 +17,7 @@ npm run dev   # opens Chrome with the extension loaded
 
 | Var | Meaning |
 | --- | --- |
-| `WXT_GHL_HOST` | White-labeled GHL host, no protocol (e.g. `app.example.com`) |
+| `WXT_GHL_HOST` | White-labeled GHL host, no protocol (`app.practiceflow.md`) |
 | `WXT_API_BASE_URL` | O4 backend base URL, no trailing slash |
 | `WXT_O1_WEB_URL` | O1 web app URL for account sign-in |
 | `WXT_API_MOCK` | `true` = answer every API call from in-memory mock data |

@@ -11,12 +11,7 @@ async def unavailable() -> None:
 
 
 for method, path in (
-    ("GET", "/config"),
-    ("GET", "/script"),
-    ("GET", "/contacts/{id}/context"),
-    ("GET", "/contacts/{id}/script"),
     ("POST", "/contacts/{id}/script/regenerate"),
-    ("PATCH", "/contacts/{id}/fields"),
     ("POST", "/contacts/{id}/outcome"),
     ("POST", "/contacts/{id}/enrich"),
     ("GET", "/contacts/{id}/history"),

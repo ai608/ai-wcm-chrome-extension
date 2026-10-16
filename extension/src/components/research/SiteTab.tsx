@@ -111,7 +111,7 @@ function Cities({ c }: { c: SiteSection['cities'] }) {
         </Row>
         {c.pagesFound === 0 ? (
           <p className="text-[12px] text-muted-foreground">
-            No city pages means no map-radius coverage beyond the home market — usually the biggest
+            No city pages means no map-radius coverage beyond the home market, usually the biggest
             local SEO gap.
           </p>
         ) : null}
@@ -184,7 +184,7 @@ function Blog({ audit, b }: { audit: Audit; b: SiteSection['blog'] }) {
         <Row label="Last post" status={b.postsLast6Months ? 'ok' : 'warn'}>
           {b.lastPostAt
             ? `${new Date(b.lastPostAt).toLocaleDateString()} (${relativeTime(b.lastPostAt)})`
-            : '—'}
+            : '-'}
         </Row>
         <Row label="Frequency">
           {b.postsLast6Months} in last 6 months, {b.postsLast12Months} in last 12

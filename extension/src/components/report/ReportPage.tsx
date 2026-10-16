@@ -48,7 +48,7 @@ function Body({ report }: { report: Report }) {
               <p className="text-2xl font-semibold">Overall score: {o.score} / 100</p>
               {o.provisional ? (
                 <p className="text-[13px] text-muted-foreground">
-                  Provisional — Google Business Profile not matched; GBP and reviews not scored.
+                  Provisional: Google Business Profile not matched; GBP and reviews not scored.
                 </p>
               ) : null}
             </div>
@@ -166,7 +166,7 @@ function Body({ report }: { report: Report }) {
               <li key={c.key} className="flex gap-2">
                 <StatusDot status={c.status} />
                 {c.label}
-                {c.note ? <span className="text-muted-foreground">— {c.note}</span> : null}
+                {c.note ? <span className="text-muted-foreground">· {c.note}</span> : null}
               </li>
             ))}
           </ul>
@@ -176,9 +176,9 @@ function Body({ report }: { report: Report }) {
       {audit.onPage?.pagespeed ? (
         <Section title="PageSpeed (mobile)">
           <p className="text-[13px]">
-            Performance {audit.onPage.pagespeed.mobilePerformance ?? '—'} · SEO{' '}
-            {audit.onPage.pagespeed.seo ?? '—'} · Accessibility{' '}
-            {audit.onPage.pagespeed.accessibility ?? '—'}
+            Performance {audit.onPage.pagespeed.mobilePerformance ?? '-'} · SEO{' '}
+            {audit.onPage.pagespeed.seo ?? '-'} · Accessibility{' '}
+            {audit.onPage.pagespeed.accessibility ?? '-'}
           </p>
         </Section>
       ) : null}
@@ -186,10 +186,10 @@ function Body({ report }: { report: Report }) {
       {r?.domainOverview.data ? (
         <Section title="Domain overview">
           <p className="text-[13px]">
-            DR {r.domainOverview.data.domainRating ?? '—'} · traffic{' '}
-            {r.domainOverview.data.organicTraffic ?? '—'} · keywords{' '}
-            {r.domainOverview.data.organicKeywords ?? '—'} · backlinks{' '}
-            {r.domainOverview.data.backlinks ?? '—'}
+            DR {r.domainOverview.data.domainRating ?? '-'} · traffic{' '}
+            {r.domainOverview.data.organicTraffic ?? '-'} · keywords{' '}
+            {r.domainOverview.data.organicKeywords ?? '-'} · backlinks{' '}
+            {r.domainOverview.data.backlinks ?? '-'}
           </p>
         </Section>
       ) : null}

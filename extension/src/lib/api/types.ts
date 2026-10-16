@@ -73,9 +73,26 @@ export interface Section {
   blocks: Block[]
 }
 
+export interface FlowOption {
+  id: string
+  /** what the prospect answers */
+  label: string
+  /** what the rep replies */
+  say: string
+  next?: FlowNode
+}
+
+export interface FlowNode {
+  /** the question the rep asks next (omitted when the response text already asks it) */
+  ask?: string
+  options: FlowOption[]
+}
+
 export interface ScriptDefinition {
   version: number
   sections: Section[]
+  /** response block id -> conversation flow revealed once that response is ticked */
+  flows?: Record<string, FlowNode>
 }
 
 export interface Contact {

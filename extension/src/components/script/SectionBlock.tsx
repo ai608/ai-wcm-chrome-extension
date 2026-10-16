@@ -1,6 +1,7 @@
 import { BookingWidget } from '@/components/script/BookingWidget'
 import { DoNotBookBlock } from '@/components/script/DoNotBookBlock'
 import { FaqBlock } from '@/components/script/FaqBlock'
+import { FlowBlock } from '@/components/script/FlowBlock'
 import { OutcomeBlock } from '@/components/script/OutcomeBlock'
 import { QuestionField } from '@/components/script/QuestionField'
 import { RecapBlock } from '@/components/script/RecapBlock'
@@ -8,7 +9,7 @@ import { ResponseOption } from '@/components/script/ResponseOption'
 import { SayBlock } from '@/components/script/SayBlock'
 import { TipBlock } from '@/components/script/TipBlock'
 import { AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion'
-import type { Block, Contact, FieldValue, Section } from '@/lib/api/types'
+import type { Block, Contact, FieldValue, FlowNode, Section } from '@/lib/api/types'
 import type { RecapRowValue } from '@/lib/script/readiness'
 import type { TemplateCtx } from '@/lib/script/template'
 
@@ -22,6 +23,7 @@ interface SectionBlockProps {
   missing: { fieldKey: string; label: string }[]
   bookingWidgetUrl: string
   ticked: string[]
+  flows?: Record<string, FlowNode>
   onToggleResponse: (blockId: string) => void
   onJumpToField: (fieldKey: string) => void
 }
@@ -36,6 +38,7 @@ export function SectionBlock({
   missing,
   bookingWidgetUrl,
   ticked,
+  flows,
   onToggleResponse,
   onJumpToField,
 }: SectionBlockProps) {
@@ -61,6 +64,7 @@ export function SectionBlock({
               missing={missing}
               bookingWidgetUrl={bookingWidgetUrl}
               ticked={ticked}
+              flows={flows}
               onToggleResponse={onToggleResponse}
               onJumpToField={onJumpToField}
             />
@@ -83,6 +87,7 @@ function BlockView({
   missing,
   bookingWidgetUrl,
   ticked,
+  flows,
   onToggleResponse,
   onJumpToField,
 }: Omit<SectionBlockProps, 'section'> & { block: Block }) {
@@ -91,17 +96,31 @@ function BlockView({
       return <SayBlock text={block.text} tone={block.tone} ctx={ctx} />
     case 'tip':
       return <TipBlock text={block.text} ctx={ctx} />
-    case 'response':
+    case 'response': {
+      const checked = ticked.includes(block.id)
+      const flow = flows?.[block.id]
       return (
-        <ResponseOption
-          id={`${contactId}-${block.id}`}
-          label={block.label}
-          text={block.text}
-          checked={ticked.includes(block.id)}
-          onToggle={() => onToggleResponse(block.id)}
-          ctx={ctx}
-        />
+        <div className="flex flex-col gap-2">
+          <ResponseOption
+            id={`${contactId}-${block.id}`}
+            label={block.label}
+            text={block.text}
+            checked={checked}
+            onToggle={() => onToggleResponse(block.id)}
+            ctx={ctx}
+          />
+          {checked && flow ? (
+            <FlowBlock
+              node={flow}
+              contactId={contactId}
+              ticked={ticked}
+              onToggle={onToggleResponse}
+              ctx={ctx}
+            />
+          ) : null}
+        </div>
       )
+    }
     case 'question':
       return (
         <QuestionField

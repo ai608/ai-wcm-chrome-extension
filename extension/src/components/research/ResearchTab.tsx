@@ -30,7 +30,7 @@ function Cards({ audit }: { audit: Audit }) {
         ) : null}
         {audit.onPage ? (
           <Row label="Page title">
-            {audit.onPage.essentials.find((e) => e.key === 'title')?.value ?? '—'}
+            {audit.onPage.essentials.find((e) => e.key === 'title')?.value ?? '-'}
           </Row>
         ) : null}
         {services.length ? (

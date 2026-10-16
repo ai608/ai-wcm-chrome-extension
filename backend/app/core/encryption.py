@@ -24,5 +24,5 @@ def decrypt_value(value: str) -> str:
         return f.decrypt(raw.encode()).decode()
     except (InvalidToken, TypeError) as exc:
         raise ValueError(
-            "Failed to decrypt value — invalid key or tampered data."
+            "Failed to decrypt value: invalid key or tampered data."
         ) from exc

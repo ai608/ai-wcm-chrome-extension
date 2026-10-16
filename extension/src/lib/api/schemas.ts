@@ -1,4 +1,5 @@
 import * as z from 'zod/mini'
+import type { FlowNode } from '@/lib/api/types'
 
 const blockOptionSchema = z.object({ value: z.string(), label: z.string() })
 
@@ -100,9 +101,22 @@ const sectionSchema = z.object({
   blocks: z.array(blockSchema),
 })
 
+const flowNodeSchema: z.ZodMiniType<FlowNode> = z.object({
+  ask: z.optional(z.string()),
+  options: z.array(
+    z.object({
+      id: z.string(),
+      label: z.string(),
+      say: z.string(),
+      next: z.optional(z.lazy(() => flowNodeSchema)),
+    }),
+  ),
+})
+
 export const scriptDefinitionSchema = z.object({
   version: z.number(),
   sections: z.array(sectionSchema),
+  flows: z.optional(z.record(z.string(), flowNodeSchema)),
 })
 
 export const configSchema = z.object({

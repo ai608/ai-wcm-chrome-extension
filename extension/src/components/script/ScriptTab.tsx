@@ -185,6 +185,7 @@ export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state 
             missing={missing}
             bookingWidgetUrl={bookingWidgetUrl}
             ticked={ticked}
+            flows={definition.flows}
             onToggleResponse={(blockId) => toggleResponse(contactId, blockId)}
             onJumpToField={jumpToField}
           />

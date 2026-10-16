@@ -39,7 +39,7 @@ export default defineConfig({
         throw new Error('WXT_API_MOCK must be false for a release')
       }
     }
-    const ghlHost = env.WXT_GHL_HOST || 'app.example.com'
+    const ghlHost = env.WXT_GHL_HOST || 'app.practiceflow.md'
     const apiBase = env.WXT_API_BASE_URL || 'http://localhost:8001'
     const o1WebUrl = new URL(env.WXT_O1_WEB_URL || 'http://localhost:5173')
     let apiOrigin = apiBase
