@@ -48,6 +48,8 @@ beforeEach(async () => {
   })
   const { __resetMock } = await import('@/lib/api/mock/handlers')
   __resetMock()
+  const { queryClient } = await import('@/app/providers')
+  queryClient.clear()
   const { usePanelStore } = await import('@/stores/panel-store')
   usePanelStore.setState({ researchSubTab: {}, pendingConfirm: null, researchTab: 'overview' })
 })
@@ -251,6 +253,12 @@ describe('Call Mode Research tab', () => {
     await screen.findByText('Glow Aesthetics Med Spa', undefined, { timeout: 8000 })
     expect(screen.getByText('Refresh research')).toBeDefined()
   }, 12000)
+
+  it('shows on-demand competitors for the active contact', async () => {
+    await renderTab('c_glow')
+    fireEvent.click(await screen.findByRole('button', { name: 'Find competitors' }))
+    await screen.findByText(/This clinic/, undefined, { timeout: 12000 })
+  }, 16000)
 
   it('run research for c_peak', async () => {
     await renderTab('c_peak')

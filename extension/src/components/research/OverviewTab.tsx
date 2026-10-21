@@ -10,6 +10,7 @@ import { useSendReport } from '@/hooks/research-queries'
 import { ApiError } from '@/lib/api/errors'
 import type { Audit, SectionKey } from '@/lib/api/research-types'
 import { call } from '@/lib/messaging'
+import { getEnv } from '@/lib/env'
 import { usePanelStore } from '@/stores/panel-store'
 
 const CHECKLIST: SectionKey[] = ['on_page', 'schema', 'site', 'business', 'convert', 'overview']
@@ -214,7 +215,7 @@ export function OverviewTab({ audit }: { audit: Audit }) {
           </Button>
         </div>
       </Block>
-      <SendReport audit={audit} />
+      {getEnv().apiMock ? <SendReport audit={audit} /> : null}
     </div>
   )
 }

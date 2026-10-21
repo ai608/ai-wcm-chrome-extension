@@ -16,6 +16,7 @@ CATALOG = [
         "fieldKey": "contact.procedures_offer",
         "dataType": "MULTIPLE_OPTIONS",
     },
+    {"id": "site_field", "fieldKey": "contact.your_website_url", "dataType": "TEXT"},
 ]
 CONTACT = {
     "id": "c1",
@@ -74,6 +75,33 @@ async def test_context_and_script(client):
 async def test_wrong_location(client):
     r = await client.get("/api/v1/ext/contacts/other/context")
     assert r.status_code == 403 and r.json()["error"]["code"] == "wrong_location"
+
+
+async def test_research_checks_contact_location_and_website(client):
+    missing = await client.get("/api/v1/ext/contacts/c1/research")
+    assert missing.status_code == 200
+    assert missing.json() == {"audit": None, "reason": "no_website"}
+    wrong = await client.get("/api/v1/ext/contacts/other/research")
+    assert wrong.status_code == 403
+    assert wrong.json()["error"]["code"] == "wrong_location"
+
+
+async def test_research_reads_your_website_url_custom_field(client):
+    contact = {
+        "customFields": [
+            {"id": "site_field", "value": "https://capecoralaesthetics.com"}
+        ]
+    }
+    assert (
+        await ghl.contact_website(app.state.http_client, contact)
+        == "https://capecoralaesthetics.com"
+    )
+    assert (
+        await ghl.contact_website(
+            app.state.http_client, {**contact, "website": "https://native.example"}
+        )
+        == "https://native.example"
+    )
 
 
 async def test_patch_coerces_and_writes(client):

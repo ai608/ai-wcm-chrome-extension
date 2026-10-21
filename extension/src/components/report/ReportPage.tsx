@@ -11,22 +11,22 @@ import { formatDateTime } from '@/lib/time'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="break-inside-avoid rounded-lg border border-border p-4">
+    <section className="break-inside-avoid rounded-lg border border-border p-4 print:break-inside-avoid">
       <h2 className="mb-2 text-[16px] font-semibold">{title}</h2>
       {children}
     </section>
   )
 }
 
-function Body({ report }: { report: Report }) {
+export function Body({ report }: { report: Report }) {
   const { audit } = report
   const o = audit.overview
   const gbp = audit.business?.gbp
   const site = audit.site
   const r = audit.research
   return (
-    <div className="flex flex-col gap-4">
-      <header className="flex items-center gap-3 rounded-lg bg-primary px-5 py-4 text-primary-foreground">
+    <div className="flex flex-col gap-4 print:block print:space-y-4">
+      <header className="flex break-inside-avoid items-center gap-3 rounded-lg bg-primary px-5 py-4 text-primary-foreground [print-color-adjust:exact] [-webkit-print-color-adjust:exact]">
         <img src="/brand/logo-head-light.webp" alt="WCM" className="h-8 w-auto" />
         <h1 className="flex-1 text-[18px] font-semibold">Website &amp; Local Visibility Report</h1>
         <div className="text-right text-[13px]">
@@ -36,10 +36,10 @@ function Body({ report }: { report: Report }) {
       </header>
 
       {o ? (
-        <section className="break-inside-avoid rounded-lg border border-border p-4">
+        <section className="break-inside-avoid rounded-lg border border-border p-4 print:break-inside-avoid">
           <div className="flex items-center gap-4">
             <div
-              className={`flex size-20 shrink-0 items-center justify-center rounded-full text-4xl font-bold ${gradeClass(o.grade)}`}
+              className={`flex size-20 shrink-0 items-center justify-center rounded-full text-4xl font-bold [print-color-adjust:exact] [-webkit-print-color-adjust:exact] ${gradeClass(o.grade)}`}
             >
               {o.grade}
             </div>
@@ -59,26 +59,32 @@ function Body({ report }: { report: Report }) {
 
       {o ? (
         <Section title="Where the score comes from">
-          <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+          <div className="flex flex-col gap-3">
             {o.categories.map((c) => (
-              <div key={c.key}>
-                <div className="flex justify-between text-[13px]">
-                  <span>{c.label}</span>
-                  <span className="font-semibold">{c.grade}</span>
+              <div key={c.key} className="break-inside-avoid print:break-inside-avoid">
+                <div className="flex items-baseline justify-between gap-3 text-[13px]">
+                  <span className="font-medium">{c.label}</span>
+                  <span className="shrink-0 font-semibold">
+                    {c.score} / 100 ({c.grade})
+                  </span>
                 </div>
                 <Progress
                   value={c.score}
+                  className="mt-1 print:border print:border-border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
                   indicatorClassName={
                     c.score >= 80
-                      ? 'bg-success'
+                      ? 'bg-success [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
                       : c.score >= 60
-                        ? 'bg-accent-wcm'
-                        : 'bg-destructive'
+                        ? 'bg-accent-wcm [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
+                        : 'bg-destructive [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
                   }
                 />
               </div>
             ))}
           </div>
+          <p className="mt-2 text-[12px] text-muted-foreground">
+            Home page checks only. Google Business Profile and reviews are not scored yet.
+          </p>
         </Section>
       ) : null}
 
@@ -86,7 +92,7 @@ function Body({ report }: { report: Report }) {
         <Section title="What’s costing them calls">
           <ol className="flex list-decimal flex-col gap-2 pl-5 text-[14px]">
             {o.topIssues.map((i) => (
-              <li key={i.title}>
+              <li key={i.title} className="break-inside-avoid print:break-inside-avoid">
                 <p className="font-medium">{i.title}</p>
                 <p className="text-muted-foreground">{i.detail}</p>
               </li>
@@ -111,15 +117,21 @@ function Body({ report }: { report: Report }) {
 
       {site ? (
         <Section title="Services coverage">
+          {site.pagesCrawled <= 1 ? (
+            <p className="mb-2 text-[12px] text-muted-foreground">
+              Home page mentions only. Full crawl needed for complete coverage.
+            </p>
+          ) : null}
           <table className="w-full text-[13px]">
             <tbody>
               {site.services.clusters.map((c) => (
-                <tr key={c.service} className="border-t border-border">
+                <tr
+                  key={c.service}
+                  className="break-inside-avoid border-t border-border print:break-inside-avoid"
+                >
                   <td className="py-1">{c.service}</td>
-                  <td
-                    className={`text-right font-medium ${c.found < c.expected / 2 ? 'text-destructive' : 'text-success'}`}
-                  >
-                    {c.found}/{c.expected}
+                  <td className="py-1 text-right font-medium text-muted-foreground">
+                    {site.pagesCrawled <= 1 ? 'Mentioned on home page' : `${c.found}/${c.expected}`}
                   </td>
                 </tr>
               ))}
@@ -150,7 +162,7 @@ function Body({ report }: { report: Report }) {
         <Section title="Proof & trust">
           <ul className="grid grid-cols-2 gap-x-6 gap-y-1 text-[13px]">
             {site.trust.map((t) => (
-              <li key={t.key} className="flex gap-2">
+              <li key={t.key} className="flex break-inside-avoid gap-2 print:break-inside-avoid">
                 <StatusDot status={t.status === 'found' ? 'ok' : 'warn'} />
                 {t.label}
               </li>
@@ -163,7 +175,7 @@ function Body({ report }: { report: Report }) {
         <Section title="Conversion checks">
           <ul className="flex flex-col gap-1 text-[13px]">
             {audit.convert.checks.map((c) => (
-              <li key={c.key} className="flex gap-2">
+              <li key={c.key} className="flex break-inside-avoid gap-2 print:break-inside-avoid">
                 <StatusDot status={c.status} />
                 {c.label}
                 {c.note ? <span className="text-muted-foreground">· {c.note}</span> : null}
@@ -202,7 +214,7 @@ function Body({ report }: { report: Report }) {
         <Section title="AI visibility">
           <ul className="flex flex-col gap-1 text-[13px]">
             {r.aiVisibility.data.engines.map((e) => (
-              <li key={e.engine}>
+              <li key={e.engine} className="break-inside-avoid print:break-inside-avoid">
                 {e.engine}: {e.cited ? '✓ cited' : '✗ not cited'}
               </li>
             ))}
@@ -210,7 +222,7 @@ function Body({ report }: { report: Report }) {
         </Section>
       ) : null}
 
-      <footer className="border-t border-border pt-3 text-[12px] text-muted-foreground">
+      <footer className="break-inside-avoid border-t border-border pt-3 text-[12px] text-muted-foreground print:break-inside-avoid">
         Prepared by {report.preparedBy} · {formatDateTime(report.generatedAt)}
         {/* TODO: WCM contact details */}
       </footer>
@@ -224,7 +236,7 @@ export function ReportPage() {
   const report = useReport(user ? auditId : null)
 
   return (
-    <div className="mx-auto max-w-[820px] px-4 py-6">
+    <div className="report-root mx-auto max-w-[820px] px-4 py-6 print:max-w-none print:px-[14mm] print:py-[12mm]">
       <div className="mb-4 flex gap-2 print:hidden">
         <Button onClick={() => window.print()}>Save as PDF</Button>
         <Button

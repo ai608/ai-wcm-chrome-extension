@@ -69,13 +69,11 @@ function mapAuth(data: WireAuth): { tokens: AuthTokens; user: User } {
 
 export async function exchangeWeb(
   code: string,
-  state: string,
   verifier: string,
-  extensionId: string,
 ): Promise<{ tokens: AuthTokens; user: User }> {
   const data = await request<WireAuth>('POST', '/auth/web-exchange', {
     auth: false,
-    body: { code, state, verifier, extension_id: extensionId },
+    body: { code, verifier },
   })
   return mapAuth(data)
 }

@@ -49,6 +49,8 @@ export default defineConfig({
       apiOrigin = apiBase
     }
     return {
+      // Public key. It fixes the extension ID (fkpfjgcmcaklhepggckcmojpeemginii) on every install.
+      key: 'MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1zGFKDWGVTg/C2cuen4kFICWbR6JCSRkRWOLGKpCDEex+4Q/34RFagOI/PHe2id+BLX0Jp5WiNswKsu+6wxEF682rcax6ljXEx+gyAp4nHQzu0VNDBc4arb97f02UF/BcXMA3w0FkNmyU9LRaYHHR/AhfnwPb5TcoUoKEPFjMybilVzaAbgb9TSa6oPwO6865LIjOuvPj6CEu+G9jMObPgZJXgSJkQIUM6B+CyuMXsMVHIVP9cstuKBJCNqpPGLSr+znGx3Upq5Anc4mll6SQL868CqqHtje4ITmHs6CmPHqEVvOPA0BydggqR0SPmv2bUEgMoT5na/lcJ/vaPS+SwIDAQAB',
       name: mode === 'production' ? 'WCM Sales Assistant' : 'WCM Sales Assistant (dev)',
       description: 'Call script, history and research for WCM SDRs inside GoHighLevel.',
       permissions: ['sidePanel', 'storage', 'tabs'],

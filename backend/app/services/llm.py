@@ -8,16 +8,22 @@ from app.core.exceptions import AppError
 
 
 async def chat_json(
-    http: httpx.AsyncClient, system: str, user: str, *, max_tokens: int = 4000
+    http: httpx.AsyncClient,
+    system: str,
+    user: str,
+    *,
+    max_tokens: int = 4000,
+    model: str | None = None,
 ) -> dict[str, Any]:
     """One OpenRouter chat call that must return a JSON object."""
-    if not settings.OPENROUTER_API_KEY or not settings.SCRIPT_MODEL:
-        raise AppError(503, "upstream_error", "OPENROUTER_API_KEY/SCRIPT_MODEL not set")
+    model = model or settings.SCRIPT_MODEL
+    if not settings.OPENROUTER_API_KEY or not model:
+        raise AppError(503, "upstream_error", "OPENROUTER_API_KEY/model not set")
     r = await http.post(
         "https://openrouter.ai/api/v1/chat/completions",
         headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
         json={
-            "model": settings.SCRIPT_MODEL,
+            "model": model,
             "temperature": 0.3,
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},

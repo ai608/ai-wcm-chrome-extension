@@ -171,7 +171,7 @@ async def test_refresh_logout_me_and_stub_gate(auth_env: None) -> None:
         )
         me = await api.get("/api/v1/ext/me", headers={"Authorization": "Bearer access"})
         stub = await api.get(
-            "/api/v1/ext/research/audits/latest",
+            "/api/v1/ext/contacts/c1/history",
             headers={"Authorization": "Bearer access"},
         )
         logged_out = await api.post(

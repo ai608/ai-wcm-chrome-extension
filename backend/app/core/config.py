@@ -25,11 +25,14 @@ class Settings(BaseSettings):
     LEAD_PIPELINE_SERVICE_KEY: str = ""
     OPENROUTER_API_KEY: str = ""
     SCRIPT_MODEL: str = ""
+    # Cheap, fast model for reading crawled clinic pages (OpenRouter id).
+    RESEARCH_MODEL: str = "anthropic/claude-haiku-5.5"
     AI_VISIBILITY_MODELS: str = ""
     FIRECRAWL_API_KEY: str = ""
     GOOGLE_PAGESPEED_API_KEY: str = ""
     APIFY_API_TOKEN: str = ""
-    APIFY_GMAPS_ACTOR_ID: str = ""
+    # Apify's Google Maps scraper; override in .env to use another actor.
+    APIFY_GMAPS_ACTOR_ID: str = "compass~crawler-google-places"
     APOLLO_API_KEY: str = ""
     AHREFS_API_KEY: str = ""
     REPORT_FROM_EMAIL: str = ""

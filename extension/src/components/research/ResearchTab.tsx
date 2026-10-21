@@ -51,18 +51,33 @@ function Cards({ audit }: { audit: Audit }) {
           </div>
         ) : null}
       </Block>
-      {business ? <CompanyCard company={business.company} /> : null}
+      {business?.company ? (
+        <CompanyCard company={business.company} />
+      ) : (
+        <Block title="Company">
+          <p className="text-[13px] text-muted-foreground">Company data is not available for this audit.</p>
+        </Block>
+      )}
       <Block title="Local competitors">
         {research?.localCompetitors.state === 'ready' && research.localCompetitors.data ? (
           <CompetitorList data={research.localCompetitors.data} />
         ) : research?.localCompetitors.state === 'running' ? (
           <Skeleton className="h-16 w-full" />
         ) : (
-          <LocalCompetitorsForm audit={audit} compactForm />
+          <>
+            {research?.localCompetitors.state === 'failed' ? (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {research.localCompetitors.error ?? 'Couldn’t load competitors.'}
+                </AlertDescription>
+              </Alert>
+            ) : null}
+            <LocalCompetitorsForm audit={audit} compactForm />
+          </>
         )}
       </Block>
       {overview ? (
-        <Block title="Website score">
+        <Block title="Homepage score">
           <div className="flex items-center gap-3">
             <div
               className={`flex size-12 shrink-0 items-center justify-center rounded-full text-2xl font-bold ${gradeClass(overview.grade)}`}

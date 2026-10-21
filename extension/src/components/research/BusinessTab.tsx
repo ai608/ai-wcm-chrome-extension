@@ -18,7 +18,7 @@ export function GbpCard({ gbp }: { gbp: BusinessSection['gbp'] }) {
     return (
       <Alert>
         <AlertDescription>
-          No Google Business Profile matched for this website.
+          Google Business Profile data is not available for this audit.
           {gbp?.matchReason ? ` ${gbp.matchReason}.` : ''}
         </AlertDescription>
       </Alert>

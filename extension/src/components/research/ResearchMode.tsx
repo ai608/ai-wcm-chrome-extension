@@ -79,15 +79,15 @@ function SiteHeader({
         <Favicon domain={domain} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-lg font-bold leading-tight">{domain}</p>
-          <p className="text-[12px] opacity-80">
+          <p className="truncate text-[12px] opacity-80">
             Research Mode{audit ? ` · audited ${relativeTime(audit.createdAt)}` : ''}
           </p>
+          {audit?.overview ? (
+            <span className="mt-1.5 inline-block rounded-full bg-destructive px-2.5 py-1 text-[12px] font-bold text-white">
+              {audit.overview.issueCount} issues + {audit.overview.warningCount} warn
+            </span>
+          ) : null}
         </div>
-        {audit?.overview ? (
-          <span className="shrink-0 rounded-full bg-destructive px-2.5 py-1 text-[12px] font-bold text-white">
-            {audit.overview.issueCount} issues + {audit.overview.warningCount} warn
-          </span>
-        ) : null}
         <Button
           variant="ghost"
           size="icon-sm"
@@ -228,7 +228,7 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
           className="flex min-h-0 flex-1 flex-col"
         >
           <div className="border-b border-border bg-muted/60 px-2">
-            <TabsList variant="line" className="h-auto w-full flex-wrap justify-center gap-x-1 p-0">
+            <TabsList variant="line" className="w-full flex-wrap justify-center gap-x-1 gap-y-1 p-0 py-1 group-data-horizontal/tabs:h-auto">
               {TABS.map((t) => (
                 <TabsTrigger
                   key={t.value}

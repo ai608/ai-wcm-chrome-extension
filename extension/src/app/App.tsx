@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react'
+import { Suspense } from 'react'
 import { Providers } from '@/app/providers'
 import { CallMode } from '@/components/panel/CallMode'
 import { LoginScreen } from '@/components/panel/LoginScreen'
@@ -13,6 +13,7 @@ import { useConfigQuery } from '@/hooks/queries'
 import { useActiveTab } from '@/hooks/use-active-tab'
 import { useAuth } from '@/hooks/use-auth'
 import { asActiveContact } from '@/lib/active-tab'
+import { lazyWithReload } from '@/lib/lazy'
 import { usePanelStore } from '@/stores/panel-store'
 
 function LoadingScreen({ onSettings }: { onSettings?: () => void }) {
@@ -28,7 +29,7 @@ function LoadingScreen({ onSettings }: { onSettings?: () => void }) {
   )
 }
 
-const ResearchMode = lazy(() => import('@/components/research/ResearchMode'))
+const ResearchMode = lazyWithReload(() => import('@/components/research/ResearchMode'))
 
 function Panel() {
   const { user, isLoading } = useAuth()

@@ -78,6 +78,35 @@ async def get_contact(http: httpx.AsyncClient, contact_id: str) -> dict[str, Any
     return contact
 
 
+async def contact_website(
+    http: httpx.AsyncClient, contact: dict[str, Any]
+) -> str | None:
+    native = contact.get("website")
+    if isinstance(native, str) and native.strip():
+        return native.strip()
+    fields = contact.get("customFields") or []
+    if not isinstance(fields, list):
+        return None
+    catalog = await get_catalog(http)
+    website_ids = {
+        field.get("id")
+        for field in catalog
+        if field.get("fieldKey") == "contact.your_website_url"
+    }
+    for field in fields:
+        if not isinstance(field, dict):
+            continue
+        if (
+            field.get("id") not in website_ids
+            and field.get("fieldKey") != "contact.your_website_url"
+        ):
+            continue
+        value = field.get("value")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 async def update_custom_fields(
     http: httpx.AsyncClient, contact_id: str, fields: list[dict[str, Any]]
 ) -> None:

@@ -89,6 +89,10 @@ export function useRunOnDemand(auditId: string, domain: string) {
     onSuccess: (a) => {
       client.setQueryData(rk.latest(domain), a)
       client.setQueryData(rk.audit(auditId), a)
+      client.setQueriesData<{ audit: Audit | null }>(
+        { queryKey: ['contact'] },
+        (current) => current?.audit?.id === auditId ? { ...current, audit: a } : current,
+      )
     },
   })
 }

@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect } from 'react'
+import { Suspense, useEffect } from 'react'
 import { HistoryTab } from '@/components/history/HistoryTab'
 import { ContactHeader } from '@/components/panel/ContactHeader'
 import { PanelHeader } from '@/components/panel/PanelHeader'
@@ -10,12 +10,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useRefreshContact } from '@/hooks/queries'
 import { useScriptState } from '@/hooks/use-script-state'
 import { getEnv } from '@/lib/env'
+import { lazyWithReload } from '@/lib/lazy'
 import type { ActiveContact } from '@/lib/storage'
 import { lastTabItem } from '@/lib/storage'
 import { useAutosaveStore } from '@/stores/autosave-store'
 import { usePanelStore } from '@/stores/panel-store'
 
-const ResearchTab = lazy(() => import('@/components/research/ResearchTab'))
+const ResearchTab = lazyWithReload(() => import('@/components/research/ResearchTab'))
 
 function envLabel(): string {
   const env = getEnv()

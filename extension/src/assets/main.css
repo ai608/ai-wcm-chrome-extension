@@ -256,11 +256,30 @@ body {
 }
 
 @page {
-  size: Letter;
-  margin: 14mm;
+  margin: 0;
 }
 @media print {
+  html,
+  body,
+  #root {
+    height: auto !important;
+    overflow: visible !important;
+    max-width: none !important;
+  }
   body {
     background: white;
+  }
+  .report-root,
+  .report-root *,
+  .report-root *::before,
+  .report-root *::after {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+  .report-root section,
+  .report-root li,
+  .report-root tr,
+  .report-root table {
+    break-inside: avoid;
   }
 }

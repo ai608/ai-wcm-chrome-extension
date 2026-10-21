@@ -45,12 +45,7 @@ async function acceptWebSignIn(
   }
   await authHandoffItem.setValue(null)
   try {
-    const { tokens, user } = await realApi.exchangeWeb(
-      data.code,
-      pending.state,
-      pending.verifier,
-      browser.runtime.id,
-    )
+    const { tokens, user } = await realApi.exchangeWeb(data.code, pending.verifier)
     await authItem.setValue(tokens)
     await authUserItem.setValue(user)
     return { ok: true }

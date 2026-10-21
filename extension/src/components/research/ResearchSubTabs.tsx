@@ -7,6 +7,7 @@ import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useRunOnDemand } from '@/hooks/research-queries'
 import type { Audit, OnDemand } from '@/lib/api/research-types'
+import { getEnv } from '@/lib/env'
 import { usePanelStore } from '@/stores/panel-store'
 
 type Sub = 'domain' | 'local' | 'ai'
@@ -91,6 +92,13 @@ export function LocalCompetitorsForm({
       <Button type="submit" disabled={run.isPending}>
         Find competitors
       </Button>
+      {run.isError ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            {run.error instanceof Error ? run.error.message : 'Couldn’t find competitors.'}
+          </AlertDescription>
+        </Alert>
+      ) : null}
     </form>
   )
 }
@@ -126,7 +134,9 @@ export function CompetitorList({
 }
 
 export function ResearchSubTabs({ audit }: { audit: Audit }) {
-  const sub = (usePanelStore((s) => s.researchSubTab.research) as Sub | undefined) ?? 'domain'
+  const selected = usePanelStore((s) => s.researchSubTab.research) as Sub | undefined
+  const subs = getEnv().apiMock ? SUBS : SUBS.filter((item) => item.value === 'local')
+  const sub = subs.some((item) => item.value === selected) ? selected : subs[0]?.value
   const setSub = usePanelStore((s) => s.setResearchSubTab)
   const run = useRunOnDemand(audit.id, audit.domain)
   const r = audit.research
@@ -142,7 +152,7 @@ export function ResearchSubTabs({ audit }: { audit: Audit }) {
   if (!r) return null
   return (
     <div className="flex flex-col gap-3">
-      <SubTabs value={sub} onChange={(v) => setSub('research', v)} items={SUBS} />
+      <SubTabs value={sub ?? 'local'} onChange={(v) => setSub('research', v)} items={subs} />
       {sub === 'domain' ? (
         r.domainOverview.state === 'not_run' ? (
           <Block title="Domain Overview">

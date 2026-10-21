@@ -91,9 +91,7 @@ async def test_exchange_requires_matching_proof_and_rejects_replay(
     app.state.pool = object()
     body = {
         "code": code(),
-        "state": STATE,
         "verifier": VERIFIER,
-        "extension_id": EXTENSION_ID,
     }
     try:
         async with httpx.AsyncClient(
@@ -135,9 +133,7 @@ async def test_exchange_rechecks_grant(monkeypatch: pytest.MonkeyPatch) -> None:
                 "/api/v1/ext/auth/web-exchange",
                 json={
                     "code": code(),
-                    "state": STATE,
                     "verifier": VERIFIER,
-                    "extension_id": EXTENSION_ID,
                 },
             )
     finally:

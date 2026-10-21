@@ -148,7 +148,7 @@ export function SubTabs<T extends string>({
           onClick={() => onChange(it.value)}
           className={cn(
             'shrink-0 whitespace-nowrap rounded-full border border-border bg-muted px-3.5 py-1.5 text-[13px] font-semibold text-foreground/70',
-            value === it.value && 'border-primary bg-primary text-primary-foreground',
+            value === it.value && 'border-primary bg-primary font-semibold text-white',
           )}
         >
           {it.label}
@@ -177,7 +177,7 @@ export function FilterChips<T extends string>({
           onClick={() => onChange(it.value)}
           className={cn(
             'rounded-full border border-border px-2.5 py-0.5 text-[12px]',
-            value === it.value && 'border-primary bg-primary text-primary-foreground',
+            value === it.value && 'border-primary bg-primary font-semibold text-white',
           )}
         >
           {it.label}
