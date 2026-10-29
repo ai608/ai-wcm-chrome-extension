@@ -39,6 +39,7 @@ class FakeRepo:
             status="queued",
             error=None,
             section_state=json.dumps(state),
+            trace="[]",
             **{c: None for c in COLUMNS.values()},
             created_at=datetime.now(UTC),
             finished_at=None,
@@ -56,6 +57,10 @@ class FakeRepo:
             if r["domain"] == domain and r["status"] != "failed"
         ]
         return hits[-1] if hits else None
+
+    async def add_trace(self, audit_id: str, event: dict[str, Any]) -> None:
+        r = self.rows[audit_id]
+        r["trace"] = json.dumps([*json.loads(r["trace"]), event])
 
     async def update(
         self,
@@ -110,11 +115,16 @@ async def client(monkeypatch):
         updated_at=now,
     )
     app.dependency_overrides[require_extension_access] = lambda: user
+    # The routes read the app's shared HTTP client; without this the file only passes when
+    # another test file has already set it. Every provider call is faked, so it is never used.
+    shared = httpx.AsyncClient()
+    monkeypatch.setattr(app.state, "http_client", shared, raising=False)
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://t"
     ) as c:
         yield c
     app.dependency_overrides.clear()
+    await shared.aclose()
 
 
 async def settle() -> None:
@@ -192,22 +202,22 @@ async def test_crawl_and_gbp_fill_in_after_home_page(client, monkeypatch):
     monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
     monkeypatch.setattr(research.settings, "APIFY_API_TOKEN", "fake")
 
-    async def fake_crawl(_http, url):
+    async def fake_crawl(_http, url, _report=None):
         return [
             url,
             "https://glowmedspa.com/services/botox",
             "https://glowmedspa.com/about",
         ], {}
 
-    async def fake_gbp(_http, query, domain):
-        assert domain == "glowmedspa.com"
+    async def fake_gbp(_http, queries, domain, phone=None):
+        assert domain == "glowmedspa.com" and "glowmedspa.com" in queries
         return {
             "matched": True,
             "name": "Glow Med Spa",
             "rating": 4.8,
             "review_count": 120,
             "phone": "(512) 555-0000",
-        }
+        }, queries
 
     monkeypatch.setattr(site_crawl, "crawl", fake_crawl)
     monkeypatch.setattr(site_crawl, "gbp_lookup", fake_gbp)
@@ -221,6 +231,7 @@ async def test_crawl_and_gbp_fill_in_after_home_page(client, monkeypatch):
     )
     assert done["site"]["pages_crawled"] == 1
     assert done["business"]["gbp"]["review_count"] == 120
+    assert done["business"]["gbp"]["match_reasons"] == ["website address"]
     # the home page link text is "Call", so there is no number to compare
     assert done["business"]["nap"]["consistent_with_gbp"] is None
 
@@ -232,7 +243,7 @@ async def test_provider_failure_keeps_home_results_and_marks_partial(
 
     monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
 
-    async def broken(_http, _url):
+    async def broken(_http, _url, _report=None):
         raise httpx.ConnectError("firecrawl down")
 
     monkeypatch.setattr(site_crawl, "crawl", broken)
@@ -251,7 +262,7 @@ async def test_blocked_home_page_falls_back_to_firecrawl(client, monkeypatch):
     async def fake_scrape(_http, _url):
         return HTML
 
-    async def no_crawl(_http, url):
+    async def no_crawl(_http, url, _report=None):
         return [url], {}
 
     monkeypatch.setattr(site_crawl, "scrape", fake_scrape)
@@ -300,3 +311,315 @@ async def test_ai_page_analysis_fills_topics_and_failure_marks_partial(
     await settle()
     done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
     assert done["status"] == "partial" and done["on_page"] is not None
+
+
+PSI = {
+    "lighthouseResult": {
+        "categories": {
+            "performance": {"score": 0.42},
+            "seo": {"score": 0.905},
+            "accessibility": {"score": 1},
+            "best-practices": {"score": None},
+        },
+        "audits": {
+            "largest-contentful-paint": {"numericValue": 3456.7},
+            "cumulative-layout-shift": {"numericValue": 0.12345},
+        },
+    }
+}
+
+
+async def test_pagespeed_maps_scores_and_metrics(monkeypatch):
+    from app.services import site_crawl
+
+    seen: list[list[tuple[str, str]]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen.append(request.url.params.multi_items())
+        return httpx.Response(200, json=PSI)
+
+    monkeypatch.setattr(site_crawl.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        out = await site_crawl.pagespeed(http, "https://glowmedspa.com/")
+    flat = {
+        "seo": 90,
+        "accessibility": 100,
+        "best_practices": None,
+        "lcp_ms": 3457,
+        "cls": 0.123,
+    }
+    assert out == {
+        "mobile_performance": 42,
+        **flat,
+        "desktop": {"performance": 42, **flat},
+    }
+    assert sorted(v for q in seen for k, v in q if k == "strategy") == [
+        "desktop",
+        "mobile",
+    ]
+    assert all(("key", "fake") in q and ("category", "seo") in q for q in seen)
+
+
+async def test_pagespeed_desktop_failure_keeps_mobile_and_logs_no_secret(
+    monkeypatch, caplog
+):
+    from app.services import site_crawl
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["strategy"] == "desktop":
+            return httpx.Response(500, json={})
+        return httpx.Response(200, json=PSI)
+
+    monkeypatch.setattr(
+        site_crawl.settings, "GOOGLE_PAGESPEED_API_KEY", "sekret-key-123"
+    )
+    with caplog.at_level("DEBUG"):
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            out = await site_crawl.pagespeed(http, "https://glowmedspa.com/")
+    assert out["mobile_performance"] == 42 and out["desktop"] is None
+    # httpx's own INFO request line prints the URL; ours must not
+    ours = " ".join(r.getMessage() for r in caplog.records if r.name.startswith("app"))
+    assert "HTTPStatusError" in ours and "500" in ours
+    assert "sekret-key-123" not in ours and "googleapis" not in ours
+
+
+async def test_pagespeed_mobile_failure_raises(monkeypatch):
+    from app.services import site_crawl
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.params["strategy"] == "mobile":
+            return httpx.Response(500, json={})
+        return httpx.Response(200, json=PSI)
+
+    monkeypatch.setattr(site_crawl.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+        with pytest.raises(httpx.HTTPStatusError):
+            await site_crawl.pagespeed(http, "https://glowmedspa.com/")
+
+
+async def test_pagespeed_runs_in_audit_when_key_set(client, monkeypatch):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+
+    async def fake_psi(_http, url):
+        return {"mobile_performance": 80, "seo": 90}
+
+    monkeypatch.setattr(site_crawl, "pagespeed", fake_psi)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "ready" and done["section_state"]["on_page"] == "ready"
+    assert done["on_page"]["pagespeed"]["mobile_performance"] == 80
+
+
+async def test_pagespeed_skipped_without_key(client, monkeypatch):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "")
+
+    async def boom(_http, _url):
+        raise AssertionError("PageSpeed must not be called without a key")
+
+    monkeypatch.setattr(site_crawl, "pagespeed", boom)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "ready" and done["on_page"]["pagespeed"] is None
+
+
+async def test_pagespeed_failure_keeps_none_and_marks_partial(
+    client, monkeypatch, caplog
+):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+
+    async def broken(_http, _url):
+        raise httpx.ReadTimeout("psi slow key=sekret-key-123")
+
+    monkeypatch.setattr(site_crawl, "pagespeed", broken)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    assert "sekret-key-123" not in caplog.text
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "partial" and done["section_state"]["on_page"] == "ready"
+    assert done["on_page"]["pagespeed"] is None and done["site"] is not None
+
+
+def folded(trace: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    """What the panel does: last event per id wins."""
+    return {e["id"]: e for e in trace}
+
+
+async def test_trace_records_each_step_of_a_full_run(client, monkeypatch):
+    from app.services import site_crawl
+
+    for key in ("FIRECRAWL_API_KEY", "GOOGLE_PAGESPEED_API_KEY"):
+        monkeypatch.setattr(research.settings, key, "fake")
+    home = "https://glowmedspa.com"
+    mapped = [home, f"{home}/services/botox", f"{home}/about", f"{home}/contact"]
+
+    async def fake_map(_http, _url):
+        return mapped
+
+    async def fake_scrape(_http, url):
+        return None if url.endswith("/about") else HTML
+
+    async def fake_psi(_http, _url):
+        return {"mobile_performance": 71}
+
+    monkeypatch.setattr(site_crawl, "map_site", fake_map)
+    monkeypatch.setattr(site_crawl, "scrape", fake_scrape)
+    monkeypatch.setattr(site_crawl, "pagespeed", fake_psi)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    steps = folded(done["trace"])
+    assert [
+        steps[k]["status"] for k in ("home", "analyze", "map", "pick", "scrape")
+    ] == ["done"] * 5
+    assert steps["home"]["detail"]["via"] == "direct"
+    assert steps["map"]["detail"]["count"] == 4
+    groups = {g["name"]: g for g in steps["pick"]["detail"]["groups"]}
+    assert groups["service"]["picked"] == [f"{home}/services/botox"]
+    assert groups["trust"]["picked"] == [f"{home}/about"]
+    assert steps["scrape"]["detail"] == {"ok": 1, "failed": 1}
+    assert steps[f"page:{home}/services/botox"]["status"] == "done"
+    assert steps[f"page:{home}/about"]["status"] == "failed"
+    assert steps["psi"]["detail"] == {"mobile": 71, "desktop": None}
+    assert steps["ai"]["status"] == "skipped" and steps["gbp"]["status"] == "skipped"
+    assert steps["final"]["detail"] == {"outcome": "ready"}
+    assert all(isinstance(e["at"], str) for e in done["trace"])
+    assert "fake" not in json.dumps(done["trace"])  # no key ever lands in the trace
+
+
+async def test_trace_marks_the_failed_step_and_final_outcome(client, monkeypatch):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+
+    async def down(_http, _url):
+        raise httpx.ConnectError("https://api.firecrawl.dev/v2/map?key=SECRET")
+
+    monkeypatch.setattr(site_crawl, "map_site", down)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    steps = folded(done["trace"])
+    assert done["status"] == "partial"
+    assert steps["map"]["status"] == "failed"
+    assert steps["map"]["detail"]["error"] == "ConnectError"
+    assert "SECRET" not in json.dumps(done["trace"])
+    assert steps["final"]["detail"] == {"outcome": "partial"}
+
+
+async def test_unreachable_site_traces_failed_home_and_final(client):
+    r = await client.post(
+        "/api/v1/ext/research/audits", json={"url": "down.example.com"}
+    )
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    steps = folded(done["trace"])
+    assert done["status"] == "failed"
+    assert steps["home"]["status"] == "failed"
+    assert steps["final"]["status"] == "failed"
+
+
+async def test_trace_write_failure_never_breaks_the_audit(client, monkeypatch):
+    async def broken(_self, _audit_id, _event):
+        raise RuntimeError("database hiccup")
+
+    monkeypatch.setattr(FakeRepo, "add_trace", broken)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "ready" and done["trace"] == []
+
+
+async def test_score_is_computed_once_after_the_whole_audit(client, monkeypatch):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+
+    async def fake_psi(_http, _url):
+        return {"mobile_performance": 95}
+
+    monkeypatch.setattr(site_crawl, "pagespeed", fake_psi)
+    seen: list[dict[str, Any]] = []
+    update = FakeRepo.update
+
+    async def spy(self, audit_id, **kw):
+        seen.append(kw)
+        await update(self, audit_id, **kw)
+
+    monkeypatch.setattr(FakeRepo, "update", spy)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    home = next(u for u in seen if "on_page" in (u.get("sections") or {}))
+    assert home["sections"]["overview"]["score"] is None
+    assert home["state"]["overview"] == "running"
+    scored = next(
+        i
+        for i, u in enumerate(seen)
+        if "overview" in (u.get("sections") or {}) and u is not home
+    )
+    finished = next(i for i, u in enumerate(seen) if u.get("finished"))
+    assert scored < finished and seen[scored]["state"] == {"overview": "ready"}
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    o = done["overview"]
+    assert isinstance(o["score"], int) and o["grade"] in "ABCDF"
+    assert len(o["categories"]) == 9 and o["categories"][0]["excluded"] is True
+    assert o["provisional_reasons"] == ["No Google Business Profile found"]
+    assert done["section_state"]["overview"] == "ready"
+    steps = folded(done["trace"])
+    assert steps["score"]["status"] == "done"
+    assert steps["score"]["label"] == "Score the audit"
+    assert steps["score"]["detail"] == {"score": o["score"], "grade": o["grade"]}
+    rep = (await client.get(f"/api/v1/ext/research/audits/{done['id']}/report")).json()
+    assert f"{o['score']}/100" in rep["intro"]
+
+
+async def test_failed_audit_gets_no_score(client):
+    r = await client.post(
+        "/api/v1/ext/research/audits", json={"url": "down.example.com"}
+    )
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "failed" and done["overview"] is None
+    assert done["section_state"]["overview"] == "failed"
+    assert "score" not in folded(done["trace"])
+    rep = (await client.get(f"/api/v1/ext/research/audits/{done['id']}/report")).json()
+    assert "None" not in rep["intro"] and "/100" not in rep["intro"]
+
+
+async def test_slow_pagespeed_is_capped_and_score_still_saved(client, monkeypatch):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    monkeypatch.setattr(research, "PAGESPEED_WAIT_S", 0.05)
+    cancelled = asyncio.Event()
+
+    async def slow_psi(_http, _url):
+        try:
+            await asyncio.sleep(30)
+        except asyncio.CancelledError:
+            cancelled.set()
+            raise
+        return {"mobile_performance": 99}
+
+    monkeypatch.setattr(site_crawl, "pagespeed", slow_psi)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await asyncio.wait_for(settle(), 5)
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert cancelled.is_set()
+    assert done["status"] == "partial" and done["finished_at"] is not None
+    assert done["on_page"]["pagespeed"] is None
+    assert done["section_state"]["on_page"] == "ready"
+    o = done["overview"]
+    assert o["score"] is not None and o["provisional"] is True
+    assert "PageSpeed unavailable" in o["provisional_reasons"]
+    steps = folded(done["trace"])
+    assert steps["psi"]["status"] == "failed"
+    assert steps["psi"]["detail"] == {"error": "Timed out"}
+    assert steps["score"]["status"] == "done"

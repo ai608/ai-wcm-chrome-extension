@@ -176,18 +176,30 @@ function Proof({ p }: { p: SiteSection['proof'] }) {
 }
 
 function Blog({ audit, b }: { audit: Audit; b: SiteSection['blog'] }) {
+  // Counts come from posts whose date we found. When many posts have none, they are minimums.
+  const partial = b.datedPosts != null && b.postCount > 0 && b.datedPosts < b.postCount
+  const dateKnown = b.lastPostAt != null
   return (
     <div className="flex flex-col gap-3">
       <Block>
         <Row label="Blog URL">{b.url ? <ExtLink href={b.url}>{b.url}</ExtLink> : 'None found'}</Row>
         <Row label="Posts">{b.postCount}</Row>
-        <Row label="Last post" status={b.postsLast6Months ? 'ok' : 'warn'}>
+        <Row
+          label="Last post"
+          status={!dateKnown ? 'info' : b.postsLast6Months ? 'ok' : partial ? 'info' : 'warn'}
+        >
           {b.lastPostAt
-            ? `${new Date(b.lastPostAt).toLocaleDateString()} (${relativeTime(b.lastPostAt)})`
-            : '-'}
+            ? `${new Date(b.lastPostAt).toLocaleDateString(undefined, { dateStyle: 'medium' })} (${relativeTime(b.lastPostAt)})`
+            : 'Date not found'}
         </Row>
         <Row label="Frequency">
-          {b.postsLast6Months} in last 6 months, {b.postsLast12Months} in last 12
+          {partial ? 'At least ' : ''}
+          {b.postsLast6Months} in the last 6 months, {b.postsLast12Months} in the last 12 months
+          {partial ? (
+            <span className="mt-0.5 block text-[12px]">
+              Dates found for {b.datedPosts} of {b.postCount} posts.
+            </span>
+          ) : null}
         </Row>
         <Row label="Links to services" status={b.linksToServices ? 'ok' : 'fail'}>
           {b.linksToServices ? 'Yes' : 'No'}

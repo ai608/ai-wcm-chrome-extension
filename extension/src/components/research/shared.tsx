@@ -101,21 +101,31 @@ export function Row({
 }) {
   return (
     <div className="flex items-start gap-2.5 border-b border-border/70 py-2.5 text-[14px] last:border-b-0">
-      {status ? <StatusDot status={status} /> : null}
-      <span className="w-24 shrink-0 font-semibold text-foreground">{label}</span>
+      {/* Rows without a status keep the dot's slot, so labels and values line up down the list. */}
+      {status ? (
+        <StatusDot status={status} />
+      ) : (
+        <span aria-hidden="true" className="size-2 shrink-0" />
+      )}
+      <span className="w-32 shrink-0 font-semibold text-foreground">{label}</span>
       <span className="min-w-0 flex-1 break-words text-muted-foreground">{children}</span>
     </div>
+  )
+}
+
+/** The one style for every section heading in the panel (1rem, semibold, full ink). */
+export function SectionTitle({ children, className }: { children: ReactNode; className?: string }) {
+  return (
+    <h3 className={cn('py-0.5 text-base font-semibold leading-6 text-foreground', className)}>
+      {children}
+    </h3>
   )
 }
 
 export function Block({ title, children }: { title?: string; children: ReactNode }) {
   return (
     <section>
-      {title ? (
-        <h3 className="mb-2 text-[13px] font-semibold tracking-wide text-muted-foreground">
-          {title}
-        </h3>
-      ) : null}
+      {title ? <SectionTitle className="mb-2">{title}</SectionTitle> : null}
       {children}
     </section>
   )

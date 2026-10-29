@@ -6,7 +6,9 @@ import type {
   DomainOverview,
   Grade,
   LocalCompetitors,
+  OverviewSection,
   SiteSection,
+  TraceEvent,
 } from '@/lib/api/research-types'
 
 export const STRONG_DOMAIN = 'glowaesthetics.com'
@@ -141,99 +143,279 @@ function services(domain: string, strong: boolean): SiteSection['services'] {
 }
 
 function grade(score: number): Grade {
-  return score >= 90 ? 'A' : score >= 80 ? 'B' : score >= 70 ? 'C' : score >= 60 ? 'D' : 'F'
+  return score >= 90 ? 'A' : score >= 75 ? 'B' : score >= 60 ? 'C' : score >= 45 ? 'D' : 'F'
 }
 
-const CAT_LABELS: Record<CategoryKey, string> = {
-  gbp: 'Google Business Profile',
-  reviews: 'Reviews',
-  service_pages: 'Service pages',
-  service_area: 'Service area',
-  getting_the_call: 'Getting the call',
-  site_fundamentals: 'Site fundamentals',
-  content_proof: 'Content & proof',
-  supporting_content: 'Supporting content',
-  social_video: 'Social & video',
+// Same order, labels and weights as backend site_score.CATEGORIES.
+const CATS: [CategoryKey, string, number][] = [
+  ['google_business_profile', 'Google Business Profile', 15],
+  ['reviews', 'Reviews', 10],
+  ['service_pages', 'Service pages', 15],
+  ['service_area', 'Service area', 10],
+  ['getting_the_call', 'Getting the call', 15],
+  ['site_fundamentals', 'Site fundamentals', 10],
+  ['content_and_proof', 'Content and proof', 10],
+  ['supporting_content', 'Supporting content', 10],
+  ['social_and_video', 'Social and video', 5],
+]
+
+/** Placeholder the backend stores until the whole audit has finished. */
+export const PENDING_OVERVIEW: OverviewSection = {
+  score: null,
+  grade: null,
+  provisional: true,
+  provisionalReasons: [],
+  categories: [],
+  topIssues: [],
+  issueCount: 0,
+  warningCount: 0,
+  summaryText: '',
 }
 
-export function buildAudit(id: string, domain: string, url: string, startedAt: Date): Audit {
+/** The final weighted score, worked out like backend site_score.compute. */
+export function mockOverview(domain: string): OverviewSection {
   const strong = domain === STRONG_DOMAIN
-  const svc = services(domain, strong)
-  const cat = (key: CategoryKey, s: number) => ({
-    key,
-    label: CAT_LABELS[key],
-    score: s,
-    grade: grade(s),
+  // Weak fixture: no Google profile, so GBP and reviews are excluded (provisional).
+  const scores: Partial<Record<CategoryKey, number>> = strong
+    ? {
+        google_business_profile: 92,
+        reviews: 88,
+        service_pages: 74,
+        service_area: 70,
+        getting_the_call: 85,
+        site_fundamentals: 82,
+        content_and_proof: 72,
+        supporting_content: 68,
+        social_and_video: 76,
+      }
+    : {
+        service_pages: 28,
+        service_area: 0,
+        getting_the_call: 48,
+        site_fundamentals: 52,
+        content_and_proof: 30,
+        supporting_content: 24,
+        social_and_video: 40,
+      }
+  const included = CATS.reduce((n, [k, , w]) => n + (scores[k] != null ? w : 0), 0)
+  const score = Math.round(CATS.reduce((n, [k, , w]) => n + w * (scores[k] ?? 0), 0) / included)
+  const categories = CATS.map(([key, label, weight]) => {
+    const s = scores[key]
+    return s == null
+      ? { key, label, weight, score: null, grade: null, pointsLost: null, excluded: true }
+      : {
+          key,
+          label,
+          weight,
+          score: s,
+          grade: grade(s),
+          pointsLost: Math.round(((weight * 100) / included) * (100 - s)) / 100,
+          excluded: false,
+        }
   })
-  const categories = strong
-    ? [
-        cat('gbp', 92),
-        cat('reviews', 88),
-        cat('service_pages', 74),
-        cat('service_area', 70),
-        cat('getting_the_call', 85),
-        cat('site_fundamentals', 82),
-        cat('content_proof', 72),
-        cat('supporting_content', 68),
-        cat('social_video', 76),
-      ]
-    : [
-        cat('service_pages', 28),
-        cat('service_area', 0),
-        cat('getting_the_call', 35),
-        cat('site_fundamentals', 52),
-        cat('content_proof', 30),
-        cat('supporting_content', 24),
-        cat('social_video', 40),
-      ]
-  const score = strong ? 78 : 32
-  const topIssues = strong
+  const topIssues: OverviewSection['topIssues'] = strong
     ? [
         {
-          category: 'service_area' as const,
-          title: 'Only 4 city pages for a multi-city service area',
-          detail: 'Patients in nearby towns can’t find a page built for their search.',
+          category: 'service_area',
+          title: 'Only 4 city pages',
+          detail: 'Patients in other nearby towns cannot find a page built for their search.',
         },
         {
-          category: 'service_pages' as const,
-          title: 'Hormone therapy has no FAQ or cost page',
-          detail: 'High-intent searches like “HRT cost” land on competitors.',
+          category: 'service_pages',
+          title: 'Hormone Replacement pages are thin',
+          detail: '1 of 3 expected pages; misses 6 of 9 patient questions.',
         },
       ]
     : [
         {
-          category: 'service_pages' as const,
+          category: 'service_pages',
           title: 'Only 3 of 70 expected treatment pages exist',
           detail:
             'Botox, fillers, IV therapy and weight loss are each covered by a single thin page, so most treatment searches never reach this clinic.',
         },
         {
-          category: 'service_area' as const,
-          title: 'No city or service-area pages',
-          detail:
-            'No map-radius coverage beyond the home market, usually the biggest local SEO gap.',
+          category: 'service_area',
+          title: 'No city or service area pages',
+          detail: 'Patients in nearby towns cannot find a page built for their search.',
         },
         {
-          category: 'getting_the_call' as const,
-          title: 'No online booking detected',
-          detail: 'Patients who find the site at night have no way to book without calling.',
+          category: 'getting_the_call',
+          title: 'No online booking found',
+          detail: 'After hours visitors cannot book without calling, so many simply leave.',
         },
         {
-          category: 'site_fundamentals' as const,
+          category: 'content_and_proof',
+          title: 'No before and after gallery',
+          detail: 'Patients choosing an elective treatment want to see real results first.',
+        },
+        {
+          category: 'supporting_content',
+          title: 'Only 1 blog post in the last 12 months',
+          detail: 'Regular posts answer the questions patients search before booking.',
+        },
+        {
+          category: 'site_fundamentals',
           title: 'No LocalBusiness schema',
           detail: 'Google gets no structured signal for the clinic name, address and hours.',
         },
-        {
-          category: 'content_proof' as const,
-          title: 'No before/after gallery or provider bios',
-          detail: 'Elective-treatment buyers look for proof and a medical director before booking.',
-        },
-        {
-          category: 'supporting_content' as const,
-          title: '160 blog posts but only 1 in the last 6 months',
-          detail: 'Publishing stalled and posts do not link to treatment pages.',
-        },
       ]
+  const reasons = strong ? [] : ['No Google Business Profile found']
+  return {
+    score,
+    grade: grade(score),
+    provisional: reasons.length > 0,
+    provisionalReasons: reasons,
+    categories,
+    topIssues,
+    issueCount: strong ? 3 : 14,
+    warningCount: strong ? 6 : 9,
+    summaryText: `${domain}: ${score}/100 (${grade(score)}). Top issues: ${topIssues
+      .slice(0, 3)
+      .map((i) => i.title)
+      .join('; ')}.${reasons.length ? ` Provisional: ${reasons.join(', ')}.` : ''}`,
+  }
+}
+
+const TRACE_LABEL: Record<string, string> = {
+  home: 'Fetch home page',
+  analyze: 'Analyse home page',
+  map: 'Map site with Firecrawl',
+  pick: 'Choose pages to read',
+  scrape: 'Read pages with Firecrawl',
+  enrich: 'Build site facts',
+  ai: 'AI page analysis',
+  gbp: 'Google Business Profile',
+  psi: 'PageSpeed',
+  score: 'Score the audit',
+  final: 'Audit finished',
+}
+
+/** The run log the backend would have written `elapsed` ms after the audit started. */
+export function mockTrace(
+  domain: string,
+  elapsed: number,
+  fails: boolean,
+  startedAt: Date,
+): TraceEvent[] {
+  const base = `https://${domain}`
+  const picked = [
+    '/services/botox',
+    '/services/fillers',
+    '/services/iv-therapy',
+    '/services/weight-loss',
+    '/locations/austin',
+    '/before-and-after',
+    '/about',
+    '/faq',
+    '/blog/botox-aftercare',
+  ].map((p) => base + p)
+  const group = (name: string, from: number, to: number, found: number) => ({
+    name,
+    found,
+    picked: picked.slice(from, to),
+    skipped: found - (to - from),
+  })
+  type Step = {
+    id: string
+    start: number
+    end: number
+    status?: TraceEvent['status']
+    run?: Record<string, unknown>
+    detail: Record<string, unknown>
+  }
+  const steps: Step[] = [
+    { id: 'home', start: 0, end: 500, detail: { via: 'direct', url: `${base}/`, size: 48213 } },
+    { id: 'analyze', start: 500, end: 900, detail: {} },
+    fails
+      ? { id: 'map', start: 900, end: 1900, status: 'failed', detail: { error: 'HTTP 402' } }
+      : { id: 'map', start: 900, end: 1900, detail: { count: 142 } },
+    { id: 'psi', start: 900, end: 4000, detail: { mobile: 64, desktop: 88 } },
+  ]
+  if (!fails) {
+    steps.push(
+      {
+        id: 'pick',
+        start: 1900,
+        end: 1900,
+        detail: {
+          total: picked.length,
+          groups: [
+            group('service', 0, 4, 9),
+            group('city', 4, 5, 1),
+            group('proof', 5, 6, 1),
+            group('trust', 6, 8, 2),
+            group('blog', 8, 9, 1),
+          ],
+        },
+      },
+      {
+        id: 'scrape',
+        start: 1900,
+        end: 3700,
+        run: { total: picked.length },
+        detail: { ok: picked.length - 1, failed: 1 },
+      },
+      ...picked.map((url, i) => ({
+        id: `page:${url}`,
+        start: 1900 + Math.floor(i / 4) * 600,
+        end: 2500 + Math.floor(i / 4) * 600,
+        status: (i === 6 ? 'failed' : 'done') as TraceEvent['status'],
+        detail: { url },
+      })),
+      { id: 'enrich', start: 3700, end: 4000, detail: { pages: picked.length } },
+      { id: 'ai', start: 4000, end: 5000, detail: { pages: picked.length } },
+      { id: 'gbp', start: 5000, end: 5600, detail: { matched: true } },
+    )
+  }
+  const scored = mockOverview(domain)
+  steps.push({
+    id: 'score',
+    start: 5600,
+    end: 6000,
+    detail: { score: scored.score, grade: scored.grade },
+  })
+  const out: TraceEvent[] = []
+  const at = (ms: number) => new Date(startedAt.getTime() + ms).toISOString()
+  for (const s of steps) {
+    const label = s.id.startsWith('page:')
+      ? new URL(s.id.slice(5)).pathname
+      : (TRACE_LABEL[s.id] ?? s.id)
+    if (elapsed >= s.start && elapsed < s.end) {
+      out.push({
+        id: s.id,
+        status: 'running',
+        label,
+        ms: null,
+        at: at(s.start),
+        detail: s.run ?? {},
+      })
+    } else if (elapsed >= s.end) {
+      out.push({
+        id: s.id,
+        status: s.status ?? 'done',
+        label,
+        ms: s.end - s.start,
+        at: at(s.end),
+        detail: s.detail,
+      })
+    }
+  }
+  if (elapsed >= 6000) {
+    out.push({
+      id: 'final',
+      status: 'done',
+      label: TRACE_LABEL.final ?? 'final',
+      ms: null,
+      at: at(6000),
+      detail: { outcome: fails ? 'partial' : 'ready' },
+    })
+  }
+  return out.sort((a, b) => a.at.localeCompare(b.at))
+}
+
+export function buildAudit(id: string, domain: string, url: string, startedAt: Date): Audit {
+  const strong = domain === STRONG_DOMAIN
+  const svc = services(domain, strong)
   const t = (key: string, label: string, ok: boolean, url?: string) => ({
     key,
     label,
@@ -259,23 +441,14 @@ export function buildAudit(id: string, domain: string, url: string, startedAt: D
       convert: 'ready',
       research: 'ready',
     },
-    overview: {
-      score,
-      grade: grade(score),
-      provisional: !strong,
-      categories,
-      topIssues,
-      issueCount: strong ? 3 : 14,
-      warningCount: strong ? 6 : 9,
-      summaryText: `${domain}: ${score}/100 (${grade(score)}). ${topIssues
-        .map((i) => i.title)
-        .join('; ')}.`,
-    },
+    trace: mockTrace(domain, Number.POSITIVE_INFINITY, false, startedAt),
+    overview: mockOverview(domain),
     business: {
       gbp: strong
         ? {
             matched: true,
             matchReason: 'phone + domain match',
+            matchReasons: ['website address', 'phone number'],
             name: 'Glow Aesthetics Med Spa',
             verified: true,
             primaryCategory: 'Medical spa',
@@ -462,6 +635,14 @@ export function buildAudit(id: string, domain: string, url: string, startedAt: D
         bestPractices: strong ? 92 : 79,
         lcpMs: strong ? 2600 : 5400,
         cls: strong ? 0.04 : 0.28,
+        desktop: {
+          performance: strong ? 94 : 72,
+          seo: strong ? 96 : 84,
+          accessibility: strong ? 90 : 76,
+          bestPractices: strong ? 96 : 83,
+          lcpMs: strong ? 1100 : 2900,
+          cls: strong ? 0.01 : 0.12,
+        },
       },
     },
     schema: {

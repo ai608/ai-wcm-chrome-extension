@@ -4,6 +4,8 @@ import {
   buildAudit,
   competitorsFixture,
   domainOverviewFixture,
+  mockTrace,
+  PENDING_OVERVIEW,
   STRONG_DOMAIN,
 } from '@/lib/api/mock/research-fixtures'
 import type {
@@ -28,7 +30,8 @@ const byDomain = new Map<string, string>()
 const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
 const latency = () => wait(300 + Math.random() * 300)
 
-// ms after start at which each section becomes ready
+const DONE_AT = 6000
+// ms after start at which each section becomes ready; the score only once the audit is done
 const READY_AT: Record<SectionKey, number> = {
   on_page: 1000,
   research: 1000,
@@ -36,9 +39,8 @@ const READY_AT: Record<SectionKey, number> = {
   site: 3000,
   business: 4000,
   convert: 4500,
-  overview: 5000,
+  overview: DONE_AT,
 }
-const DONE_AT = 6000
 
 function domainOf(url: string): string {
   let u: URL
@@ -79,9 +81,15 @@ function view(s: Stored): Audit {
       ;(a as unknown as Record<string, unknown>)[field] = null
     }
   }
+  if (elapsed >= READY_AT.on_page && elapsed < DONE_AT) {
+    // after the home page step the backend stores an unscored placeholder
+    a.overview = structuredClone(PENDING_OVERVIEW)
+    a.sectionState.overview = 'running'
+  }
   const done = elapsed >= DONE_AT
   a.status = done ? (s.fails ? 'partial' : 'ready') : 'running'
   a.finishedAt = done ? a.finishedAt : null
+  a.trace = mockTrace(a.domain, elapsed, s.fails, new Date(s.startedAt))
   if (a.research) {
     const r = s.runs
     const stateOf = (run: (typeof r)['domain']) =>

@@ -49,7 +49,11 @@ function AccordionTrigger({ className, children, ...props }: AccordionPrimitive.
 
 function AccordionContent({ className, children, ...props }: AccordionPrimitive.Panel.Props) {
   return (
-    <AccordionPrimitive.Panel data-slot="accordion-content" className="text-sm" {...props}>
+    <AccordionPrimitive.Panel
+      data-slot="accordion-content"
+      className="h-(--accordion-panel-height) overflow-hidden text-sm transition-[height] duration-200 ease-out data-starting-style:h-0 data-ending-style:h-0"
+      {...props}
+    >
       <div
         className={cn(
           'pt-0 pb-2.5 [&_a]:underline [&_a]:underline-offset-3 [&_a]:hover:text-foreground',

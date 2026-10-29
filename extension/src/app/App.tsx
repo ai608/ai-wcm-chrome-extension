@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useConfigQuery } from '@/hooks/queries'
 import { useActiveTab } from '@/hooks/use-active-tab'
 import { useAuth } from '@/hooks/use-auth'
+import { useTheme } from '@/hooks/use-theme'
 import { asActiveContact } from '@/lib/active-tab'
 import { lazyWithReload } from '@/lib/lazy'
 import { usePanelStore } from '@/stores/panel-store'
@@ -32,6 +33,7 @@ function LoadingScreen({ onSettings }: { onSettings?: () => void }) {
 const ResearchMode = lazyWithReload(() => import('@/components/research/ResearchMode'))
 
 function Panel() {
+  useTheme() // applies the saved theme to every screen
   const { user, isLoading } = useAuth()
   const tab = useActiveTab()
   const view = usePanelStore((s) => s.view)

@@ -4,14 +4,6 @@ from typing import Any
 
 import orjson
 
-from app.core.config import settings
-
-
-def _full_access_emails() -> set[str]:
-    return {
-        e.strip().lower() for e in settings.FULL_ACCESS_EMAILS.split(",") if e.strip()
-    }
-
 
 def _parse_dt(value: Any) -> datetime:
     return value if isinstance(value, datetime) else datetime.fromisoformat(value)
@@ -69,14 +61,6 @@ class UserProfile:
         return self.role == "owner"
 
     @property
-    def is_platform_super_admin(self) -> bool:
-        return self.email.strip().lower() in _full_access_emails()
-
-    @property
-    def has_full_access(self) -> bool:
-        return self.is_owner or self.is_platform_super_admin
-
-    @property
     def automation_access_map(self) -> dict[str, Any]:
         return (
             self.automation_access if isinstance(self.automation_access, dict) else {}
@@ -90,7 +74,7 @@ class UserProfile:
         return role if role in ("admin", "user") else None
 
     def can_open(self, automation_id: str) -> bool:
-        if self.has_full_access:
+        if self.is_owner:
             return True
         if automation_id in self.automation_access_map:
             return self._grant_role(automation_id) is not None

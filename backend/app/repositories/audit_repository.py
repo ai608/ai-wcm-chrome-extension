@@ -17,7 +17,7 @@ COLUMNS = {
     "research": "research",
 }
 _COLS = (
-    "id, url, domain, status, error, section_state, created_at, finished_at, "
+    "id, url, domain, status, error, section_state, created_at, finished_at, trace, "
     + ", ".join(COLUMNS.values())
 )
 
@@ -37,6 +37,7 @@ def to_wire(row: asyncpg.Record) -> dict[str, Any]:
         "created_at": row["created_at"].isoformat(),
         "finished_at": row["finished_at"].isoformat() if row["finished_at"] else None,
         "section_state": _json(row["section_state"]),
+        "trace": _json(row["trace"]) or [],
         **{k: _json(row[col]) for k, col in COLUMNS.items() if k != "research"},
         "research": research or None,
     }
@@ -122,6 +123,15 @@ class AuditRepository:
         async with self._pool.acquire() as conn:
             await conn.execute(
                 f"UPDATE extension.audits SET {', '.join(sets)} WHERE id = $1", *args
+            )
+
+    async def add_trace(self, audit_id: str, event: dict[str, Any]) -> None:
+        # Append-only: one row per status change; the UI folds events by `id`, last one wins.
+        async with self._pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE extension.audits SET trace = trace || $2::jsonb WHERE id = $1",
+                UUID(audit_id),
+                json.dumps([event]),
             )
 
     async def fail_interrupted(self) -> int:

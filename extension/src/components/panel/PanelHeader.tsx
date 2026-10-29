@@ -1,6 +1,5 @@
-import { Moon, RefreshCw, Settings, Sun } from 'lucide-react'
+import { RefreshCw, Settings } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useTheme } from '@/hooks/use-theme'
 
 interface PanelHeaderProps {
   mode?: string
@@ -15,19 +14,9 @@ export function PanelHeader({
   refreshing,
   onSettings,
 }: PanelHeaderProps) {
-  const { isDark, toggle } = useTheme()
   return (
     <header className="flex items-center gap-2 border-b border-border bg-brand-blue px-4 py-5 dark:bg-primary">
       <span className="mr-auto text-xl font-semibold leading-tight text-white">{mode}</span>
-      <Button
-        variant="ghost"
-        size="icon-sm"
-        title={isDark ? 'Light mode' : 'Dark mode'}
-        onClick={toggle}
-        className="text-white hover:bg-white/10 hover:text-white"
-      >
-        {isDark ? <Sun /> : <Moon />}
-      </Button>
       {onRefresh ? (
         <Button
           variant="ghost"

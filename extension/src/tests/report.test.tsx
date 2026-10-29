@@ -2,7 +2,7 @@ import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { Body } from '@/components/report/ReportPage'
-import { buildAudit } from '@/lib/api/mock/research-fixtures'
+import { buildAudit, PENDING_OVERVIEW } from '@/lib/api/mock/research-fixtures'
 import type { Report } from '@/lib/api/research-types'
 
 vi.mock('@/hooks/use-auth', () => ({ useAuth: () => ({ user: null, isLoading: false }) }))
@@ -65,5 +65,19 @@ describe('ReportPage Body print output', () => {
     expect(screen.getByText(/Home page mentions only/)).toBeDefined()
     const scores = screen.getAllByText(/\/ 100 \(/)
     expect(scores.length).toBeGreaterThan(0)
+  })
+
+  it('leaves the score out while it is not computed yet', () => {
+    const report = makeReport()
+    report.audit.overview = structuredClone(PENDING_OVERVIEW)
+    const { container } = render(<Body report={report} />)
+    expect(container.textContent).not.toMatch(/\/ 100|None|null/)
+    expect(screen.queryByText('Where the score comes from')).toBeNull()
+  })
+
+  it('marks excluded categories as not assessed', () => {
+    render(<Body report={makeReport()} />)
+    expect(screen.getAllByText('Not assessed')).toHaveLength(2)
+    expect(screen.getByText(/Provisional: No Google Business Profile found/)).toBeDefined()
   })
 })

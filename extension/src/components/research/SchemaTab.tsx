@@ -1,3 +1,4 @@
+import { ChevronRightIcon } from 'lucide-react'
 import { Block, Chip, ExtLink, Row } from '@/components/research/shared'
 import type { Audit, SchemaSection } from '@/lib/api/research-types'
 
@@ -46,8 +47,14 @@ export function SchemaTab({ audit, schema }: { audit: Audit; schema: SchemaSecti
           </div>
         </Block>
       ))}
-      <details className="rounded-lg border border-border p-3">
-        <summary className="cursor-pointer text-[14px] font-semibold">Raw JSON</summary>
+      <details className="group rounded-lg border border-border p-3">
+        <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[14px] font-semibold [&::-webkit-details-marker]:hidden">
+          <ChevronRightIcon
+            aria-hidden="true"
+            className="size-4 shrink-0 transition-transform duration-200 group-open:rotate-90"
+          />
+          Raw JSON
+        </summary>
         <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-all text-[12px]">
           {schema.raw}
         </pre>

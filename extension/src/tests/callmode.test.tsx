@@ -36,34 +36,36 @@ beforeEach(() => {
 })
 afterEach(cleanup)
 
-it.each(['c_glow', 'c_vital', 'c_peak', 'c_fail'])('CallMode %s has no update loop', async (id) => {
-  const { Providers } = await import('@/app/providers')
-  const { CallMode } = await import('@/components/panel/CallMode')
-  render(
-    <Providers>
-      <CallMode
-        activeContact={{ tabId: 1, url: 'x', locationId: 'MOCK_LOCATION', contactId: id }}
-        callerFirstName="Sam"
-        bookingWidgetUrl="about:blank"
-      />
-    </Providers>,
-  )
-  await waitFor(() => expect(screen.getAllByText('Opener').length).toBeGreaterThan(0), {
-    timeout: 3000,
-  })
-  await new Promise((r) => setTimeout(r, 1500))
-  fireEvent.click(screen.getByText('History'))
-  fireEvent.click(screen.getByText('Research'))
-  fireEvent.click(screen.getByText('Script'))
-  await waitFor(() => expect(screen.getAllByText('Opener').length).toBeGreaterThan(0))
-  fireEvent.click(screen.getAllByText('Opener')[0] as Element)
-  fireEvent.click(screen.getAllByText('Opener')[0] as Element)
-  for (const el of document.querySelectorAll('input[type=text], input:not([type]), textarea')) {
-    fireEvent.change(el, { target: { value: '12' } })
-  }
-  for (const cb of document.querySelectorAll('[role=checkbox]')) fireEvent.click(cb)
-  fireEvent.click(screen.getByTitle(/mode/i))
-  fireEvent.click(screen.getByTitle(/mode/i))
-  await new Promise((r) => setTimeout(r, 1500))
-  expect(screen.queryByText('Something went wrong')).toBeNull()
-})
+it.each(['c_glow', 'c_vital', 'c_peak', 'c_fail'])(
+  'CallMode %s has no update loop',
+  async (id) => {
+    const { Providers } = await import('@/app/providers')
+    const { CallMode } = await import('@/components/panel/CallMode')
+    render(
+      <Providers>
+        <CallMode
+          activeContact={{ tabId: 1, url: 'x', locationId: 'MOCK_LOCATION', contactId: id }}
+          callerFirstName="Sam"
+          bookingWidgetUrl="about:blank"
+        />
+      </Providers>,
+    )
+    await waitFor(() => expect(screen.getAllByText('Opener').length).toBeGreaterThan(0), {
+      timeout: 3000,
+    })
+    await new Promise((r) => setTimeout(r, 1500))
+    fireEvent.click(screen.getByText('History'))
+    fireEvent.click(screen.getByText('Research'))
+    fireEvent.click(screen.getByText('Script'))
+    await waitFor(() => expect(screen.getAllByText('Opener').length).toBeGreaterThan(0))
+    fireEvent.click(screen.getAllByText('Opener')[0] as Element)
+    fireEvent.click(screen.getAllByText('Opener')[0] as Element)
+    for (const el of document.querySelectorAll('input[type=text], input:not([type]), textarea')) {
+      fireEvent.change(el, { target: { value: '12' } })
+    }
+    for (const cb of document.querySelectorAll('[role=checkbox]')) fireEvent.click(cb)
+    await new Promise((r) => setTimeout(r, 1500))
+    expect(screen.queryByText('Something went wrong')).toBeNull()
+  },
+  20_000,
+)

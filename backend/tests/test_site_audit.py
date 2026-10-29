@@ -4,7 +4,7 @@ import socket
 import pytest
 
 from app.core.exceptions import AppError
-from app.services import site_audit
+from app.services import site_audit, site_score
 
 
 @pytest.mark.parametrize(
@@ -78,18 +78,18 @@ def test_overview_scores_passing_and_failing_checks() -> None:
     html += """<form></form><img src="/a.jpg" alt="Treatment room"></body></html>"""
     result = site_audit.analyze(html, "https://clinic.example/")
     overview = result["overview"]
-    # 8.5/9 fundamentals (meta missing) + 2.5/3 convert (no booking) = 11/12 = 92
-    assert overview["score"] == 92
-    assert overview["grade"] == "A"
+    # the home page step no longer scores: site_score.compute runs after the whole audit
+    assert overview["score"] is None and overview["grade"] is None
     assert overview["provisional"] is True
-    by_key = {c["key"]: c for c in overview["categories"]}
-    assert by_key["site_fundamentals"]["score"] == 94
-    assert by_key["getting_the_call"]["score"] == 83
-    assert overview["issue_count"] == 2
-    assert overview["warning_count"] == 2
-    titles = [i["title"] for i in overview["top_issues"]]
-    assert titles == ["Meta description is missing", "No online booking found"]
-    for item in overview["top_issues"]:
+    assert overview["categories"] == [] and overview["top_issues"] == []
+    final = site_score.compute(result)
+    by_key = {c["key"]: c for c in final["categories"]}
+    # 8.5/9 essentials (meta missing) and half the schema points; no PageSpeed
+    assert by_key["site_fundamentals"]["score"] == 86
+    titles = [i["title"] for i in final["top_issues"]]
+    assert "Meta description is missing" not in titles[:3]
+    assert "No online booking found" in titles
+    for item in final["top_issues"]:
         assert "\u2014" not in item["title"] and "\u2014" not in item["detail"]
         assert "needs attention" not in item["title"]
     cluster = result["site"]["services"]["clusters"][0]

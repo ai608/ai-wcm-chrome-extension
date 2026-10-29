@@ -1,5 +1,6 @@
-import { Moon, RefreshCw, Settings, Sun } from 'lucide-react'
+import { RefreshCw, Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { AuditProgress } from '@/components/research/AuditProgress'
 import { BusinessTab } from '@/components/research/BusinessTab'
 import { ConvertTab } from '@/components/research/ConvertTab'
 import { OnPageTab } from '@/components/research/OnPageTab'
@@ -13,7 +14,6 @@ import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { useLatestAudit, useStartAudit } from '@/hooks/research-queries'
-import { useTheme } from '@/hooks/use-theme'
 import type { ActiveTab } from '@/lib/active-tab'
 import { ApiError } from '@/lib/api/errors'
 import type { Audit, SectionKey } from '@/lib/api/research-types'
@@ -43,17 +43,34 @@ export function startErrorMessage(err: unknown): string {
   return 'Couldn’t start the audit.'
 }
 
+function siteOrigin(url: string): string | null {
+  try {
+    return new URL(url).origin
+  } catch {
+    return null
+  }
+}
+
+// A white tile keeps any site icon readable on the blue header; the first letter stands in
+// when the site has no favicon.
 function Favicon({ domain }: { domain: string }) {
   const [ok, setOk] = useState(true)
-  if (!ok) return null
   return (
-    <img
-      src={`https://${domain}/favicon.ico`}
-      alt=""
-      referrerPolicy="no-referrer"
-      className="size-5 shrink-0 rounded"
-      onError={() => setOk(false)}
-    />
+    <span className="grid size-10 shrink-0 place-items-center rounded-lg bg-white shadow-sm ring-1 ring-black/10">
+      {ok ? (
+        <img
+          src={`https://${domain}/favicon.ico`}
+          alt=""
+          referrerPolicy="no-referrer"
+          className="size-6 rounded-sm object-contain"
+          onError={() => setOk(false)}
+        />
+      ) : (
+        <span aria-hidden="true" className="text-base font-bold uppercase text-brand-blue">
+          {domain.charAt(0) || '?'}
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -69,7 +86,6 @@ function SiteHeader({
   const pending = usePanelStore((s) => s.pendingConfirm)
   const setPending = usePanelStore((s) => s.setPendingConfirm)
   const setView = usePanelStore((s) => s.setView)
-  const { isDark, toggle } = useTheme()
   const domain = tab.domain ?? ''
   const ghost =
     'text-white hover:bg-white/15 hover:text-white dark:text-primary-foreground dark:hover:bg-black/10'
@@ -79,24 +95,15 @@ function SiteHeader({
         <Favicon domain={domain} />
         <div className="min-w-0 flex-1">
           <p className="truncate text-lg font-bold leading-tight">{domain}</p>
-          <p className="truncate text-[12px] opacity-80">
+          <p className="truncate text-[12px] font-medium">
             Research Mode{audit ? ` · audited ${relativeTime(audit.createdAt)}` : ''}
           </p>
-          {audit?.overview ? (
-            <span className="mt-1.5 inline-block rounded-full bg-destructive px-2.5 py-1 text-[12px] font-bold text-white">
+          {audit?.overview && audit.overview.score != null ? (
+            <span className="mt-1.5 inline-block rounded-full bg-white px-2.5 py-1 text-[12px] font-bold text-destructive">
               {audit.overview.issueCount} issues + {audit.overview.warningCount} warn
             </span>
           ) : null}
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          title={isDark ? 'Light mode' : 'Dark mode'}
-          onClick={toggle}
-          className={ghost}
-        >
-          {isDark ? <Sun /> : <Moon />}
-        </Button>
         {audit ? (
           <Button
             variant="ghost"
@@ -228,7 +235,10 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
           className="flex min-h-0 flex-1 flex-col"
         >
           <div className="border-b border-border bg-muted/60 px-2">
-            <TabsList variant="line" className="w-full flex-wrap justify-center gap-x-1 gap-y-1 p-0 py-1 group-data-horizontal/tabs:h-auto">
+            <TabsList
+              variant="line"
+              className="w-full flex-wrap justify-center gap-x-1 gap-y-1 p-0 py-1 group-data-horizontal/tabs:h-auto"
+            >
               {TABS.map((t) => (
                 <TabsTrigger
                   key={t.value}
@@ -256,6 +266,7 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
                 <AlertDescription>{audit.error ?? 'The audit failed.'}</AlertDescription>
               </Alert>
             ) : null}
+            <AuditProgress audit={audit} />
             {TABS.map((t) => (
               <TabsContent key={t.value} value={t.value}>
                 {t.value === 'overview' ? (
@@ -269,7 +280,7 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
                 ) : (
                   <SectionGate audit={audit} section={t.section}>
                     {t.value === 'business' && audit.business ? (
-                      <BusinessTab business={audit.business} />
+                      <BusinessTab business={audit.business} website={siteOrigin(audit.url)} />
                     ) : t.value === 'on_page' && audit.onPage ? (
                       <OnPageTab audit={audit} onPage={audit.onPage} />
                     ) : t.value === 'schema' && audit.schema ? (

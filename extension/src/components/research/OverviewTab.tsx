@@ -1,5 +1,12 @@
 import { useState } from 'react'
-import { Block, gradeClass, gradeText, InfoNote, SECTION_LABEL } from '@/components/research/shared'
+import {
+  Block,
+  gradeClass,
+  gradeText,
+  InfoNote,
+  SECTION_LABEL,
+  SectionTitle,
+} from '@/components/research/shared'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,9 +15,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { toast } from '@/components/ui/toast'
 import { useSendReport } from '@/hooks/research-queries'
 import { ApiError } from '@/lib/api/errors'
-import type { Audit, SectionKey } from '@/lib/api/research-types'
-import { call } from '@/lib/messaging'
+import {
+  type Audit,
+  isLegacyOverview,
+  type OverviewSection,
+  type SectionKey,
+} from '@/lib/api/research-types'
 import { getEnv } from '@/lib/env'
+import { call } from '@/lib/messaging'
 import { usePanelStore } from '@/stores/panel-store'
 
 const CHECKLIST: SectionKey[] = ['on_page', 'schema', 'site', 'business', 'convert', 'overview']
@@ -47,6 +59,77 @@ function Progressing({ audit }: { audit: Audit }) {
         })}
       </ul>
     </Block>
+  )
+}
+
+/** The final score is computed once, after every audit step has finished. */
+export function scorePending(audit: Audit): boolean {
+  const o = audit.overview
+  return (
+    !o ||
+    o.score == null ||
+    o.grade == null ||
+    audit.status === 'queued' ||
+    audit.status === 'running' ||
+    audit.sectionState.overview === 'running'
+  )
+}
+
+function ScorePending({ audit }: { audit: Audit }) {
+  const running =
+    audit.status === 'queued' ||
+    audit.status === 'running' ||
+    audit.sectionState.overview === 'running'
+  return (
+    <div className="flex flex-col gap-1 rounded-xl border border-border bg-muted/40 p-4">
+      <SectionTitle>Website score</SectionTitle>
+      <p className="text-[14px] text-muted-foreground">
+        {running ? 'Score appears when the audit finishes.' : 'Not enough data to score this site.'}
+      </p>
+    </div>
+  )
+}
+
+function provisionalNote(o: OverviewSection, legacy: boolean): string | null {
+  if (!o.provisional) return null
+  if (legacy || !o.provisionalReasons?.length) {
+    return 'Provisional: Google Business Profile not matched; GBP and reviews not scored.'
+  }
+  return `Provisional: ${o.provisionalReasons.join('; ')}.`
+}
+
+function CategoryChips({ o, legacy }: { o: OverviewSection; legacy: boolean }) {
+  // Older scores listed "getting the call" inside the issues only; keep them as they were.
+  const cats = legacy ? o.categories.filter((c) => c.key !== 'getting_the_call') : o.categories
+  return (
+    <ul aria-label="Category grades" className="flex flex-wrap gap-1.5">
+      {cats.map((c) =>
+        c.excluded || c.grade == null ? (
+          <li
+            key={c.key}
+            title={`${c.label}: not assessed (no data), left out of the score`}
+            className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-[12px] text-muted-foreground"
+          >
+            {c.label} · not assessed
+          </li>
+        ) : (
+          <li
+            key={c.key}
+            title={
+              c.weight != null
+                ? `${c.label}: ${c.score} / 100, weight ${c.weight}, ${c.pointsLost ?? 0} points lost`
+                : `${c.label}: ${c.score} / 100`
+            }
+            className={`rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${gradeText(c.grade)}`}
+          >
+            {c.label} {c.grade}
+            {c.weight != null && c.pointsLost ? (
+              <span className="ml-1 font-normal text-muted-foreground">−{c.pointsLost}</span>
+            ) : null}
+          </li>
+        ),
+      )}
+    </ul>
   )
 }
 
@@ -140,36 +223,40 @@ function SendReport({ audit }: { audit: Audit }) {
 
 export function OverviewTab({ audit }: { audit: Audit }) {
   const o = audit.overview
-  if (!o) return <Progressing audit={audit} />
+  if (!o || scorePending(audit)) {
+    return (
+      <div className="flex flex-col gap-5">
+        <ScorePending audit={audit} />
+        {audit.status === 'queued' || audit.status === 'running' ? (
+          <Progressing audit={audit} />
+        ) : null}
+      </div>
+    )
+  }
+  const legacy = isLegacyOverview(o)
+  const note = provisionalNote(o, legacy)
+  const labelOf = (key: string) => o.categories.find((c) => c.key === key)?.label ?? key
   const tools = quickToolLinks(audit.url)
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-col gap-3 rounded-xl border border-border bg-muted/40 p-4">
         <div className="flex items-center gap-3">
           <div
-            className={`flex size-16 shrink-0 items-center justify-center rounded-full text-3xl font-bold ${gradeClass(o.grade)}`}
+            className={`flex size-16 shrink-0 items-center justify-center rounded-full text-3xl font-bold ${gradeClass(o.grade ?? 'F')}`}
           >
             {o.grade}
           </div>
           <div>
             <p className="text-xl font-bold leading-tight">{o.score} / 100</p>
-            {o.provisional ? (
-              <p className="text-[13px] text-muted-foreground">
-                Provisional: Google Business Profile not matched; GBP and reviews not scored.
+            {note ? <p className="text-[13px] text-muted-foreground">{note}</p> : null}
+            {legacy ? (
+              <p className="text-[12px] text-muted-foreground">
+                Older score. Re-run for the full grade.
               </p>
             ) : null}
           </div>
         </div>
-        <div className="flex flex-wrap gap-1.5">
-          {o.categories.map((c) => (
-            <span
-              key={c.key}
-              className={`rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${gradeText(c.grade)}`}
-            >
-              {c.label} {c.grade}
-            </span>
-          ))}
-        </div>
+        <CategoryChips o={o} legacy={legacy} />
         <Button
           className="w-fit font-semibold"
           onClick={() => call('openReport', { auditId: audit.id })}
@@ -181,6 +268,7 @@ export function OverviewTab({ audit }: { audit: Audit }) {
         <ol className="flex list-decimal flex-col gap-2.5 pl-5 text-[14px]">
           {o.topIssues.map((i) => (
             <li key={i.title}>
+              <p className="text-[12px] text-muted-foreground">{labelOf(i.category)}</p>
               <p className="font-semibold">{i.title}</p>
               <p className="text-muted-foreground">{i.detail}</p>
             </li>

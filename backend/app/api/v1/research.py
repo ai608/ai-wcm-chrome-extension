@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import time
 from datetime import UTC, datetime
 from typing import Any
 from urllib.parse import urlsplit
@@ -16,7 +17,7 @@ from app.core.exceptions import AppError
 from app.core.json import OrjsonResponse
 from app.models.user import UserProfile
 from app.repositories.audit_repository import AuditRepository, to_wire
-from app.services import ghl, site_ai, site_audit, site_crawl
+from app.services import ghl, site_ai, site_audit, site_crawl, site_score
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["research"])
@@ -26,6 +27,8 @@ INITIAL_STATE = {k: "pending" for k in site_audit.SECTION_KEYS}
 # ponytail: in-process jobs, max 3 at once, single instance. Move to a queue if scaled out.
 _sem = asyncio.Semaphore(3)
 _tasks: set[asyncio.Task[None]] = set()
+# After the other steps finish, wait at most this long for PageSpeed before scoring.
+PAGESPEED_WAIT_S = 60.0
 
 
 def _repo(request: Request) -> AuditRepository:
@@ -43,12 +46,81 @@ def _domain(host: str) -> str:
     return host.lower().rstrip(".").removeprefix("www.")
 
 
+LABELS = {
+    "home": "Fetch home page",
+    "analyze": "Analyse home page",
+    "map": "Map site with Firecrawl",
+    "pick": "Choose pages to read",
+    "scrape": "Read pages with Firecrawl",
+    "enrich": "Build site facts",
+    "ai": "AI page analysis",
+    "gbp": "Google Business Profile",
+    "psi": "PageSpeed",
+    "score": "Score the audit",
+    "final": "Audit finished",
+}
+
+
+def _why(exc: Exception) -> str:
+    """Short failure text for the trace. Never str(exc): httpx errors carry the URL, key included."""
+    if isinstance(exc, AppError):
+        return exc.message
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
+
+
+class _Trace:
+    """Writes the step-by-step run log shown in the panel. A write problem never touches the audit."""
+
+    def __init__(self, repo: AuditRepository, audit_id: str) -> None:
+        self._repo, self._id = repo, audit_id
+        self._started: dict[str, float] = {}
+        self._open: set[str] = set()
+
+    async def report(self, step: str, status: str, **detail: Any) -> None:
+        now = time.monotonic()
+        ms = detail.pop("ms", None)
+        if status == "running":
+            self._started[step] = now
+            self._open.add(step)
+        else:
+            self._open.discard(step)
+            if ms is None and step in self._started:
+                ms = round((now - self._started.pop(step)) * 1000)
+        event = {
+            "id": step,
+            "status": status,
+            "label": LABELS.get(step)
+            or urlsplit(step.removeprefix("page:")).path
+            or "/",
+            "ms": ms,
+            "at": datetime.now(UTC).isoformat(),
+            "detail": detail,
+        }
+        try:
+            async with asyncio.timeout(2):
+                await self._repo.add_trace(self._id, event)
+        except Exception:
+            logger.warning("audit %s: trace write failed", self._id, exc_info=True)
+
+    async def skip(self, reason: str, *steps: str) -> None:
+        for step in steps:
+            await self.report(step, "skipped", reason=reason)
+
+    async def fail_open(self, error: str) -> None:
+        for step in list(self._open):
+            await self.report(step, "failed", error=error)
+
+
 async def _home(
-    http: httpx.AsyncClient, url: str, hints: dict[str, str]
+    http: httpx.AsyncClient, url: str, hints: dict[str, str], trace: _Trace
 ) -> tuple[dict[str, Any], str, str]:
+    await trace.report("home", "running")
+    via, reason = "direct", None
     try:
         html, final_url = await site_audit.fetch_html(url)
-    except AppError:
+    except AppError as exc:
         if not settings.FIRECRAWL_API_KEY:
             raise
         # Sites behind a WAF or rendered by JavaScript: let Firecrawl fetch them.
@@ -56,7 +128,14 @@ async def _home(
         if not fallback:
             raise
         html, final_url = fallback, url
-    return site_audit.analyze(html, final_url, hints), final_url, html
+        via, reason = "firecrawl", exc.message
+    await trace.report(
+        "home", "done", via=via, reason=reason, url=final_url, size=len(html)
+    )
+    await trace.report("analyze", "running")
+    sections = site_audit.analyze(html, final_url, hints)
+    await trace.report("analyze", "done")
+    return sections, final_url, html
 
 
 async def _enrich(
@@ -67,24 +146,41 @@ async def _enrich(
     final_url: str,
     home_html: str,
     hints: dict[str, str],
+    trace: _Trace,
 ) -> bool:
     """Add whole-site, AI and GBP data. Returns False if a provider step failed."""
     ok = True
     pages = {final_url: home_html}
     if settings.FIRECRAWL_API_KEY:
         try:
-            urls, crawled = await site_crawl.crawl(http, final_url)
-            site_crawl.enrich(sections, urls, crawled)
+            urls, crawled = await site_crawl.crawl(http, final_url, trace.report)
+            await trace.report("enrich", "running")
+            posts = await site_crawl.blog_posts(http, urls, crawled, final_url)
+            site_crawl.enrich(sections, urls, crawled, posts)
+            await trace.report(
+                "enrich",
+                "done",
+                pages=len(crawled) + 1,
+                posts=sections["site"]["blog"]["post_count"],
+            )
             pages |= crawled
-        except (httpx.HTTPError, ValueError, KeyError):
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
             logger.warning("audit %s: site crawl failed", audit_id, exc_info=True)
+            await trace.fail_open(_why(exc))
             ok = False  # home-page site/convert data is kept
+    else:
+        await trace.skip("Firecrawl key not set", "map", "pick", "scrape", "enrich")
     if settings.OPENROUTER_API_KEY:
+        await trace.report("ai", "running")
         try:
             site_ai.apply(sections, await site_ai.analyze(http, pages), pages)
-        except (AppError, httpx.HTTPError, ValueError, KeyError, TypeError):
+            await trace.report("ai", "done", pages=len(pages))
+        except (AppError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             logger.warning("audit %s: AI page analysis failed", audit_id, exc_info=True)
+            await trace.report("ai", "failed", error=_why(exc))
             ok = False  # keyword results are kept
+    else:
+        await trace.skip("OpenRouter key not set", "ai")
     if settings.FIRECRAWL_API_KEY or settings.OPENROUTER_API_KEY:
         await repo.update(
             audit_id,
@@ -93,9 +189,18 @@ async def _enrich(
         )
     if settings.APIFY_API_TOKEN and settings.APIFY_GMAPS_ACTOR_ID:
         domain = _domain(urlsplit(final_url).hostname or "")
+        await trace.report("gbp", "running")
         try:
-            gbp = await site_crawl.gbp_lookup(http, hints.get("name") or domain, domain)
+            gbp, tried = await site_crawl.gbp_lookup(
+                http,
+                site_crawl.gbp_queries(hints, home_html, domain),
+                domain,
+                sections["business"]["nap"].get("phone"),
+            )
             if gbp:
+                gbp["website_links_to_gbp"], gbp["review_link_on_site"] = (
+                    site_crawl.gbp_links(pages)
+                )
                 business = sections["business"]
                 business["gbp"] = gbp
                 nap = business["nap"]
@@ -105,14 +210,58 @@ async def _enrich(
                 )
                 if len(site_phone) == 10 and len(gbp_phone) == 10:  # else unknown
                     nap["consistent_with_gbp"] = site_phone == gbp_phone
-        except (httpx.HTTPError, ValueError, KeyError):
+                # The profile was found by its website address; the phone is a second proof.
+                gbp["match_reasons"] = [
+                    "website address",
+                    *(
+                        ["phone number"]
+                        if nap.get("consistent_with_gbp") is True
+                        else []
+                    ),
+                ]
+            await trace.report("gbp", "done", matched=bool(gbp), searches=len(tried))
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
             logger.warning("audit %s: GBP lookup failed", audit_id, exc_info=True)
+            await trace.report("gbp", "failed", error=_why(exc))
             ok = False
         await repo.update(
             audit_id,
             sections={"business": sections["business"]},
             state={"business": "ready"},
         )
+    else:
+        await trace.skip("Apify token not set", "gbp")
+    return ok
+
+
+async def _pagespeed(
+    repo: AuditRepository,
+    http: httpx.AsyncClient,
+    audit_id: str,
+    sections: dict[str, Any],
+    final_url: str,
+    trace: _Trace,
+) -> bool:
+    """Fill on_page.pagespeed. Runs next to _enrich so the slow PSI call blocks nothing."""
+    ok = True
+    await trace.report("psi", "running")
+    try:
+        sections["on_page"]["pagespeed"] = await site_crawl.pagespeed(http, final_url)
+        psi = sections["on_page"]["pagespeed"]
+        await trace.report(
+            "psi",
+            "done",
+            mobile=psi.get("mobile_performance"),
+            desktop=(psi.get("desktop") or {}).get("performance"),
+        )
+    except (httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        # no exc_info: the traceback text carries the request URL, API key included
+        logger.warning("audit %s: PageSpeed lookup failed: %s", audit_id, _why(exc))
+        await trace.report("psi", "failed", error=_why(exc))
+        ok = False  # pagespeed stays None
+    await repo.update(
+        audit_id, sections={"on_page": sections["on_page"]}, state={"on_page": "ready"}
+    )
     return ok
 
 
@@ -123,27 +272,61 @@ async def _run(
     url: str,
     hints: dict[str, str],
 ) -> None:
+    trace = _Trace(repo, audit_id)
     async with _sem:
         await repo.update(
             audit_id, status="running", state={k: "running" for k in INITIAL_STATE}
         )
+        speed: asyncio.Task[bool] | None = None
         try:
-            sections, final_url, home_html = await _home(http, url, hints)
-            later = set()
+            sections, final_url, home_html = await _home(http, url, hints, trace)
+            later = {"overview"}  # scored once every step below has finished
             if settings.FIRECRAWL_API_KEY or settings.OPENROUTER_API_KEY:
                 later |= {"site", "convert"}
             if settings.APIFY_API_TOKEN and settings.APIFY_GMAPS_ACTOR_ID:
                 later.add("business")
+            if settings.GOOGLE_PAGESPEED_API_KEY:
+                later.add("on_page")
             # Home-page results show right away; crawl and GBP sections fill in after.
             await repo.update(
                 audit_id,
                 sections=sections,
                 state={k: "running" if k in later else "ready" for k in INITIAL_STATE},
             )
+            if settings.GOOGLE_PAGESPEED_API_KEY:
+                speed = asyncio.create_task(
+                    _pagespeed(repo, http, audit_id, sections, final_url, trace)
+                )
+            else:
+                await trace.skip("PageSpeed key not set", "psi")
             ok = await _enrich(
-                repo, http, audit_id, sections, final_url, home_html, hints
+                repo, http, audit_id, sections, final_url, home_html, hints, trace
+            )
+            psi_ok: bool | None = None  # None: PageSpeed not run (no key)
+            if speed:
+                try:
+                    psi_ok = await asyncio.wait_for(speed, PAGESPEED_WAIT_S)
+                except TimeoutError:  # wait_for has cancelled the task
+                    psi_ok = False
+                    logger.warning("audit %s: PageSpeed timed out", audit_id)
+                    await trace.report("psi", "failed", error="Timed out")
+                    await repo.update(audit_id, state={"on_page": "ready"})
+                ok = bool(psi_ok) and ok
+            await trace.report("score", "running")
+            overview = site_score.compute(
+                sections,
+                pagespeed_ok=psi_ok,
+                domain=_domain(urlsplit(final_url).hostname or ""),
+            )
+            await repo.update(
+                audit_id, sections={"overview": overview}, state={"overview": "ready"}
+            )
+            await trace.report(
+                "score", "done", score=overview["score"], grade=overview["grade"]
             )
         except AppError as exc:
+            await trace.fail_open(exc.message)
+            await trace.report("final", "failed", outcome="failed", error=exc.message)
             await repo.update(
                 audit_id,
                 status="failed",
@@ -154,6 +337,8 @@ async def _run(
             return
         except Exception:  # never leave an audit stuck in `running`
             logger.exception("audit %s crashed", audit_id)
+            await trace.fail_open("Unexpected error")
+            await trace.report("final", "failed", outcome="failed")
             await repo.update(
                 audit_id,
                 status="failed",
@@ -162,6 +347,10 @@ async def _run(
                 state={k: "failed" for k in INITIAL_STATE},
             )
             return
+        finally:
+            if speed and not speed.done():
+                speed.cancel()
+        await trace.report("final", "done", outcome="ready" if ok else "partial")
         await repo.update(audit_id, status="ready" if ok else "partial", finished=True)
 
 
@@ -335,13 +524,12 @@ async def report(
     nap = (audit.get("business") or {}).get("nap") or {}
     overview = audit.get("overview") or {}
     prepared_for = nap.get("name") or audit["domain"]
-    intro = (
-        f"This report reviews {audit['domain']} the way a prospective patient and Google see it. "
-        f"It scores {overview.get('score', 0)}/100 ({overview.get('grade', 'F')}) on home-page checks, "
-        f"with {overview.get('issue_count', 0)} items to fix."
-        if overview
-        else f"This report reviews {audit['domain']}."
-    )
+    intro = f"This report reviews {audit['domain']} the way a prospective patient and Google see it."
+    if overview.get("score") is not None:
+        intro += (
+            f" It scores {overview['score']}/100 ({overview.get('grade')}),"
+            f" with {overview.get('issue_count', 0)} items to fix."
+        )
     return {
         "audit": audit,
         "prepared_for": prepared_for,

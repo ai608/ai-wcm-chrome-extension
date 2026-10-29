@@ -1,0 +1,1 @@
+ALTER TABLE extension.audits ADD COLUMN trace JSONB NOT NULL DEFAULT '[]';

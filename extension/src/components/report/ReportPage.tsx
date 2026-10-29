@@ -6,7 +6,7 @@ import { Progress } from '@/components/ui/progress'
 import { toast } from '@/components/ui/toast'
 import { useReport } from '@/hooks/research-queries'
 import { useAuth } from '@/hooks/use-auth'
-import type { Report } from '@/lib/api/research-types'
+import { isLegacyOverview, type Report } from '@/lib/api/research-types'
 import { formatDateTime } from '@/lib/time'
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -20,7 +20,10 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
 
 export function Body({ report }: { report: Report }) {
   const { audit } = report
-  const o = audit.overview
+  // No score until the audit has finished (or for a failed audit): leave the score out.
+  const o = audit.overview?.score != null && audit.overview.grade != null ? audit.overview : null
+  const legacy = o ? isLegacyOverview(o) : false
+  const reasons = o?.provisionalReasons ?? []
   const gbp = audit.business?.gbp
   const site = audit.site
   const r = audit.research
@@ -39,7 +42,7 @@ export function Body({ report }: { report: Report }) {
         <section className="break-inside-avoid rounded-lg border border-border p-4 print:break-inside-avoid">
           <div className="flex items-center gap-4">
             <div
-              className={`flex size-20 shrink-0 items-center justify-center rounded-full text-4xl font-bold [print-color-adjust:exact] [-webkit-print-color-adjust:exact] ${gradeClass(o.grade)}`}
+              className={`flex size-20 shrink-0 items-center justify-center rounded-full text-4xl font-bold [print-color-adjust:exact] [-webkit-print-color-adjust:exact] ${gradeClass(o.grade ?? 'F')}`}
             >
               {o.grade}
             </div>
@@ -48,7 +51,9 @@ export function Body({ report }: { report: Report }) {
               <p className="text-2xl font-semibold">Overall score: {o.score} / 100</p>
               {o.provisional ? (
                 <p className="text-[13px] text-muted-foreground">
-                  Provisional: Google Business Profile not matched; GBP and reviews not scored.
+                  {!legacy && reasons.length
+                    ? `Provisional: ${reasons.join('; ')}.`
+                    : 'Provisional: Google Business Profile not matched; GBP and reviews not scored.'}
                 </p>
               ) : null}
             </div>
@@ -60,30 +65,44 @@ export function Body({ report }: { report: Report }) {
       {o ? (
         <Section title="Where the score comes from">
           <div className="flex flex-col gap-3">
-            {o.categories.map((c) => (
-              <div key={c.key} className="break-inside-avoid print:break-inside-avoid">
-                <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                  <span className="font-medium">{c.label}</span>
-                  <span className="shrink-0 font-semibold">
-                    {c.score} / 100 ({c.grade})
-                  </span>
-                </div>
-                <Progress
-                  value={c.score}
-                  className="mt-1 print:border print:border-border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
-                  indicatorClassName={
-                    c.score >= 80
-                      ? 'bg-success [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
-                      : c.score >= 60
-                        ? 'bg-accent-wcm [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
-                        : 'bg-destructive [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
-                  }
-                />
-              </div>
-            ))}
+            {o.categories
+              .filter((c) => !legacy || c.key !== 'getting_the_call')
+              .map((c) =>
+                c.score == null ? (
+                  <div
+                    key={c.key}
+                    className="flex items-baseline justify-between gap-3 text-[13px] text-muted-foreground"
+                  >
+                    <span className="font-medium">{c.label}</span>
+                    <span className="shrink-0">Not assessed</span>
+                  </div>
+                ) : (
+                  <div key={c.key} className="break-inside-avoid print:break-inside-avoid">
+                    <div className="flex items-baseline justify-between gap-3 text-[13px]">
+                      <span className="font-medium">{c.label}</span>
+                      <span className="shrink-0 font-semibold">
+                        {c.score} / 100 ({c.grade})
+                      </span>
+                    </div>
+                    <Progress
+                      value={c.score}
+                      className="mt-1 print:border print:border-border [print-color-adjust:exact] [-webkit-print-color-adjust:exact]"
+                      indicatorClassName={
+                        c.score >= 80
+                          ? 'bg-success [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
+                          : c.score >= 60
+                            ? 'bg-accent-wcm [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
+                            : 'bg-destructive [print-color-adjust:exact] [-webkit-print-color-adjust:exact]'
+                      }
+                    />
+                  </div>
+                ),
+              )}
           </div>
           <p className="mt-2 text-[12px] text-muted-foreground">
-            Home page checks only. Google Business Profile and reviews are not scored yet.
+            {legacy
+              ? 'Home page checks only. Google Business Profile and reviews are not scored yet.'
+              : 'Weighted across nine categories. Categories without data are left out of the score.'}
           </p>
         </Section>
       ) : null}

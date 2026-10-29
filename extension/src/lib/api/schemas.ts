@@ -152,7 +152,9 @@ export const auditSchema = z.object({
     z.literal('failed'),
   ]),
   sectionState: z.record(z.string(), sectionStateSchema),
-  overview: z.nullable(z.optional(z.object({ score: z.number(), grade: z.string() }))),
+  overview: z.nullable(
+    z.optional(z.object({ score: z.nullable(z.number()), grade: z.nullable(z.string()) })),
+  ),
 })
 
 export const reportSchema = z.object({

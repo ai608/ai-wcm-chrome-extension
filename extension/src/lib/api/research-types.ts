@@ -10,31 +10,53 @@ export type SectionState = 'pending' | 'running' | 'ready' | 'failed' | 'skipped
 export type Grade = 'A' | 'B' | 'C' | 'D' | 'F'
 export type CheckStatus = 'ok' | 'warn' | 'fail' | 'info'
 export type CategoryKey =
-  | 'gbp'
+  | 'google_business_profile'
   | 'reviews'
   | 'service_pages'
   | 'service_area'
   | 'getting_the_call'
   | 'site_fundamentals'
-  | 'content_proof'
+  | 'content_and_proof'
   | 'supporting_content'
-  | 'social_video'
+  | 'social_and_video'
 
+/**
+ * One scored category. `weight` is missing on audits saved before the final weighted
+ * score (home-page score, 2 categories); excluded categories have no score or grade.
+ */
+export interface OverviewCategory {
+  key: CategoryKey
+  label: string
+  grade: Grade | null
+  score: number | null
+  weight?: number
+  pointsLost?: number | null
+  excluded?: boolean
+}
+
+/** `score` and `grade` stay null until the whole audit has finished. */
 export interface OverviewSection {
-  score: number
-  grade: Grade
+  score: number | null
+  grade: Grade | null
   provisional: boolean
-  categories: { key: CategoryKey; label: string; grade: Grade; score: number }[]
+  provisionalReasons?: string[]
+  categories: OverviewCategory[]
   topIssues: { category: CategoryKey; title: string; detail: string }[]
   issueCount: number
   warningCount: number
   summaryText: string
 }
 
+/** Saved before the final weighted score: its categories carry no weight. */
+export function isLegacyOverview(o: OverviewSection): boolean {
+  return o.score != null && o.categories.length > 0 && o.categories.every((c) => c.weight == null)
+}
+
 export interface BusinessSection {
   gbp: {
     matched: boolean
     matchReason: string | null
+    matchReasons?: string[]
     name: string | null
     verified: boolean | null
     primaryCategory: string | null
@@ -91,6 +113,15 @@ export interface OnPageSection {
     bestPractices: number | null
     lcpMs: number | null
     cls: number | null
+    /** Absent on audits saved before desktop was measured; null when that call failed. */
+    desktop?: {
+      performance: number | null
+      seo: number | null
+      accessibility: number | null
+      bestPractices: number | null
+      lcpMs: number | null
+      cls: number | null
+    } | null
   } | null
 }
 
@@ -135,6 +166,7 @@ export interface SiteSection {
   blog: {
     url: string | null
     postCount: number
+    datedPosts?: number
     lastPostAt: string | null
     postsLast6Months: number
     postsLast12Months: number
@@ -198,6 +230,18 @@ export interface ResearchSection {
   aiVisibility: OnDemand<AiVisibility>
 }
 
+export type TraceStatus = 'running' | 'done' | 'failed' | 'skipped'
+
+/** One status change of one pipeline step. Fold by `id`: the last event wins. */
+export interface TraceEvent {
+  id: string
+  status: TraceStatus
+  label: string
+  ms: number | null
+  at: string
+  detail: Record<string, unknown>
+}
+
 export interface Audit {
   id: string
   url: string
@@ -207,6 +251,7 @@ export interface Audit {
   createdAt: string
   finishedAt: string | null
   sectionState: Record<SectionKey, SectionState>
+  trace: TraceEvent[]
   overview: OverviewSection | null
   business: BusinessSection | null
   onPage: OnPageSection | null

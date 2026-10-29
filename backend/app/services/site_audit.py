@@ -38,6 +38,50 @@ SERVICES = {
 }
 
 
+SOCIAL_HOSTS = (
+    ("facebook", "facebook.com"),
+    ("instagram", "instagram.com"),
+    ("tiktok", "tiktok.com"),
+    ("youtube", "youtube.com"),
+    ("linkedin", "linkedin.com"),
+    ("x", "x.com"),
+)
+# Share buttons, tracking pixels, embedded videos and widgets are not the clinic's profile.
+_NOT_PROFILE = re.compile(
+    r"/(tr|sharer|share|sharing|shareArticle|plugins|dialog|embed|watch|intent|hashtag|pixel)"
+    r"(?:\.php)?(?:/|\?|$)|/p/|/reel/|/video/",
+    re.IGNORECASE,
+)
+
+
+def raw_social(html: str, host: str) -> str | None:
+    """A profile link for `host` found anywhere in the page source, including inside scripts.
+
+    Many themes (Kajabi, Wix, ...) build the footer with JavaScript, so its links exist only as
+    text inside a <script> and a plain HTML parse never sees them."""
+    pattern = re.compile(
+        r"https?:\\?/\\?/(?:www\.)?" + re.escape(host) + r"[^\s\"'<>\\)]*",
+        re.IGNORECASE,
+    )
+    for raw in pattern.findall(html):
+        url = str(raw).replace("\\/", "/")
+        parts = urlsplit(url)
+        if parts.path.strip("/") and not _NOT_PROFILE.search(url):
+            return url
+    return None
+
+
+def raw_phone(html: str) -> str | None:
+    """A phone number from any tel: link in the page source (also inside scripts)."""
+    for found in re.findall(r"tel:\+?([\d\-\s().]{7,20})", html):
+        digits = re.sub(r"\D", "", found)
+        if len(digits) == 11 and digits.startswith("1"):
+            digits = digits[1:]
+        if len(digits) == 10:
+            return f"{digits[:3]}-{digits[3:6]}-{digits[6:]}"
+    return None
+
+
 def normalize_url(value: str) -> tuple[str, str]:
     value = value.strip()
     if not value:
@@ -93,7 +137,9 @@ async def _public_ip(host: str, port: int) -> str:
     return min(str(address) for address in addresses)
 
 
-async def fetch_html(url: str) -> tuple[str, str]:
+async def fetch_html(
+    url: str, accept: tuple[str, ...] = ("text/html",)
+) -> tuple[str, str]:
     current = url
     async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
         for _ in range(6):
@@ -112,7 +158,7 @@ async def fetch_html(url: str) -> tuple[str, str]:
                     headers={
                         "Host": parts.netloc,
                         "User-Agent": "WCM-Audit/1.0",
-                        "Accept": "text/html",
+                        "Accept": ", ".join(accept),
                     },
                     extensions={"sni_hostname": host},
                     timeout=httpx.Timeout(10.0),
@@ -129,10 +175,8 @@ async def fetch_html(url: str) -> tuple[str, str]:
                         raise AppError(
                             422, "site_unreachable", "Website could not be fetched"
                         )
-                    if (
-                        "text/html"
-                        not in response.headers.get("content-type", "").lower()
-                    ):
+                    content_type = response.headers.get("content-type", "").lower()
+                    if not any(kind in content_type for kind in accept):
                         raise AppError(
                             422, "site_unreachable", "Website did not return HTML"
                         )
@@ -188,7 +232,10 @@ def _on_page(doc: LexborHTMLParser, url: str) -> dict[str, Any]:
         )
     image_items = [
         {
-            "src": urljoin(url, _attr(node, "src")),
+            # A data: URI holds the whole image; keep only its type, not the file.
+            "src": src.split(",", 1)[0] + ","
+            if (src := _attr(node, "src")).startswith("data:")
+            else urljoin(url, src),
             "alt": node.attributes.get("alt"),
             "width": int(v) if (v := _attr(node, "width")).isdigit() else None,
             "height": int(v) if (v := _attr(node, "height")).isdigit() else None,
@@ -320,42 +367,6 @@ def empty_research() -> dict[str, Any]:
     }
 
 
-def _grade_for(score: int) -> str:
-    if score >= 90:
-        return "A"
-    if score >= 80:
-        return "B"
-    if score >= 70:
-        return "C"
-    if score >= 60:
-        return "D"
-    return "F"
-
-
-def _points(status: str) -> float | None:
-    if status == "ok":
-        return 1.0
-    if status == "warn":
-        return 0.5
-    if status == "fail":
-        return 0.0
-    return None
-
-
-def _score_checks(checks: list[dict[str, Any]]) -> int:
-    total = 0.0
-    scored = 0
-    for item in checks:
-        value = _points(str(item.get("status", "")))
-        if value is None:
-            continue
-        total += value
-        scored += 1
-    if scored == 0:
-        return 0
-    return max(0, min(100, round(100 * total / scored)))
-
-
 # Plain language issue copy. No em dashes. Short: what is wrong, why it costs calls.
 ISSUE_COPY: dict[str, tuple[str, str]] = {
     "title": (
@@ -411,7 +422,6 @@ ISSUE_COPY: dict[str, tuple[str, str]] = {
 
 def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[str, Any]:
     doc = LexborHTMLParser(html)
-    domain = urlsplit(url).hostname or ""
     on_page = _on_page(doc, url)
     schema = _schema(doc)
     visible = _text(doc.css_first("body")).lower()[:100_000]
@@ -455,33 +465,39 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
     ]
     city_pages = list(dict.fromkeys(city_pages))
     socials = []
-    for network, host in (
-        ("facebook", "facebook.com"),
-        ("instagram", "instagram.com"),
-        ("tiktok", "tiktok.com"),
-        ("youtube", "youtube.com"),
-        ("linkedin", "linkedin.com"),
-        ("x", "x.com"),
-    ):
+    for network, host in SOCIAL_HOSTS:
         match = next(
             (
                 i["href"]
                 for i in links
                 if urlsplit(i["href"]).hostname in (host, "www." + host)
+                and urlsplit(i["href"]).path.strip("/")
+                and not _NOT_PROFILE.search(i["href"])
             ),
             None,
-        )
+        ) or raw_social(html, host)
         if match:
             socials.append({"network": network, "url": match})
     phone = next(
         (unescape(_text(i)) for i in doc.css('a[href^="tel:"]') if _text(i)), None
-    )
-    platform = (
-        "WordPress"
-        if "wp-content/" in html
-        else "Shopify"
-        if "cdn.shopify.com" in html
-        else None
+    ) or raw_phone(html)
+    # Frameworks first: a Gatsby or Next.js site can still load images from wp-content/.
+    platform = next(
+        (
+            name
+            for name, marker in (
+                ("Gatsby", "data-gatsby-head"),
+                ("Next.js", "__NEXT_DATA__"),
+                ("Webflow", "data-wf-site"),
+                ("Wix", "wixstatic.com"),
+                ("Squarespace", "squarespace.com"),
+                ("Shopify", "cdn.shopify.com"),
+                ("Kajabi", "Kajabi."),
+                ("WordPress", "wp-content/"),
+            )
+            if marker in html
+        ),
+        None,
     )
     site = {
         "platform": {"name": platform, "detail": None},
@@ -505,8 +521,16 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
             "video_testimonials": False,
         },
         "blog": {
-            "url": next((i for i in site_urls if re.search(r"/blog/?$", i)), None),
+            "url": next(
+                (
+                    i
+                    for i in site_urls
+                    if re.search(r"/(blogs?|news|articles)/?$", i, re.IGNORECASE)
+                ),
+                None,
+            ),
             "post_count": 0,
+            "dated_posts": 0,
             "last_post_at": None,
             "posts_last6_months": 0,
             "posts_last12_months": 0,
@@ -589,59 +613,18 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
             "consistent_with_gbp": None,
         },
     }
-    essentials: list[dict[str, Any]] = on_page["essentials"]
-    scored_all = [
-        i for i in essentials + checks if _points(str(i.get("status"))) is not None
-    ]
-    total_points = sum(_points(str(i.get("status"))) or 0.0 for i in scored_all)
-    score = (
-        max(0, min(100, round(100 * total_points / len(scored_all))))
-        if scored_all
-        else 0
-    )
-    grade = _grade_for(score)
-    fundamentals_score = _score_checks(essentials)
-    convert_score = _score_checks(checks)
-    categories = [
-        {
-            "key": "site_fundamentals",
-            "label": "Site fundamentals",
-            "grade": _grade_for(fundamentals_score),
-            "score": fundamentals_score,
-        },
-        {
-            "key": "getting_the_call",
-            "label": "Getting the call",
-            "grade": _grade_for(convert_score),
-            "score": convert_score,
-        },
-    ]
-    failures = [i for i in scored_all if str(i.get("status")) in ("warn", "fail")]
-    warn_count = sum(1 for i in scored_all if str(i.get("status")) == "warn")
-    top_issues = []
-    for item in failures[:10]:
-        key = str(item.get("key", ""))
-        category = (
-            "getting_the_call"
-            if any(c.get("key") == key for c in checks)
-            else "site_fundamentals"
-        )
-        copy = ISSUE_COPY.get(key)
-        if copy is not None:
-            title, detail = copy
-        else:
-            title = str(item.get("label", key)) + " needs attention"
-            detail = str(item.get("value") or "Not found on the home page")
-        top_issues.append({"category": category, "title": title, "detail": detail})
-    overview = {
-        "score": score,
-        "grade": grade,
+    # The score needs the whole audit (crawl, AI, GBP, PageSpeed): site_score.compute
+    # fills this in once the run has finished.
+    overview: dict[str, Any] = {
+        "score": None,
+        "grade": None,
         "provisional": True,
-        "categories": categories,
-        "top_issues": top_issues,
-        "issue_count": len(failures),
-        "warning_count": warn_count,
-        "summary_text": f"{domain}: {score}/100 based on home-page checks. {len(failures)} items need attention. GBP and company data were not assessed.",
+        "provisional_reasons": [],
+        "categories": [],
+        "top_issues": [],
+        "issue_count": 0,
+        "warning_count": 0,
+        "summary_text": "",
     }
     return {
         "overview": overview,

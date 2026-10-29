@@ -17,7 +17,7 @@ function ToastViewport() {
           <ToastPrimitive.Root
             key={t.id}
             toast={t}
-            className="flex items-start gap-2 rounded-lg border border-border bg-card px-3 py-2 text-card-foreground shadow-md"
+            className="transition-[opacity,translate] duration-200 ease-out data-starting-style:opacity-0 data-ending-style:opacity-0 data-starting-style:translate-y-2 data-ending-style:translate-y-2 flex items-start gap-2 rounded-lg border border-border bg-card px-3 py-2 text-card-foreground shadow-md"
           >
             <ToastPrimitive.Content className="flex-1">
               {t.title ? (

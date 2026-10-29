@@ -1,8 +1,8 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { ApiError } from '@/lib/api/errors'
-import { buildAudit } from '@/lib/api/mock/research-fixtures'
+import { buildAudit, PENDING_OVERVIEW } from '@/lib/api/mock/research-fixtures'
 import type { Audit } from '@/lib/api/research-types'
 
 vi.mock('@/lib/messaging', async () => {
@@ -80,6 +80,12 @@ describe('Research Mode', () => {
     fireEvent.click(run)
     // progressive: checklist first
     await screen.findByText('Running audit…', undefined, { timeout: 3000 })
+    // home page done: no score (and no issue badge) until the whole audit finishes
+    await screen.findByText('Score appears when the audit finishes.', undefined, {
+      timeout: 3000,
+    })
+    expect(screen.queryByText(/issues \+/)).toBeNull()
+    expect(screen.queryByText(/\/ 100/)).toBeNull()
     // finally the F-grade fixture
     await screen.findByText('32 / 100', undefined, { timeout: 12000 })
     expect(screen.getByText(/Provisional/)).toBeDefined()
@@ -159,6 +165,78 @@ describe('Overview', () => {
   })
 })
 
+describe('Overview score', () => {
+  async function renderOverview(audit: Audit) {
+    const { Providers } = await import('@/app/providers')
+    const { OverviewTab } = await import('@/components/research/OverviewTab')
+    return render(
+      <Providers>
+        <OverviewTab audit={audit} />
+      </Providers>,
+    )
+  }
+
+  it('waits for the audit to finish before showing a grade', async () => {
+    const audit: Audit = {
+      ...full('example.com'),
+      status: 'running',
+      overview: structuredClone(PENDING_OVERVIEW),
+    }
+    audit.sectionState.overview = 'running'
+    await renderOverview(audit)
+    expect(screen.getByText('Score appears when the audit finishes.')).toBeDefined()
+    expect(screen.queryByText(/\/ 100/)).toBeNull()
+    expect(screen.queryByRole('list', { name: 'Category grades' })).toBeNull()
+    expect(screen.queryByText('What’s costing them calls')).toBeNull()
+  })
+
+  it('finished: nine chips, excluded ones muted, provisional reasons, issue categories', async () => {
+    await renderOverview(full('example.com'))
+    expect(screen.getByText('32 / 100')).toBeDefined()
+    const chips = within(screen.getByRole('list', { name: 'Category grades' })).getAllByRole(
+      'listitem',
+    )
+    expect(chips).toHaveLength(9)
+    const gbp = screen.getByText('Google Business Profile · not assessed')
+    expect(gbp.className).toContain('text-muted-foreground')
+    expect(screen.getByText('Reviews · not assessed')).toBeDefined()
+    expect(screen.getByText('Provisional: No Google Business Profile found.')).toBeDefined()
+    expect(screen.getAllByText('Service pages').length).toBeGreaterThan(0)
+    expect(screen.queryByText(/Older score/)).toBeNull()
+  })
+
+  it('strong clinic is not provisional and every chip has a grade', async () => {
+    await renderOverview(full('glowaesthetics.com'))
+    expect(screen.getByText('79 / 100')).toBeDefined()
+    expect(screen.queryByText(/Provisional/)).toBeNull()
+    expect(screen.queryByText(/not assessed/)).toBeNull()
+  })
+
+  it('shows an older home-page score as before, with a re-run hint', async () => {
+    const audit = full('example.com')
+    audit.overview = {
+      score: 92,
+      grade: 'A',
+      provisional: true,
+      categories: [
+        { key: 'site_fundamentals', label: 'Site fundamentals', grade: 'A', score: 94 },
+        { key: 'getting_the_call', label: 'Getting the call', grade: 'B', score: 83 },
+      ],
+      topIssues: [
+        { category: 'site_fundamentals', title: 'Meta description is missing', detail: 'x' },
+      ],
+      issueCount: 2,
+      warningCount: 2,
+      summaryText: 'old',
+    }
+    await renderOverview(audit)
+    expect(screen.getByText('92 / 100')).toBeDefined()
+    expect(screen.getByText('Older score. Re-run for the full grade.')).toBeDefined()
+    expect(screen.getByText(/Provisional: Google Business Profile not matched/)).toBeDefined()
+    expect(screen.getByText('Site fundamentals A')).toBeDefined()
+  })
+})
+
 describe('On-Page and Site', () => {
   it('on-page: images filter shows only missing alt', async () => {
     const { OnPageTab } = await import('@/components/research/OnPageTab')
@@ -166,11 +244,11 @@ describe('On-Page and Site', () => {
     if (!audit.onPage) throw new Error('fixture')
     render(<OnPageTab audit={audit} onPage={audit.onPage} />)
     fireEvent.click(screen.getByRole('button', { name: 'Images' }))
-    expect(screen.queryAllByText('MISSING ALT').length).toBe(2)
+    expect(screen.queryAllByText('Missing alt text').length).toBe(2)
     expect(screen.queryByText('Our team')).not.toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Missing alt' }))
+    fireEvent.click(screen.getByRole('button', { name: /^Missing alt \d/ }))
     expect(screen.queryByText('Our team')).toBeNull()
-    expect(screen.getByText('Export 2 images to CSV')).toBeDefined()
+    expect(screen.getByText('Export 2 to CSV')).toBeDefined()
   })
 
   it('site: services accordion lists present and missing topics', async () => {

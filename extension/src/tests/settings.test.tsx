@@ -42,7 +42,7 @@ describe('SettingsScreen', () => {
     const { SettingsScreen } = await import('@/components/panel/SettingsScreen')
     render(<SettingsScreen user={user} />)
     expect(screen.getByText('Sam Rivera')).toBeDefined()
-    expect(screen.queryByRole('radio')).toBeNull()
+    expect(screen.getByRole('group', { name: 'Theme' })).toBeDefined()
 
     fireEvent.click(screen.getByRole('button', { name: 'Back to assistant' }))
     expect(usePanelStore.getState().view).toBe('main')

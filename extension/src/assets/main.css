@@ -30,11 +30,13 @@
   src: url('@fontsource/poppins/files/poppins-latin-700-normal.woff2') format('woff2');
 }
 @import "tailwindcss";
+@import "tw-animate-css";
 @import "shadcn/tailwind.css";
 
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
   --font-heading: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
   --color-accent-wcm: oklch(70.09% 0.177 50.12);
@@ -208,13 +210,6 @@
   }
 }
 
-*,
-*::before,
-*::after {
-  animation: none !important;
-  transition: none !important;
-}
-
 body {
   min-width: 320px;
   font-size: 14px;
@@ -253,6 +248,79 @@ body {
     color 0.25s ease,
     border-color 0.25s ease,
     fill 0.25s ease !important;
+}
+
+/* Native details needs its own transition; it does not use AccordionContent. */
+@supports (interpolate-size: allow-keywords) {
+  .audit-trace {
+    interpolate-size: allow-keywords;
+  }
+  .audit-trace::details-content {
+    height: 0;
+    opacity: 0;
+    overflow: clip;
+    transition:
+      height 200ms var(--ease-out),
+      opacity 200ms var(--ease-out),
+      content-visibility 200ms allow-discrete;
+  }
+  .audit-trace[open]::details-content {
+    height: auto;
+    opacity: 1;
+  }
+}
+
+/* Tab motion (taste-skill motion.md): a small interface move, so quint-out at --t-ui. */
+:root {
+  --tab-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --tab-move: 240ms;
+  --tab-enter: 200ms;
+}
+
+/* One indicator per tab list, placed from Base UI's --active-tab-* variables. */
+[data-slot='tabs-indicator'] {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 0;
+  width: var(--active-tab-width);
+  height: var(--active-tab-height);
+  transform: translate(var(--active-tab-left), var(--active-tab-top));
+  pointer-events: none;
+}
+[data-slot='tabs-list'][data-variant='default'] > [data-slot='tabs-indicator'] {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--background);
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.06);
+}
+/* The underline sits 2px below the tab, where the old per-tab ::after bar was. */
+[data-slot='tabs-list'][data-variant='line'] > [data-slot='tabs-indicator'] {
+  height: 2px;
+  border-radius: 1px;
+  background: var(--primary);
+  transform: translate(
+    var(--active-tab-left),
+    calc(var(--active-tab-top) + var(--active-tab-height) + 2px)
+  );
+}
+
+[data-slot='tabs-indicator'] {
+  transition:
+    transform var(--tab-move) var(--tab-ease),
+    width var(--tab-move) var(--tab-ease),
+    height var(--tab-move) var(--tab-ease);
+}
+/* Only after a real switch; the first panel on open does not perform an entrance. */
+[data-slot='tabs-content'][data-switched] {
+  animation: tab-enter var(--tab-enter) var(--tab-ease) both;
+}
+
+@keyframes tab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 @page {

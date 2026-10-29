@@ -55,7 +55,9 @@ function Cards({ audit }: { audit: Audit }) {
         <CompanyCard company={business.company} />
       ) : (
         <Block title="Company">
-          <p className="text-[13px] text-muted-foreground">Company data is not available for this audit.</p>
+          <p className="text-[13px] text-muted-foreground">
+            Company data is not available for this audit.
+          </p>
         </Block>
       )}
       <Block title="Local competitors">
@@ -76,8 +78,8 @@ function Cards({ audit }: { audit: Audit }) {
           </>
         )}
       </Block>
-      {overview ? (
-        <Block title="Homepage score">
+      {overview?.score != null && overview.grade != null ? (
+        <Block title="Website score">
           <div className="flex items-center gap-3">
             <div
               className={`flex size-12 shrink-0 items-center justify-center rounded-full text-2xl font-bold ${gradeClass(overview.grade)}`}
@@ -100,9 +102,13 @@ function Cards({ audit }: { audit: Audit }) {
             Open report
           </Button>
         </Block>
-      ) : (
-        <Skeleton className="h-24 w-full" />
-      )}
+      ) : audit.status === 'queued' || audit.status === 'running' ? (
+        <Block title="Website score">
+          <p className="text-[13px] text-muted-foreground">
+            Score appears when the audit finishes.
+          </p>
+        </Block>
+      ) : null}
     </div>
   )
 }

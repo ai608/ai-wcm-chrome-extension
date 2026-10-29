@@ -1,5 +1,11 @@
+import asyncio
 import copy
+from datetime import UTC, datetime, timedelta
 
+import httpx
+import pytest
+
+from app.core.exceptions import AppError
 from app.services import site_audit, site_crawl
 
 HOME = "https://glow.example/"
@@ -76,3 +82,482 @@ def test_enrich_without_pages_keeps_home_data_shape():
     site_crawl.enrich(sections, [], {})
     assert sections["convert"]["booking_platform"] == before["booking_platform"]
     assert sections["site"]["pages_crawled"] == 1
+
+
+def test_group_pages_matches_pick_pages_and_keeps_every_url():
+    groups = site_crawl.group_pages(URLS, HOME)
+    assert list(groups) == ["service", "city", "proof", "trust", "blog"]
+    expected: list[str] = []
+    for urls in groups.values():
+        expected += urls[: site_crawl.PER_GROUP]
+    assert (
+        site_crawl.pick_pages(URLS, HOME)
+        == list(dict.fromkeys(expected))[: site_crawl.MAX_PAGES]
+    )
+    assert HOME not in [u for urls in groups.values() for u in urls]
+
+
+# WordPress default: posts live at /<slug>/, outside /blog/ (e.g. 305euphoria.com).
+BLOG_INDEX_HTML = """<html><body>
+<article><h2 class="entry-title"><a href="https://glow.example/best-skin-tightening/">Best Skin Tightening</a></h2>
+  <a href="https://glow.example/category/skin/">Skin</a>
+  <div class="meta"><a href="https://glow.example/author/glow/">Glow</a>
+  <time datetime="2026-08-28T12:52:43+00:00">August 28, 2026</time></div></article>
+<article><h2><a href="/laser-hair-removal-cost/">How Much Is Laser Hair Removal?</a></h2>
+  <time datetime="2026-01-08T05:59:57+00:00">January 8, 2026</time></article>
+<footer><time datetime="2020-01-01">Copyright</time></footer>
+</body></html>"""
+
+POST_SITEMAP = """<?xml version="1.0" encoding="UTF-8"?><urlset>
+<url><loc>https://glow.example/best-skin-tightening/</loc><lastmod>2026-09-02T00:00:00+00:00</lastmod></url>
+<url><loc>https://glow.example/old-post/</loc><lastmod>2024-03-17T17:18:01+00:00</lastmod></url>
+<url><loc>https://glow.example/category/skin/</loc></url>
+</urlset>"""
+
+
+def test_group_pages_reads_blog_index_first():
+    groups = site_crawl.group_pages(
+        [
+            HOME,
+            "https://glow.example/blog/what-is-tirzepatide",
+            "https://glow.example/blog",
+        ],
+        HOME,
+    )
+    assert groups["blog"][0] == "https://glow.example/blog"
+
+
+def test_index_posts_reads_post_cards_outside_blog_path():
+    posts = site_crawl.index_posts(BLOG_INDEX_HTML, "https://glow.example/blog/")
+    assert [p["url"] for p in posts] == [
+        "https://glow.example/best-skin-tightening/",
+        "https://glow.example/laser-hair-removal-cost/",
+    ]
+    assert posts[0]["title"] == "Best Skin Tightening"
+    assert posts[0]["published_at"].startswith("2026-08-28")
+
+
+@pytest.mark.anyio
+async def test_blog_posts_uses_index_then_sitemap(monkeypatch):
+    calls = []
+
+    async def fake_fetch(url, accept=("text/html",)):
+        calls.append(url)
+        if url.endswith("/post-sitemap.xml"):
+            return POST_SITEMAP, url
+        raise AppError(422, "site_unreachable", "missing")
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fake_fetch)
+    posts = await site_crawl.blog_posts(
+        None,
+        [HOME, "https://glow.example/blog/"],
+        {"https://glow.example/blog/": BLOG_INDEX_HTML},
+        HOME,
+    )
+    assert calls == ["https://glow.example/post-sitemap.xml"]
+    # index entries come first, so their titles and dates win over the sitemap's
+    assert posts[0]["title"] == "Best Skin Tightening"
+    assert {p["url"] for p in posts} == {
+        "https://glow.example/best-skin-tightening/",
+        "https://glow.example/laser-hair-removal-cost/",
+        "https://glow.example/old-post/",
+    }
+
+
+def test_enrich_merges_posts_and_counts_frequency():
+    now = datetime.now(UTC)
+    day = lambda n: (now - timedelta(days=n)).isoformat()
+    sections = base_sections()
+    site_crawl.enrich(
+        sections,
+        [HOME, "https://glow.example/blog/"],
+        {},
+        [
+            {"url": "https://glow.example/a/", "title": "A", "published_at": day(10)},
+            {"url": "https://glow.example/b/", "title": "B", "published_at": day(200)},
+            {"url": "https://glow.example/c/", "title": "C", "published_at": day(400)},
+            {"url": "https://glow.example/a", "title": "A again", "published_at": None},
+        ],
+    )
+    blog = sections["site"]["blog"]
+    assert blog["url"] == "https://glow.example/blog/"
+    assert blog["post_count"] == 3
+    assert blog["last_post_at"] == day(10)
+    assert blog["posts_last6_months"] == 1 and blog["posts_last12_months"] == 2
+    assert blog["posts"][0]["title"] == "A"
+
+
+@pytest.fixture
+def anyio_backend() -> str:
+    return "asyncio"
+
+
+def test_embedded_images_keep_only_their_type():
+    big = "data:image/png;base64," + "A" * 5000
+    sections = site_audit.analyze(
+        f'<html><body><img src="{big}"><img src="/a.jpg" alt="A"></body></html>', HOME
+    )
+    srcs = [i["src"] for i in sections["on_page"]["images"]["items"]]
+    assert srcs == ["data:image/png;base64,", "https://glow.example/a.jpg"]
+
+
+def test_gbp_links_finds_profile_and_review_links_in_the_pages():
+    none = {
+        HOME: '<a href="https://glow.example/contact">Contact</a><a href="https://instagram.com/glow">IG</a>'
+    }
+    assert site_crawl.gbp_links(none) == (False, False)
+    profile = {
+        HOME: '<footer><a href="https://maps.app.goo.gl/AbC123">Find us</a></footer>'
+    }
+    assert site_crawl.gbp_links(profile) == (True, False)
+    review = {
+        HOME: '<a href="https://glow.example/about">About</a>',
+        "https://glow.example/reviews": '<a href="https://g.page/r/CaBcDe/review">Review us</a>',
+    }
+    assert site_crawl.gbp_links(review) == (True, True)
+    write = {
+        HOME: '<a href="https://search.google.com/local/writereview?placeid=X">Write</a>'
+    }
+    assert site_crawl.gbp_links(write) == (True, True)
+
+
+GENERAL_SITEMAP = """<?xml version="1.0"?><urlset>
+<url><loc>https://glow.example/about</loc><lastmod>2026-08-13T13:10:54+00:00</lastmod></url>
+<url><loc>https://glow.example/blog</loc><lastmod>2026-09-21T00:00:00+00:00</lastmod></url>
+<url><loc>https://glow.example/blog/psa-levels-by-age</loc><lastmod>2026-09-21T11:07:57+00:00</lastmod></url>
+<url><loc>https://glow.example/blog/older-post</loc></url>
+</urlset>"""
+
+SITEMAP_INDEX = """<?xml version="1.0"?><sitemapindex>
+<sitemap><loc>https://glow.example/page-sitemap.xml</loc></sitemap>
+<sitemap><loc>https://glow.example/blog-sitemap.xml</loc></sitemap>
+<sitemap><loc>https://other.example/blog-sitemap.xml</loc></sitemap>
+</sitemapindex>"""
+
+
+@pytest.mark.anyio
+async def test_sitemap_posts_reads_a_general_sitemap_for_blog_posts(monkeypatch):
+    async def fake_fetch(url, accept=("text/html",)):
+        if url.endswith("/sitemap.xml"):
+            return GENERAL_SITEMAP, url
+        raise AppError(422, "site_unreachable", "missing")
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fake_fetch)
+    posts = await site_crawl.sitemap_posts(HOME)
+    # only /blog/<slug> pages count; /about and the /blog index do not
+    assert [p["url"] for p in posts] == [
+        "https://glow.example/blog/psa-levels-by-age",
+        "https://glow.example/blog/older-post",
+    ]
+    assert posts[0]["published_at"].startswith("2026-09-21")
+    assert posts[1]["published_at"] is None
+
+
+@pytest.mark.anyio
+async def test_sitemap_posts_follows_a_sitemap_index_to_the_post_list(monkeypatch):
+    asked = []
+
+    async def fake_fetch(url, accept=("text/html",)):
+        asked.append(url)
+        if url.endswith("/sitemap_index.xml"):
+            return SITEMAP_INDEX, url
+        if url == "https://glow.example/blog-sitemap.xml":
+            return GENERAL_SITEMAP.replace("/blog/", "/learn/"), url
+        raise AppError(422, "site_unreachable", "missing")
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fake_fetch)
+    posts = await site_crawl.sitemap_posts(HOME)
+    # a child sitemap named like a post list is trusted, so any non-index page in it counts
+    assert {p["url"] for p in posts} >= {"https://glow.example/learn/psa-levels-by-age"}
+    # never fetches another site's sitemap, and the page sitemap is not a post list
+    assert "https://other.example/blog-sitemap.xml" not in asked
+    assert "https://glow.example/page-sitemap.xml" not in asked
+
+
+# A footer built by JavaScript: its links are only text inside a <script> (Kajabi, Wix, ...).
+JS_FOOTER = """<html><head><title>Men's Health Clinic | Healthy Aging</title></head><body>
+<noscript><img src="https://www.facebook.com/tr?id=123&ev=PageView&noscript=1"></noscript>
+<a href="https://www.youtube.com/watch?v=abc123">Watch</a>
+<a href="https://www.youtube.com/@drpetteruti/videos">Episodes</a>
+<script>
+  footer.innerHTML = '<div class="footer-socials"><a href="https://www.facebook.com/IntellectualMedicine120"></a>'
+   + '<a href="https://www.instagram.com/intellectualmedicine/"></a>'
+   + '<a href="https://www.linkedin.com/in/drpetteruti/"></a>'
+   + '<a href="https://twitter.com/share?url=x"></a><a href="https://www.facebook.com/sharer/sharer.php?u=x"></a>'
+   + '</div><p><a href="tel:9543699079">954-369-9079</a></p><p>&copy; 2026 Intellectual Medicine. All rights reserved.</p>';
+</script></body></html>"""
+
+
+def test_socials_and_phone_are_found_when_the_footer_is_built_by_javascript():
+    sections = site_audit.analyze(JS_FOOTER, "https://clinic.example/")
+    socials = {s["network"]: s["url"] for s in sections["business"]["socials"]}
+    assert socials["facebook"] == "https://www.facebook.com/IntellectualMedicine120"
+    assert socials["instagram"] == "https://www.instagram.com/intellectualmedicine/"
+    assert socials["linkedin"] == "https://www.linkedin.com/in/drpetteruti/"
+    # the real link wins over the watch-page link; pixels and share buttons are never a profile
+    assert socials["youtube"] == "https://www.youtube.com/@drpetteruti/videos"
+    assert "tr?id" not in socials["facebook"] and "sharer" not in socials["facebook"]
+    assert sections["business"]["nap"]["phone"] == "954-369-9079"
+
+
+def test_brand_name_comes_from_structured_data_then_the_copyright_line():
+    ld = '<script type="application/ld+json">{"@type":"MedicalBusiness","name":"Glow Med Spa"}</script>'
+    assert site_crawl.brand_name(f"<html><head>{ld}</head></html>") == "Glow Med Spa"
+    og = '<meta property="og:site_name" content="Radiance Clinic">'
+    assert site_crawl.brand_name(f"<html><head>{og}</head></html>") == "Radiance Clinic"
+    assert site_crawl.brand_name(JS_FOOTER) == "Intellectual Medicine"
+    assert site_crawl.brand_name("<html><body>hello</body></html>") is None
+
+
+def test_gbp_queries_put_names_first_and_the_domain_last():
+    q = site_crawl.gbp_queries({"name": "Acme Wellness"}, JS_FOOTER, "clinic.example")
+    assert q == [
+        "Acme Wellness",
+        "Intellectual Medicine",
+        "954-369-9079",
+    ]  # capped at 3
+    assert site_crawl.gbp_queries({}, "<html></html>", "clinic.example") == [
+        "clinic.example"
+    ]
+    # the same name from two sources is searched once
+    assert (
+        len(
+            site_crawl.gbp_queries(
+                {"name": "intellectual medicine"}, JS_FOOTER, "x.example"
+            )
+        )
+        == 3
+    )
+
+
+def _apify(responses):
+    """An httpx client whose Apify runs return the next list in `responses`."""
+    asked = []
+
+    def handler(request):
+        import json
+
+        asked.append(json.loads(request.content)["searchStringsArray"][0])
+        return httpx.Response(201, json=responses[len(asked) - 1])
+
+    return httpx.AsyncClient(transport=httpx.MockTransport(handler)), asked
+
+
+UNRELATED = [
+    {
+        "title": "Other Clinic",
+        "website": "https://other.example/",
+        "phone": "(212) 555-1111",
+    }
+]
+RIGHT = [
+    {
+        "title": "Intellectual Medicine",
+        "website": "https://www.intellectualmedicine.com/",
+        "phone": "(954) 369-9079",
+        "totalScore": 5,
+        "reviewsCount": 12,
+        "url": "https://maps.example/p",
+    }
+]
+
+
+@pytest.mark.anyio
+async def test_gbp_lookup_tries_the_next_search_until_the_clinic_is_found():
+    http, asked = _apify([UNRELATED, RIGHT, RIGHT])
+    gbp, tried = await site_crawl.gbp_lookup(
+        http,
+        ["intellectualmedicine.com", "Intellectual Medicine", "954-369-9079"],
+        "intellectualmedicine.com",
+    )
+    assert (
+        gbp
+        and gbp["name"] == "Intellectual Medicine"
+        and gbp["found_by"] == "Intellectual Medicine"
+    )
+    assert gbp["match_reason"] == "website matches"
+    assert (
+        tried == asked == ["intellectualmedicine.com", "Intellectual Medicine"]
+    )  # third never run
+
+
+@pytest.mark.anyio
+async def test_gbp_lookup_accepts_a_phone_match_when_the_listing_has_another_website():
+    booking = [
+        {
+            "title": "Glow",
+            "website": "https://booking.example/glow",
+            "phone": "(512) 555-0000",
+        }
+    ]
+    http, _ = _apify([booking])
+    gbp, _ = await site_crawl.gbp_lookup(http, ["Glow"], "glow.example", "512-555-0000")
+    assert gbp and gbp["match_reason"] == "phone matches"
+    http, _ = _apify([booking])
+    assert (await site_crawl.gbp_lookup(http, ["Glow"], "glow.example", None))[
+        0
+    ] is None
+
+
+@pytest.mark.anyio
+async def test_gbp_lookup_returns_none_and_what_it_tried_when_nothing_matches():
+    http, asked = _apify([UNRELATED, UNRELATED, UNRELATED, UNRELATED])
+    gbp, tried = await site_crawl.gbp_lookup(
+        http, ["a", "b", "c", "d"], "clinic.example"
+    )
+    assert gbp is None and tried == asked == [
+        "a",
+        "b",
+        "c",
+    ]  # never more than three runs
+
+
+# ---- post dates: read from the post pages, never assumed
+def _post_page(meta="", head="", text=""):
+    return f"<html><head>{head}</head><body>{meta}<article><h1>A post</h1><p>{text}</p></article></body></html>"
+
+
+def test_published_reads_every_place_a_post_can_carry_its_date():
+    meta = (
+        '<meta property="article:published_time" content="2026-10-10T00:56:27+00:00">'
+    )
+    assert site_crawl._published(_post_page(head=meta)) == "2026-10-10T00:56:27+00:00"
+    ld = '<script type="application/ld+json">{"@type":"BlogPosting","datePublished":"2026-03-04T09:00:00Z"}</script>'
+    assert site_crawl._published(_post_page(head=ld)).startswith("2026-03-04")
+    assert (
+        site_crawl._published(_post_page(text="Posted on October 10, 2026 by Sam"))
+        == "2026-10-10"
+    )
+    assert (
+        site_crawl._published(_post_page(text="Published 5 Mar 2026")) == "2026-03-05"
+    )
+    assert site_crawl._published(_post_page(text="Sept. 9th, 2025")) == "2025-09-09"
+    assert site_crawl._published(_post_page(text="no date here")) is None
+    # a broken meta value is skipped in favour of the next source
+    bad = '<meta property="article:published_time" content="soon">'
+    assert (
+        site_crawl._published(_post_page(head=bad, text="March 2, 2026"))
+        == "2026-03-02"
+    )
+    # the footer's copyright year is not a publish date
+    assert (
+        site_crawl._published(
+            "<html><body><article>hi</article><footer>March 2, 2020</footer></body></html>"
+        )
+        is None
+    )
+
+
+@pytest.mark.anyio
+async def test_date_posts_reads_undated_posts_and_leaves_dated_ones(monkeypatch):
+    asked = []
+
+    async def fake_fetch(url, accept=("text/html",)):
+        asked.append(url)
+        if url.endswith("/broken"):
+            raise AppError(422, "site_unreachable", "x")
+        return _post_page(text="October 10, 2026"), url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fake_fetch)
+    posts = [
+        {"url": "https://glow.example/blog/a", "title": "A", "published_at": None},
+        {
+            "url": "https://glow.example/blog/known",
+            "title": "K",
+            "published_at": "2025-01-01",
+        },
+        {"url": "https://glow.example/blog/broken", "title": "B", "published_at": None},
+    ]
+    await site_crawl.date_posts(posts)
+    assert posts[0]["published_at"] == "2026-10-10"
+    assert (
+        posts[1]["published_at"] == "2025-01-01"
+        and "https://glow.example/blog/known" not in asked
+    )
+    assert posts[2]["published_at"] is None  # a failed page is skipped, not fatal
+
+
+@pytest.mark.anyio
+async def test_date_posts_is_capped_and_cut_off_at_its_time_budget(monkeypatch):
+    monkeypatch.setattr(site_crawl, "DATE_FETCHES", 5)
+    asked = []
+
+    async def fake_fetch(url, accept=("text/html",)):
+        asked.append(url)
+        return _post_page(text="October 10, 2026"), url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fake_fetch)
+    posts = [
+        {"url": f"https://glow.example/blog/p{n}", "title": "", "published_at": None}
+        for n in range(12)
+    ]
+    await site_crawl.date_posts(posts)
+    assert len(asked) == 5 and sum(1 for p in posts if p["published_at"]) == 5
+
+    async def slow_fetch(url, accept=("text/html",)):
+        await asyncio.sleep(5)
+        return _post_page(text="October 10, 2026"), url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", slow_fetch)
+    monkeypatch.setattr(site_crawl, "DATE_BUDGET_S", 0.05)
+    slow = [{"url": "https://glow.example/blog/s", "title": "", "published_at": None}]
+    await site_crawl.date_posts(slow)  # returns after the budget, with nothing dated
+    assert slow[0]["published_at"] is None
+
+
+@pytest.mark.anyio
+async def test_blog_posts_merges_url_posts_and_dates_them(monkeypatch):
+    async def fake_fetch(url, accept=("text/html",)):
+        if "sitemap" in url or url.endswith(".xml"):
+            raise AppError(422, "site_unreachable", "no sitemap")
+        return _post_page(
+            head='<meta property="article:published_time" content="2026-09-01T00:00:00Z">'
+        ), url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fake_fetch)
+    urls = [
+        HOME,
+        "https://glow.example/blogs/",
+        "https://glow.example/blog/one",
+        "https://glow.example/blog/two/",
+    ]
+    posts = await site_crawl.blog_posts(
+        None, urls, {"https://glow.example/blogs/": "<html></html>"}, HOME
+    )
+    assert sorted(p["url"] for p in posts) == [
+        "https://glow.example/blog/one",
+        "https://glow.example/blog/two/",
+    ]
+    assert all(p["published_at"].startswith("2026-09-01") for p in posts)
+
+
+def test_enrich_finds_a_plural_blog_index_and_reports_how_many_posts_have_dates():
+    sections = base_sections()
+    site_crawl.enrich(
+        sections,
+        [HOME, "https://glow.example/blogs/"],
+        {},
+        [
+            {
+                "url": "https://glow.example/blog/a",
+                "title": "A",
+                "published_at": "2026-10-10T00:00:00+00:00",
+            },
+            {"url": "https://glow.example/blog/b", "title": "B", "published_at": None},
+            {"url": "https://glow.example/blog/c", "title": "C", "published_at": None},
+        ],
+    )
+    blog = sections["site"]["blog"]
+    assert blog["url"] == "https://glow.example/blogs/"
+    assert blog["post_count"] == 3 and blog["dated_posts"] == 1
+
+
+def test_a_gatsby_site_is_not_reported_as_wordpress():
+    html = '<html><head><meta data-gatsby-head="true"></head><body><img src="/wp-content/a.jpg"></body></html>'
+    assert site_audit.analyze(html, HOME)["site"]["platform"]["name"] == "Gatsby"
+    assert (
+        site_audit.analyze(
+            '<html><body><img src="/wp-content/a.jpg"></body></html>', HOME
+        )["site"]["platform"]["name"]
+        == "WordPress"
+    )

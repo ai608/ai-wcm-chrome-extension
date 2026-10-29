@@ -1,16 +1,25 @@
-import { ArrowLeft, LogOut } from 'lucide-react'
+import { ArrowLeft, LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { useState } from 'react'
 import { queryClient } from '@/app/providers'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { logout } from '@/hooks/use-auth'
+import { type Theme, useTheme } from '@/hooks/use-theme'
 import type { User } from '@/lib/api/types'
 import { getEnv } from '@/lib/env'
+import { cn } from '@/lib/utils'
 import { usePanelStore } from '@/stores/panel-store'
+
+const THEMES: { value: Theme; label: string; Icon: typeof Sun }[] = [
+  { value: 'light', label: 'Light', Icon: Sun },
+  { value: 'dark', label: 'Dark', Icon: Moon },
+  { value: 'system', label: 'System', Icon: Monitor },
+]
 
 export function SettingsScreen({ user }: { user: User }) {
   const setView = usePanelStore((s) => s.setView)
+  const { theme, setTheme } = useTheme()
   const [confirming, setConfirming] = useState(false)
   const [pending, setPending] = useState(false)
   const [signOutError, setSignOutError] = useState<string | null>(null)
@@ -37,7 +46,7 @@ export function SettingsScreen({ user }: { user: User }) {
     <div className="flex h-screen flex-col overflow-hidden">
       <PanelHeader mode="Settings" />
       <main className="min-h-0 flex-1 overflow-y-auto bg-muted/30 px-4 py-4">
-        <div className="mx-auto flex w-full max-w-lg flex-col gap-6">
+        <div className="mx-auto flex w-full max-w-lg flex-col gap-6 animate-in fade-in slide-in-from-bottom-1 duration-200 ease-out">
           <Button
             variant="ghost"
             className="-ml-2 h-9 self-start px-2 text-muted-foreground hover:text-foreground"
@@ -48,7 +57,7 @@ export function SettingsScreen({ user }: { user: User }) {
           </Button>
 
           <section aria-labelledby="settings-account">
-            <h1 id="settings-account" className="mb-3 text-sm font-semibold">
+            <h1 id="settings-account" className="mb-3 text-base font-semibold leading-6">
               Account
             </h1>
             <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-4">
@@ -67,8 +76,34 @@ export function SettingsScreen({ user }: { user: User }) {
             </div>
           </section>
 
+          <section aria-labelledby="settings-appearance">
+            <h2 id="settings-appearance" className="mb-3 text-base font-semibold leading-6">
+              Appearance
+            </h2>
+            <fieldset className="grid grid-cols-3 gap-1 rounded-xl border border-border bg-card p-1">
+              <legend className="sr-only">Theme</legend>
+              {THEMES.map(({ value, label, Icon }) => (
+                <button
+                  key={value}
+                  type="button"
+                  aria-pressed={theme === value}
+                  onClick={() => setTheme(value)}
+                  className={cn(
+                    'flex h-9 items-center justify-center gap-1.5 rounded-lg text-[13px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-ring',
+                    theme === value
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:bg-muted hover:text-foreground',
+                  )}
+                >
+                  <Icon aria-hidden="true" className="size-4" />
+                  {label}
+                </button>
+              ))}
+            </fieldset>
+          </section>
+
           <section aria-labelledby="settings-connection">
-            <h2 id="settings-connection" className="mb-3 text-sm font-semibold">
+            <h2 id="settings-connection" className="mb-3 text-base font-semibold leading-6">
               Connection
             </h2>
             <dl className="divide-y divide-border rounded-xl border border-border bg-card px-4">
@@ -88,11 +123,11 @@ export function SettingsScreen({ user }: { user: User }) {
           </section>
 
           <section aria-labelledby="settings-session" className="pb-2">
-            <h2 id="settings-session" className="mb-3 text-sm font-semibold">
+            <h2 id="settings-session" className="mb-3 text-base font-semibold leading-6">
               Session
             </h2>
             {confirming ? (
-              <div className="rounded-xl border border-border bg-card p-4">
+              <div className="rounded-xl border border-border bg-card p-4 animate-in fade-in duration-150 ease-out">
                 <p className="text-sm font-medium">Sign out of this extension?</p>
                 <p className="mt-1 text-[12px] leading-5 text-muted-foreground">
                   You’ll need to sign in again to use it.

@@ -21,10 +21,10 @@ export function bookingUrl(widgetUrl: string, contact: Contact): string {
 }
 
 export function BookingWidget({ widgetUrl, contact }: BookingWidgetProps) {
-  if (widgetUrl === 'about:blank') {
+  if (widgetUrl === 'about:blank' || !URL.canParse(widgetUrl)) {
     return (
       <div className="flex h-40 items-center justify-center rounded-lg border border-dashed border-border text-[13px] text-muted-foreground">
-        Booking widget (mock)
+        {widgetUrl === 'about:blank' ? 'Booking widget (mock)' : 'Booking widget not configured'}
       </div>
     )
   }
