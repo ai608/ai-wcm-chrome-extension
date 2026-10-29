@@ -23,3 +23,11 @@ App data stays in the separate `extension` schema. Applied filenames are recorde
 Set the same `EXTENSION_HANDOFF_SECRET` in this backend and the AI Lead Pipeline backend. Add the installed extension ID to `EXTENSION_ALLOWED_IDS` in both. O1 runs on port 8000 and the O1 frontend runs on port 5173 locally. Point `WXT_API_BASE_URL` at this server on port 8001, set `WXT_O1_WEB_URL` to the O1 frontend, and set `WXT_API_MOCK=false`.
 
 The extension opens O1 for sign-in. O1 issues a one-time code after checking the user's grant. This backend exchanges the code for an extension session. The migration creates `extension.auth_sessions`; tokens are stored as hashes. Existing password endpoints remain for compatibility during rollout.
+
+## Deploy on Railway
+
+1. New project → deploy from this repo, set **Root Directory** to `backend` (picks up `Dockerfile` and `railway.json`).
+2. Add the variables from `.env.example` (at minimum `ENV=production`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `ENCRYPTION_KEY`, `EXTENSION_HANDOFF_SECRET`, `EXTENSION_ALLOWED_IDS`, `CORS_ALLOWED_ORIGINS`). Railway sets `PORT` itself.
+3. Generate a public domain. Migrations run on boot; `/health` is the healthcheck and lists any `missing_config`.
+
+Local: `docker compose up --build` from the repo root (reads `backend/.env`).
