@@ -26,8 +26,8 @@ The extension opens O1 for sign-in. O1 issues a one-time code after checking the
 
 ## Deploy on Railway
 
-1. New project → deploy from this repo, set **Root Directory** to `backend` (picks up `Dockerfile` and `railway.json`).
+1. New project → deploy from this repo, set **Root Directory** to `backend` (Railway detects the `Dockerfile`).
 2. Add the variables from `.env.example` (at minimum `ENV=production`, `DATABASE_URL`, `SUPABASE_URL`, `SUPABASE_PUBLISHABLE_KEY`, `ENCRYPTION_KEY`, `EXTENSION_HANDOFF_SECRET`, `EXTENSION_ALLOWED_IDS`, `CORS_ALLOWED_ORIGINS`). Railway sets `PORT` itself.
-3. Generate a public domain. Migrations run on boot; `/health` is the healthcheck and lists any `missing_config`.
+3. Generate a public domain. Migrations run on boot; set the healthcheck path to `/health` in Settings → Deploy; it lists any `missing_config`.
 
 Local: `docker compose up --build` from the repo root (reads `backend/.env`).
