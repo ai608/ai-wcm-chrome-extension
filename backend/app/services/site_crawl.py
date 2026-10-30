@@ -25,6 +25,8 @@ from app.core.exceptions import AppError
 from app.services.constants import (
     BOOKING,
     CHAT,
+    KIND_TRUST,
+    PLACEHOLDER_TEXT,
     SERVICES,
     TRUST,
     TRUST_LINK_TEXT,
@@ -112,7 +114,10 @@ async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
             if attempt == 2:
                 raise
         else:
+            wait = r.headers.get("retry-after", "")
             if r.status_code not in TRANSIENT_STATUS or attempt == 2:
+                break
+            if r.status_code == 429 and wait.isdigit() and int(wait) > 5:
                 break
         await asyncio.sleep(settings.CRAWL_RETRY_DELAY_S)
     if r.status_code >= 400:
@@ -153,18 +158,23 @@ CONTEXT = ("team_page", "pricing_page", "financing_page", "about_page", "faq_pag
 # extra pages, so a slow map is dropped instead of holding up the audit.
 
 
+MIN_MENU_LINKS = 8
+MENU_NODE = re.compile(r"menu|nav", re.IGNORECASE)
+
+
 class Menu(NamedTuple):
     """The site menu read from the home page."""
 
     children: dict[str, str]  # page in a dropdown -> the dropdown's label
     parents: dict[str, str]  # dropdown's own page -> its label
     top: dict[str, str]  # every page linked from the menu -> its link text, lower case
+    labels: dict[str, dict[str, Any]]  # page -> what the model made of its link
 
     def has(self, url: str) -> bool:
         return url in self.top
 
 
-NO_MENU = Menu({}, {}, {})
+NO_MENU = Menu({}, {}, {}, {})
 
 
 def clean_url(url: str, home: str) -> str | None:
@@ -203,14 +213,26 @@ def nav_links(html: str, home: str) -> Menu:
     """The site menu. The clinic's own menu is the best list of its services, whatever its
     URLs are called: every page in a dropdown is a candidate, unless the dropdown is About,
     News and the like."""
-    menu = Menu({}, {}, {})
-    for root in LexborHTMLParser(html).css("nav, header, [role=navigation]"):
+    menu = Menu({}, {}, {}, {})
+    doc = LexborHTMLParser(html)
+    for tag in doc.css("script, style, noscript"):
+        tag.decompose()
+    roots = doc.css("nav, header, [role=navigation]")
+    if sum(len(r.css("a[href]")) for r in roots) < MIN_MENU_LINKS:
+        roots += [
+            n
+            for n in doc.css("ul, div, section, aside")
+            if MENU_NODE.search(
+                f"{n.attributes.get('class') or ''} {n.attributes.get('id') or ''}"
+            )
+        ]
+    for root in roots:
         for a in root.css("a[href]"):
             url = clean_url(urljoin(home, a.attributes.get("href") or ""), home)
             if url is None:
                 continue
             text = " ".join(a.text(strip=True).split()).lower()
-            if text or url not in menu.top:  # a logo link has no text; a later one may
+            if not menu.top.get(url):
                 menu.top[url] = text
             dropdown = _dropdown_of(a)
             if dropdown is None:
@@ -227,6 +249,8 @@ def nav_links(html: str, home: str) -> Menu:
 
 def _trust_key(url: str, menu: Menu = NO_MENU) -> str | None:
     """Which trust page this is: by its URL, else by the text of its menu link."""
+    if url in menu.labels:
+        return KIND_TRUST.get(menu.labels[url]["kind"])
     low = url.lower()
     by_url = next((k for k, _, words in TRUST if any(w in low for w in words)), None)
     if by_url:
@@ -251,6 +275,13 @@ def classify(url: str, menu: Menu = NO_MENU) -> str:
         return "blog_post"
     if BLOG_INDEX.search(url):
         return "blog_index"
+    if label := menu.labels.get(url):
+        kind = label["kind"]
+        if kind == "service":
+            return "service" if _service_of(url) else "menu_child"
+        return {"services_hub": "hub"}.get(kind) or (
+            "trust" if kind in KIND_TRUST else "other"
+        )
     if HUB.match(path) or (
         url in menu.parents and not NOT_SERVICE_MENU.search(menu.parents[url])
     ):
@@ -463,6 +494,7 @@ async def crawl(
     home_html: str = "",
     via: str = "direct",
     report: Report | None = None,
+    menu: Menu | None = None,
 ) -> tuple[list[str], dict[str, str], bool, list[dict[str, Any]]]:
     """Find, choose and read the site's pages.
 
@@ -495,7 +527,8 @@ async def crawl(
     except TimeoutError:
         sitemap = []
     posts = {_key(p["url"]) for p in sitemap}
-    menu = nav_links(home_html, url) if home_html else NO_MENU
+    if menu is None:
+        menu = nav_links(home_html, url) if home_html else NO_MENU
     home_links = (
         [
             urljoin(url, a.attributes.get("href") or "")
@@ -507,6 +540,8 @@ async def crawl(
     found: dict[str, str] = {}
     cleaned([*menu.top, *home_links], found)  # menu first: the clinic's own order
     chosen, groups, mode = plan(list(found.values()), url, menu, posts)
+    if via != "direct":
+        chosen = chosen[: settings.FIRECRAWL_FALLBACKS]
     await say("pick", "done", total=len(chosen), mode=mode, groups=groups)
 
     await say("scrape", "running", total=len(chosen))
@@ -854,13 +889,15 @@ def enrich(
     all_urls = list(dict.fromkeys([*urls, *pages]))
 
     clusters: dict[str, list[str]] = {}
-    for u in all_urls:
-        if name := _service_of(u):
-            clusters.setdefault(name, []).append(u)
-    for c in site["services"][
-        "clusters"
-    ]:  # keep services only mentioned on the home page
-        clusters.setdefault(c["service"], c["pages"])
+    for u, label in menu.labels.items():
+        if label["kind"] == "service" and label.get("name"):
+            clusters.setdefault(str(label["name"])[:80], []).append(u)
+    if not clusters:
+        for u in all_urls:
+            if name := _service_of(u):
+                clusters.setdefault(name, []).append(u)
+        for c in site["services"]["clusters"]:
+            clusters.setdefault(c["service"], c["pages"])
     site["services"]["clusters"] = [
         {
             "service": name,
@@ -956,6 +993,17 @@ def enrich(
             or next((u for u in menu.top if _trust_key(u, menu) == key), None)
         ]
     ]
+    faq = next((u for u, h in pages.items() if _has_faq(h)), None)
+    if faq:
+        site["trust"] = [
+            {**t, "status": "found", "url": t["url"] or faq}
+            if t["key"] == "faq_page"
+            else t
+            for t in site["trust"]
+        ]
+    site["placeholder_pages"] = [
+        u for u, h in pages.items() if any(p in h.lower() for p in PLACEHOLDER_TEXT)
+    ][:10]
     site["pages_crawled"] = len(pages) + 1
 
     html_all = " ".join(pages.values()).lower()
@@ -975,6 +1023,15 @@ def enrich(
     for check in convert["checks"]:
         if check["key"] == "online_booking" and convert["online_booking"]:
             check["status"] = "ok"
+
+
+def _has_faq(html: str) -> bool:
+    """True when the page has an FAQ heading or FAQPage structured data."""
+    doc = LexborHTMLParser(html)
+    return "faqpage" in html.lower() or any(
+        re.search(r"faq|frequently asked", h.text(), re.IGNORECASE)
+        for h in doc.css("h1, h2, h3, h4")
+    )
 
 
 def gbp_links(pages: dict[str, str]) -> tuple[bool, bool]:

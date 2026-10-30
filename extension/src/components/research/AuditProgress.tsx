@@ -14,6 +14,7 @@ import { cn } from '@/lib/utils'
 const STEPS: { id: string; label: string }[] = [
   { id: 'home', label: 'Fetch home page' },
   { id: 'analyze', label: 'Analyse home page' },
+  { id: 'menu', label: 'Read the site menu' },
   { id: 'map', label: 'Find pages' },
   { id: 'pick', label: 'Choose pages to read' },
   { id: 'scrape', label: 'Read pages' },
@@ -85,6 +86,8 @@ function summary(step: string, e: TraceEvent, steps: Map<string, TraceEvent>): s
           : 'Fetched directly'
       return `${via}${size ? ` · ${Math.max(1, Math.round(size / 1024))} KB` : ''}`
     }
+    case 'menu':
+      return `${num(d.services) ?? 0} services in ${num(d.links) ?? 0} menu links`
     case 'map':
       return `${num(d.count) ?? 0} URLs found`
     case 'pick':

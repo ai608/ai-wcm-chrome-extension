@@ -136,3 +136,55 @@ async def test_fetch_html_retries_a_passing_failure_once_but_not_a_final_one(
     with pytest.raises(AppError):  # one retry only
         await site_audit.fetch_html("https://a.example/")
     assert len(calls) == 2
+
+
+HOME = "https://clinic.example/"
+JSON_LD = """<html><head><script type="application/ld+json">{"@graph": [
+ {"@type": "WebSite", "name": "Elite"},
+ {"@type": ["HealthAndBeautyBusiness"], "name": "Elite Health", "telephone": "(719) 300-7700",
+  "address": {"streetAddress": "5925 Lehman Dr Ste 1", "addressLocality": "Colorado Springs",
+              "addressRegion": "CO", "postalCode": "80918"}}]}</script></head>
+<body><a href="tel:+17193007700">Call Us: (719) 300-7700</a>
+<p>Offering personalized care. We also offer payment plans. Patients are the focus.</p>
+<img src="https://stats.example/piwik.php?idsite=1"><img src="/a.png" alt="a"></body></html>"""
+MICRODATA = """<html><body><footer itemscope itemtype="http://schema.org/LocalBusiness">
+<span itemprop="name">Institute</span><span itemprop="streetAddress">2020 W. Colorado Ave</span>
+<span itemprop="addressLocality">Colorado Springs</span><span itemprop="telephone">719 415 3922</span>
+</footer></body></html>"""
+
+
+def test_a_local_business_subtype_gives_name_address_and_a_clean_phone():
+    r = site_audit.analyze(JSON_LD, HOME)
+    assert r["schema"]["has_local_business"] is True
+    assert r["business"]["nap"] == {
+        "name": "Elite Health",
+        "address": "5925 Lehman Dr Ste 1, Colorado Springs, CO, 80918",
+        "phone": "719-300-7700",
+        "consistent_with_gbp": None,
+    }
+
+
+def test_microdata_is_the_fallback_for_name_and_address():
+    nap = site_audit.analyze(MICRODATA, HOME)["business"]["nap"]
+    assert (
+        nap["name"] == "Institute"
+        and nap["address"] == "2020 W. Colorado Ave, Colorado Springs"
+    )
+
+
+def test_offering_and_we_also_offer_are_not_a_special_offer():
+    assert site_audit.analyze(JSON_LD, HOME)["convert"]["offers_or_specials"] is False
+    html = "<html><body><p>Get 20% off standard pricing this month.</p></body></html>"
+    assert site_audit.analyze(html, HOME)["convert"]["offers_or_specials"] is True
+    html = "<html><body><p>Specialized care and a special place.</p></body></html>"
+    assert site_audit.analyze(html, HOME)["convert"]["offers_or_specials"] is False
+
+
+def test_a_tracking_pixel_is_not_an_image_missing_alt():
+    images = site_audit.analyze(JSON_LD, HOME)["on_page"]["images"]
+    assert images["total"] == 1 and images["missing_alt"] == 0
+
+
+def test_seotoaster_is_detected():
+    html = '<html><body><img src="https://x.seotoaster.com/a.png"></body></html>'
+    assert site_audit.analyze(html, HOME)["site"]["platform"]["name"] == "SeoToaster"

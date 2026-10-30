@@ -58,6 +58,7 @@ class Settings(BaseSettings):
     # (roughly $0.12 input on Sonnet 5.5). Pages are never cut one by one; when the total runs
     # out, the last pages in reading order are cut, and those are the least important ones.
     AI_MAX_PAGES: int = Field(default=40, gt=0)
+    AI_MAX_OUTPUT_TOKENS: int = Field(default=16000, gt=0)
     AI_TOTAL_CHARS: int = Field(default=160_000, gt=0)
 
     model_config = SettingsConfigDict(

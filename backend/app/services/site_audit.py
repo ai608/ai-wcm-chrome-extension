@@ -14,6 +14,7 @@ from app.core.config import settings
 from app.core.exceptions import AppError
 from app.services.constants import (
     BOOKING,
+    LOCAL_BUSINESS_TYPES,
     PLATFORMS,
     SERVICES,
     SOCIAL_HOSTS,
@@ -31,6 +32,12 @@ SECTION_KEYS = (
     "research",
 )
 # Share buttons, tracking pixels, embedded videos and widgets are not the clinic's profile.
+OFFER = re.compile(
+    r"(?<!\w)(specials|special (offers?|pricing|promotions?)|promotions?|promo|discounts?"
+    r"|\d+% off|\$\d+ off|free consultation)(?!\w)",
+    re.IGNORECASE,
+)
+TRACKER = re.compile(r"piwik|pixel|/tr\?|doubleclick|analytics|1x1", re.IGNORECASE)
 _NOT_PROFILE = re.compile(
     r"/(tr|sharer|share|sharing|shareArticle|plugins|dialog|embed|watch|intent|hashtag|pixel)"
     r"(?:\.php)?(?:/|\?|$)|/p/|/reel/|/video/",
@@ -227,7 +234,7 @@ def _on_page(doc: LexborHTMLParser, url: str) -> dict[str, Any]:
     title = _text(doc.css_first("title"))
     description = _meta(doc, "description")
     h1s = doc.css("h1")
-    images = doc.css("img")[:100]
+    images = [i for i in doc.css("img") if not TRACKER.search(_attr(i, "src"))][:100]
     links = []
     domain = urlsplit(url).hostname
     for node in doc.css("a[href]")[:200]:
@@ -354,19 +361,54 @@ def _schema(doc: LexborHTMLParser) -> dict[str, Any]:
         "json_ld_count": len(raw),
         "parse_errors": errors,
         "has_local_business": any(
-            t in types
-            for t in (
-                "localbusiness",
-                "medicalbusiness",
-                "medicalclinic",
-                "day spa",
-                "dayspa",
-            )
+            t.strip().lower() in LOCAL_BUSINESS_TYPES
+            for b in blocks
+            for t in b["type"].split(",")
         ),
         "has_faq_page": "faqpage" in types,
         "has_review_markup": "review" in types,
         "blocks": blocks,
         "raw": "\n\n".join(raw)[:30_000],
+    }
+
+
+def _local_business(doc: LexborHTMLParser) -> dict[str, str]:
+    """Name, address and phone from the page's LocalBusiness structured data or microdata."""
+    for node in doc.css('script[type="application/ld+json"]')[:20]:
+        try:
+            data = orjson.loads(node.text())
+        except orjson.JSONDecodeError:
+            continue
+        for entry in data if isinstance(data, list) else [data]:
+            graph = entry.get("@graph") if isinstance(entry, dict) else None
+            for item in graph if isinstance(graph, list) else [entry]:
+                kinds = item.get("@type", []) if isinstance(item, dict) else []
+                kinds = kinds if isinstance(kinds, list) else [kinds]
+                if not LOCAL_BUSINESS_TYPES & {str(k).lower() for k in kinds}:
+                    continue
+                addr = item.get("address")
+                if isinstance(addr, dict):
+                    keys = (
+                        "streetAddress",
+                        "addressLocality",
+                        "addressRegion",
+                        "postalCode",
+                    )
+                    addr = ", ".join(str(addr[k]) for k in keys if addr.get(k))
+                return {
+                    "name": str(item.get("name") or ""),
+                    "address": str(addr or ""),
+                    "phone": str(item.get("telephone") or ""),
+                }
+    box = doc.css_first('[itemtype*="LocalBusiness"]')
+    if box is None:
+        return {}
+    keys = ("streetAddress", "addressLocality", "addressRegion", "postalCode")
+    parts = [_text(box.css_first(f'[itemprop="{k}"]')) for k in keys]
+    return {
+        "name": _text(box.css_first('[itemprop="name"]')),
+        "address": ", ".join(p for p in parts if p),
+        "phone": _text(box.css_first('[itemprop="telephone"]')),
     }
 
 
@@ -490,9 +532,10 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
         ) or raw_social(html, host)
         if match:
             socials.append({"network": network, "url": match})
-    phone = next(
+    phone = raw_phone(html) or next(
         (unescape(_text(i)) for i in doc.css('a[href^="tel:"]') if _text(i)), None
-    ) or raw_phone(html)
+    )
+    local = _local_business(doc)
     platform = next((name for name, marker in PLATFORMS if marker in html), None)
     site = {
         "platform": {"name": platform, "detail": None},
@@ -572,7 +615,7 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
         "forms_count": len(doc.css("form")),
         "chat_widget": None,
         "cta_above_fold": False,
-        "offers_or_specials": "special" in visible or "offer" in visible,
+        "offers_or_specials": bool(OFFER.search(visible)),
         "financing_mentioned": "financing" in visible,
         "text_us": bool(doc.css_first('a[href^="sms:"]')),
         "checks": checks,
@@ -582,8 +625,8 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
         "company": None,
         "socials": socials,
         "nap": {
-            "name": hints.get("name") if hints else None,
-            "address": None,
+            "name": (hints.get("name") if hints else None) or local.get("name") or None,
+            "address": local.get("address") or None,
             "phone": phone,
             "consistent_with_gbp": None,
         },

@@ -5,15 +5,20 @@ the pages *say*. One OpenRouter call per audit; on any error the keyword results
 """
 
 import json
+import logging
 import re
+from datetime import date
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
+from app.core.exceptions import AppError
 from app.services import llm
-from app.services.constants import SERVICES
+from app.services.constants import MENU_KINDS
+from app.services.site_crawl import Menu
 
 # What a patient expects a good service page to answer. Fixed list, so results are comparable.
 CHROME_CHARS = 3000  # the site header or footer, sent once
@@ -30,18 +35,31 @@ TOPICS = [
     "Booking call to action",
 ]
 
-SYSTEM = f"""You audit a wellness or med spa clinic website for a marketing agency.
+logger = logging.getLogger(__name__)
+
+MENU_SYSTEM = f"""You read the navigation menu of a wellness, med spa or health clinic website.
+Each line is: [parent menu > ] link text | path. Return JSON only:
+{{"items": [{{"path": "<path exactly as given>", "kind": "<one of: {", ".join(MENU_KINDS)}>",
+  "name": "<short name a patient would use, only for kind=service>"}}]}}
+Rules: one item per line, only paths that were given. A service is a treatment, program or
+medical service a patient can book. A page that only lists services is services_hub."""
+
+SYSTEM = """You audit a wellness or med spa clinic website for a marketing agency.
 You get the site's header and footer once, then the text of several pages. Return JSON only, with exactly this shape:
-{{"services": [{{"service": "<one of: {", ".join(SERVICES)}>",
+{"services": [{"service": "<name>",
    "page_url": "<url of the page that covers it>",
-   "topics_present": ["<from the topic list>"], "topics_missing": ["<from the topic list>"]}}],
- "providers": [{{"name": "...", "credentials": "<e.g. MD, NP, RN, or empty>", "page_url": "..."}}],
+   "topics_present": ["<from the topic list>"], "topics_missing": ["<from the topic list>"]}],
+ "providers": [{"name": "...", "credentials": "<e.g. MD, NP, RN, or empty>", "page_url": "..."}],
  "areas_served": ["<city or area the site says it serves>"],
  "offers": ["<current special or promotion, short>"],
- "financing": true|false, "insurance_accepted": true|false}}
-Topic list: {json.dumps(TOPICS)}.
-Rules: only report what the page text shows. Every topic goes in present or missing for
-each service. Use only service names from the list. Never invent providers or cities.
+ "financing": true|false, "insurance_accepted": true|false}
+Services found on the site menu: {names}.
+Topic list: {topics}.
+Today is {today}.
+Rules: only report what the page text shows. Ignore template or sample text. An offer
+with a date before today is not current. Every topic goes in present or missing for
+each service. Use a listed service name exactly. Add a service that is not listed only when
+a page you read clearly covers it, with that page's url. Never invent providers or cities.
 Empty lists are fine."""
 
 
@@ -98,7 +116,9 @@ def site_text(html: str) -> str:
     )
 
 
-async def analyze(http: httpx.AsyncClient, pages: dict[str, str]) -> dict[str, Any]:
+async def analyze(
+    http: httpx.AsyncClient, pages: dict[str, str], names: list[str] | None = None
+) -> dict[str, Any]:
     """One AI call over the site header/footer and the pages in reading order (home first,
     then services, then the rest). Pages are sent whole until AI_TOTAL_CHARS runs out; the
     page that does not fit is cut, and later pages (the least important) are left out."""
@@ -117,11 +137,47 @@ async def analyze(http: httpx.AsyncClient, pages: dict[str, str]) -> dict[str, A
         left -= len(text)
     return await llm.chat_json(
         http,
-        SYSTEM,
+        SYSTEM.replace("{names}", json.dumps(names or []))
+        .replace("{topics}", json.dumps(TOPICS))
+        .replace("{today}", date.today().isoformat()),
         "\n\n".join(chunks),
-        max_tokens=6000,
+        max_tokens=settings.AI_MAX_OUTPUT_TOKENS,
         model=settings.RESEARCH_MODEL,
     )
+
+
+async def label_menu(http: httpx.AsyncClient, menu: Menu) -> Menu:
+    """Have the model say what each menu link is; the menu comes back unchanged on any failure."""
+    paths = {urlsplit(u).path or "/": u for u in menu.top}
+    if not paths:
+        return menu
+    lines = [
+        f"{f'{menu.children[u]} > ' if u in menu.children else ''}{menu.top[u] or '(no text)'} | {p}"
+        for p, u in paths.items()
+    ]
+    try:
+        out = await llm.chat_json(
+            http,
+            MENU_SYSTEM,
+            "\n".join(lines),
+            max_tokens=6000,
+            model=settings.RESEARCH_MODEL,
+            temperature=0,
+        )
+        labels = {
+            paths[i["path"]]: {
+                "kind": i["kind"],
+                "name": str(i.get("name") or "").strip(),
+            }
+            for i in out["items"]
+            if isinstance(i, dict)
+            and i.get("path") in paths
+            and i.get("kind") in MENU_KINDS
+        }
+    except (AppError, httpx.HTTPError, KeyError, TypeError) as exc:
+        logger.warning("menu labelling failed: %s", type(exc).__name__)
+        return menu
+    return menu._replace(labels=labels)
 
 
 def _strings(value: Any, limit: int = 20) -> list[str]:
@@ -137,23 +193,30 @@ def apply(sections: dict[str, Any], ai: dict[str, Any], pages: dict[str, str]) -
     site = sections["site"]
     clusters = {c["service"]: c for c in site["services"]["clusters"]}
     for item in ai.get("services") or []:
-        if not isinstance(item, dict) or item.get("service") not in SERVICES:
+        name = (
+            str(item.get("service") or "").strip()[:80]
+            if isinstance(item, dict)
+            else ""
+        )
+        if not name:
             continue
         present = [t for t in _strings(item.get("topics_present")) if t in TOPICS]
         missing = [t for t in TOPICS if t not in present]
-        cluster = clusters.get(item["service"])
-        if cluster is None:  # the AI found a service the URLs didn't show
+        cluster = clusters.get(name)
+        if cluster is None:
             url = str(item.get("page_url") or "")
+            if url not in pages:
+                continue
             cluster = {
-                "service": item["service"],
+                "service": name,
                 "found": 1,
                 "expected": 3,
-                "pages": [url] if url in pages else [],
+                "pages": [url],
                 "topics_present": [],
                 "topics_missing": [],
             }
             site["services"]["clusters"].append(cluster)
-            clusters[item["service"]] = cluster
+            clusters[name] = cluster
         cluster["topics_present"] = sorted(
             set(cluster["topics_present"]) | set(present), key=TOPICS.index
         )

@@ -48,6 +48,7 @@ PLATFORMS = (
     ("Squarespace", "squarespace.com"),
     ("Shopify", "cdn.shopify.com"),
     ("Kajabi", "Kajabi."),
+    ("SeoToaster", "seotoaster.com"),
     ("WordPress", "wp-content/"),
 )
 
@@ -75,6 +76,40 @@ TRUST_LINK_TEXT = {
     "financing_page": ("financ", "payment"),
     "privacy_policy": ("privacy",),
 }
+
+KIND_TRUST = {
+    "about": "about_page",
+    "team": "team_page",
+    "faq": "faq_page",
+    "pricing": "pricing_page",
+    "financing": "financing_page",
+    "privacy": "privacy_policy",
+}
+MENU_KINDS = (
+    "service",
+    "services_hub",
+    "contact",
+    "blog",
+    "shop",
+    "other",
+    *KIND_TRUST,
+)
+
+LOCAL_BUSINESS_TYPES = frozenset(
+    {
+        "localbusiness",
+        "medicalbusiness",
+        "medicalclinic",
+        "dayspa",
+        "healthandbeautybusiness",
+        "beautysalon",
+        "healthclub",
+        "physician",
+        "dentist",
+    }
+)
+
+PLACEHOLDER_TEXT = ("lorem ipsum", "sample title", "heading text here")
 
 # Online booking tool: marker (lower case) -> name.
 BOOKING = {

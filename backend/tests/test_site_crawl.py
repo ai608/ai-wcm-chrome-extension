@@ -120,6 +120,7 @@ def test_tiers_put_one_page_per_service_first_then_round_robin():
         {f"{G}/sculptra": "Treatments"},
         {},
         {f"{G}/sculptra": "", f"{G}/botox": "", f"{G}/weight-loss": ""},
+        {},
     )
     t = site_crawl.tiers(urls, f"{G}/", menu)
     assert t["A"] == [f"{G}/treatments", f"{G}/botox", f"{G}/weight-loss"]
@@ -146,7 +147,7 @@ def test_tiers_keep_blog_posts_and_keyword_only_urls_out_of_services():
         f"{G}/what-to-expect-with-first-botox-appointment",
         f"{G}/bhrt-vs-traditional-hrt",
     ]
-    menu = site_crawl.Menu({}, {}, {f"{G}/low-testosterone/": "low t"})
+    menu = site_crawl.Menu({}, {}, {f"{G}/low-testosterone/": "low t"}, {})
     posts = {site_crawl._key(f"{G}/bhrt-vs-traditional-hrt")}
     t = site_crawl.tiers(urls, f"{G}/", menu, posts)
     assert t["A"] == [f"{G}/low-testosterone/"]  # a menu page is the main page
@@ -169,6 +170,7 @@ def test_every_menu_page_is_read_before_any_page_the_menu_does_not_list():
             f"{G}/bhrt/": "bhrt",
             f"{G}/hormone-programs/": "programs",
         },
+        {},
     )
     t = site_crawl.tiers(urls, f"{G}/", menu)
     assert t["A"] == [f"{G}/bhrt/"]  # fewest path segments, shortest URL
@@ -861,3 +863,125 @@ async def test_scrape_retries_once_on_a_passing_error_and_not_on_a_final_one(
     calls.clear()
     async with run([503, 503, 200]) as http:  # one retry only
         assert await site_crawl.scrape(http, f"{G}/a") is None and len(calls) == 2
+
+
+def test_a_page_keeps_the_text_of_its_first_menu_link():
+    html = f"""<header><nav><ul><li><a href="{G}/menopause/">Menopause Treatment</a></li></ul></nav>
+    <a href="{G}/menopause/">Perimenopause Quiz</a><a href="{G}/"></a><a href="{G}/">Home</a></header>"""
+    top = site_crawl.nav_links(html, f"{G}/").top
+    assert top[f"{G}/menopause/"] == "menopause treatment" and top[f"{G}/"] == "home"
+
+
+def labelled(**kinds):
+    top = {f"{G}/{k}/": k for k in kinds}
+    labels = {f"{G}/{k}/": {"kind": v[0], "name": v[1]} for k, v in kinds.items()}
+    return site_crawl.Menu({}, {}, top, labels)
+
+
+def test_model_labels_decide_what_a_menu_page_is():
+    menu = labelled(
+        peptides=("service", "Peptide Therapy"),
+        botox=("service", "Botox"),
+        cost=("pricing", ""),
+        recipes=("blog", ""),
+        services=("services_hub", ""),
+        menopause=("other", ""),
+    )
+    cls = lambda k: site_crawl.classify(f"{G}/{k}/", menu)
+    assert [
+        cls(k)
+        for k in ("peptides", "botox", "cost", "recipes", "services", "menopause")
+    ] == [
+        "menu_child",
+        "service",
+        "trust",
+        "other",
+        "hub",
+        "other",
+    ]
+    assert site_crawl._trust_key(f"{G}/cost/", menu) == "pricing_page"
+    assert site_crawl._trust_key(f"{G}/menopause/", menu) is None
+
+
+def test_enrich_lists_the_services_the_model_named_from_the_menu():
+    menu = labelled(
+        nutrition=("service", "Nutrition Program"),
+        mindfulness=("service", "Mindfulness"),
+        cost=("pricing", ""),
+    )
+    sections = base_sections()
+    site_crawl.enrich(sections, list(menu.top), {}, None, menu)
+    clusters = sections["site"]["services"]["clusters"]
+    assert [(c["service"], c["pages"]) for c in clusters] == [
+        ("Nutrition Program", [f"{G}/nutrition/"]),
+        ("Mindfulness", [f"{G}/mindfulness/"]),
+    ]
+    assert {t["key"]: t["url"] for t in sections["site"]["trust"]}[
+        "pricing_page"
+    ] == f"{G}/cost/"
+
+
+def test_faq_sections_on_service_pages_count_as_an_faq_page_and_placeholders_are_listed():
+    sections = base_sections()
+    faq = "<html><body><h2>Frequently Asked Questions</h2><p>Sample Title</p></body></html>"
+    plain = "<html><body><h2>Botox</h2></body></html>"
+    site_crawl.enrich(
+        sections, [f"{G}/iv", f"{G}/botox"], {f"{G}/iv": faq, f"{G}/botox": plain}
+    )
+    trust = {t["key"]: t for t in sections["site"]["trust"]}
+    assert (
+        trust["faq_page"]["status"] == "found" and trust["faq_page"]["url"] == f"{G}/iv"
+    )
+    assert sections["site"]["placeholder_pages"] == [f"{G}/iv"]
+
+
+def test_a_menu_outside_nav_and_header_is_found_when_those_hold_too_few_links():
+    items = "".join(f'<li><a href="{G}/t{i}/">Treatment {i}</a></li>' for i in range(8))
+    html = f"""<html><body><header><a href="{G}/">Home</a></header>
+    <div class="main-menu"><ul><li><a href="{G}/treatments/">Treatments</a><ul>{items}</ul></li></ul></div>
+    <div class="footer-links"><a href="{G}/privacy/">Privacy</a></div></body></html>"""
+    menu = site_crawl.nav_links(html, f"{G}/")
+    assert len(menu.children) == 8 and set(menu.children.values()) == {"Treatments"}
+    assert menu.parents == {f"{G}/treatments/": "Treatments"}
+
+
+@pytest.mark.anyio
+async def test_scrape_does_not_retry_a_rate_limit_that_says_to_wait_a_minute(
+    monkeypatch,
+):
+    monkeypatch.setattr(site_crawl.settings, "CRAWL_RETRY_DELAY_S", 0)
+    calls = []
+
+    def respond(request):
+        calls.append(request)
+        return httpx.Response(429, headers={"retry-after": "60"}, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        assert await site_crawl.scrape(http, f"{G}/a") is None
+    assert len(calls) == 1
+
+
+@pytest.mark.anyio
+async def test_a_site_that_blocks_direct_reads_gets_only_the_pages_the_firecrawl_plan_allows(
+    monkeypatch,
+):
+    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_FALLBACKS", 2)
+    read = []
+
+    async def scrape(_http, url):
+        read.append(url)
+        return RICH
+
+    async def no_map(_http, _url):
+        return []
+
+    monkeypatch.setattr(site_crawl, "scrape", scrape)
+    monkeypatch.setattr(site_crawl, "map_site", no_map)
+    _, pages, _, _ = await site_crawl.crawl(None, f"{G}/", MENU, "firecrawl", None)
+    assert len(read) == 2 and len(pages) == 2
+
+
+def test_script_text_inside_a_menu_link_is_not_the_link_text():
+    html = f'<nav><a href="{G}/botox/"><script>var x = 1</script>Botox</a></nav>'
+    assert site_crawl.nav_links(html, f"{G}/").top[f"{G}/botox/"] == "botox"

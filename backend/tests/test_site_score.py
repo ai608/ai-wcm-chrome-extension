@@ -156,7 +156,6 @@ def test_service_pages_mix_coverage_and_topics() -> None:
             "topics_present": ["x"] * 3,
             "topics_missing": ["y"],
         },
-        # topics unknown: coverage only = 1.0
         {
             "service": "B",
             "found": 5,
@@ -166,8 +165,13 @@ def test_service_pages_mix_coverage_and_topics() -> None:
         },
     ]
     out = run(s)
-    assert cat(out, "service_pages")["score"] == 71  # mean(41.67, 100)
+    assert cat(out, "service_pages")["score"] == 42
     assert out["top_issues"][0]["title"] == "A pages are thin"
+    for c in s["site"]["services"]["clusters"]:
+        c["topics_present"] = c["topics_missing"] = []
+    assert (
+        cat(run(s), "service_pages")["score"] == 75
+    )  # no topics anywhere: coverage only
     s["site"]["services"]["clusters"] = []
     assert cat(run(s), "service_pages")["score"] == 0
 
@@ -306,3 +310,12 @@ def test_no_categories_is_safe() -> None:
     assert all(c["excluded"] for c in out["categories"])
     assert out["top_issues"] == [] and out["issue_count"] == 0
     assert "not enough data" in out["summary_text"]
+
+
+def test_placeholder_text_is_a_top_issue_without_changing_the_score() -> None:
+    s = good()
+    before = run(s)["score"]
+    s["site"]["placeholder_pages"] = ["https://clinic.example/about/"]
+    out = run(s)
+    assert out["score"] == before
+    assert any("placeholder" in i["title"].lower() for i in out["top_issues"])

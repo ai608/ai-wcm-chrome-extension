@@ -115,6 +115,10 @@ MISS_COPY: dict[str, tuple[str, str]] = {
         "No review link on the website",
         "Happy patients have no easy way to leave a Google review.",
     ),
+    "placeholder_text": (
+        "Template placeholder text is live on the site",
+        "Visitors see filler such as Lorem Ipsum, which makes the clinic look unfinished.",
+    ),
     "no_services": (
         "No treatment pages found",
         "Patients searching for a treatment never land on this site.",
@@ -283,6 +287,7 @@ def _service_pages(sections: dict[str, Any]) -> Scored:
     if not clusters:
         return 0.0, [_miss("no_services")]
     values: list[tuple[float, dict[str, str] | None]] = []
+    unread: list[float] = []
     for c in clusters:
         found, expected = c.get("found") or 0, c.get("expected") or 0
         coverage = min(found / expected, 1.0) if expected else float(found > 0)
@@ -294,7 +299,8 @@ def _service_pages(sections: dict[str, Any]) -> Scored:
                 + (1 - SERVICE_COVERAGE_SHARE) * topics
             )
         else:
-            value = coverage
+            unread.append(coverage)
+            continue
         issue = None
         if value < 1:
             gaps = []
@@ -309,6 +315,8 @@ def _service_pages(sections: dict[str, Any]) -> Scored:
                 "detail": f"{'; '.join(gaps) or 'Coverage is incomplete'}. Searches for this treatment go to competitors.",
             }
         values.append((value, issue))
+    if not values:
+        return 100 * sum(unread) / len(unread), []
     worst_first = sorted(values, key=lambda v: v[0])
     issues = [i for _, i in worst_first if i]
     return 100 * sum(v for v, _ in values) / len(values), issues
@@ -408,6 +416,8 @@ def _site_fundamentals(sections: dict[str, Any], speed_unavailable: bool) -> Sco
             issues.append(_miss("no_local_business"))
         if not clean:
             issues.append(_miss("schema_errors"))
+    if (sections.get("site") or {}).get("placeholder_pages"):
+        issues.insert(0, _miss("placeholder_text"))
     performance = (on_page.get("pagespeed") or {}).get("mobile_performance")
     if not speed_unavailable and isinstance(performance, int | float):
         speed = (

@@ -52,6 +52,11 @@ def test_apply_merges_topics_areas_providers_and_drops_junk():
             },
             {"service": "Not a real service", "topics_present": ["What it is"]},
             {
+                "service": "Peptide Therapy",
+                "page_url": BOTOX,
+                "topics_present": ["FAQs"],
+            },
+            {
                 "service": "IV Therapy",
                 "page_url": "https://elsewhere.example/iv",
                 "topics_present": ["FAQs"],
@@ -75,9 +80,8 @@ def test_apply_merges_topics_areas_providers_and_drops_junk():
         and "FAQs" in botox["topics_missing"]
     )
     assert "Not a real service" not in clusters
-    assert (
-        clusters["IV Therapy"]["pages"] == []
-    )  # URL not from this site is not trusted
+    assert "IV Therapy" not in clusters
+    assert clusters["Peptide Therapy"]["pages"] == [BOTOX]
     assert s["site"]["cities"]["claimed_not_built"] == ["Round Rock"]
     trust = {t["key"]: t["status"] for t in s["site"]["trust"]}
     assert (
@@ -135,7 +139,10 @@ def test_page_text_is_not_cut_and_analyze_keeps_pages_whole_until_the_budget_end
         user.count("=== PAGE") == 2
     )  # p0 whole, p1 cut to what is left; p2.. left out
     assert "=== PAGE https://g.example/p0" in user and "p2" not in user
-    assert len(user) < 30_000 + 400 and seen["max_tokens"] == 6000
+    assert (
+        len(user) < 30_000 + 400
+        and seen["max_tokens"] == site_ai.settings.AI_MAX_OUTPUT_TOKENS
+    )
 
 
 def test_a_json_reply_in_a_code_fence_is_read_and_a_cut_off_one_is_named():
@@ -182,3 +189,59 @@ def test_a_json_reply_in_a_code_fence_is_read_and_a_cut_off_one_is_named():
             asyncio.run(call("sorry, no", "stop"))
     finally:
         llm.settings.OPENROUTER_API_KEY = ""
+
+
+def test_label_menu_keeps_only_real_paths_and_known_kinds_and_survives_failure(
+    monkeypatch,
+):
+    import asyncio
+
+    from app.core.exceptions import AppError
+    from app.services.site_crawl import Menu
+
+    menu = Menu(
+        {f"{HOME}iv/": "Treatments"},
+        {},
+        {f"{HOME}iv/": "iv therapy", f"{HOME}cost/": "cost", f"{HOME}": ""},
+        {},
+    )
+    seen = {}
+
+    async def chat(_http, _system, user, **kw):
+        seen["user"], seen["temperature"] = user, kw["temperature"]
+        return {
+            "items": [
+                {"path": "/iv/", "kind": "service", "name": "IV Therapy"},
+                {"path": "/cost/", "kind": "pricing"},
+                {"path": "/invented/", "kind": "service", "name": "Ghost"},
+                {"path": "/", "kind": "not a kind"},
+            ]
+        }
+
+    monkeypatch.setattr(site_ai.llm, "chat_json", chat)
+    out = asyncio.run(site_ai.label_menu(None, menu))
+    assert out.labels == {
+        f"{HOME}iv/": {"kind": "service", "name": "IV Therapy"},
+        f"{HOME}cost/": {"kind": "pricing", "name": ""},
+    }
+    assert "Treatments > iv therapy | /iv/" in seen["user"] and seen["temperature"] == 0
+
+    async def broken(*_a, **_k):
+        raise AppError(502, "upstream_error", "LLM error 500")
+
+    monkeypatch.setattr(site_ai.llm, "chat_json", broken)
+    assert asyncio.run(site_ai.label_menu(None, menu)) is menu
+
+
+def test_analyze_tells_the_model_which_services_the_menu_listed(monkeypatch):
+    import asyncio
+
+    seen = {}
+
+    async def chat(_http, system, _user, **_kw):
+        seen["system"] = system
+        return {}
+
+    monkeypatch.setattr(site_ai.llm, "chat_json", chat)
+    asyncio.run(site_ai.analyze(None, {HOME: PAGE}, ["Peptide Therapy"]))
+    assert '["Peptide Therapy"]' in seen["system"] and "{names}" not in seen["system"]

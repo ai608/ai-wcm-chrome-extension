@@ -49,6 +49,7 @@ def _domain(host: str) -> str:
 LABELS = {
     "home": "Fetch home page",
     "analyze": "Analyse home page",
+    "menu": "Read the site menu",
     "map": "Find pages",
     "pick": "Choose pages to read",
     "scrape": "Read pages",
@@ -154,15 +155,24 @@ async def _enrich(
     """Add whole-site, AI and GBP data. Returns False if a provider step failed."""
     ok = True
     pages = {final_url: home_html}
-    # Runs without a Firecrawl key too: the home page menu and links are enough to start.
+    menu = site_crawl.nav_links(home_html, final_url)
+    if settings.OPENROUTER_API_KEY:
+        await trace.report("menu", "running")
+        menu = await site_ai.label_menu(http, menu)
+        services = sum(1 for x in menu.labels.values() if x["kind"] == "service")
+        if menu.labels:
+            await trace.report("menu", "done", links=len(menu.top), services=services)
+        else:
+            await trace.report("menu", "failed", error="No labels; used URL rules")
+    else:
+        await trace.skip("OpenRouter key not set", "menu")
     try:
         urls, crawled, crawl_ok, sitemap = await site_crawl.crawl(
-            http, final_url, home_html, via, trace.report
+            http, final_url, home_html, via, trace.report, menu
         )
         ok = crawl_ok  # False when the site map failed; the menu-based crawl still ran
         await trace.report("enrich", "running")
         posts = await site_crawl.blog_posts(http, urls, crawled, final_url, sitemap)
-        menu = site_crawl.nav_links(home_html, final_url)
         site_crawl.enrich(sections, urls, crawled, posts, menu)
         await trace.report(
             "enrich",
@@ -178,7 +188,8 @@ async def _enrich(
     if settings.OPENROUTER_API_KEY:
         await trace.report("ai", "running")
         try:
-            site_ai.apply(sections, await site_ai.analyze(http, pages), pages)
+            names = [c["service"] for c in sections["site"]["services"]["clusters"]]
+            site_ai.apply(sections, await site_ai.analyze(http, pages, names), pages)
             await trace.report("ai", "done", pages=len(pages))
         except (AppError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             logger.warning("audit %s: AI page analysis failed", audit_id, exc_info=True)

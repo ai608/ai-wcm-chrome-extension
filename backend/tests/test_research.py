@@ -236,9 +236,11 @@ async def test_crawl_and_gbp_fill_in_after_home_page(client, monkeypatch):
     )
     assert done["site"]["pages_crawled"] == 1
     assert done["business"]["gbp"]["review_count"] == 120
-    assert done["business"]["gbp"]["match_reasons"] == ["website address"]
-    # the home page link text is "Call", so there is no number to compare
-    assert done["business"]["nap"]["consistent_with_gbp"] is None
+    assert done["business"]["gbp"]["match_reasons"] == [
+        "website address",
+        "phone number",
+    ]
+    assert done["business"]["nap"]["consistent_with_gbp"] is True
 
 
 async def test_provider_failure_keeps_home_results_and_marks_partial(
@@ -288,7 +290,7 @@ async def test_ai_page_analysis_fills_topics_and_failure_marks_partial(
     monkeypatch.setattr(research.settings, "OPENROUTER_API_KEY", "fake")
     calls = []
 
-    async def fake_ai(_http, pages):
+    async def fake_ai(_http, pages, _names):
         calls.append(list(pages))
         return {
             "services": [{"service": "Neurotoxins", "topics_present": ["What it is"]}],
@@ -306,7 +308,7 @@ async def test_ai_page_analysis_fills_topics_and_failure_marks_partial(
     assert botox["topics_present"] == ["What it is"]
     assert done["site"]["cities"]["claimed_not_built"] == ["Austin"]
 
-    async def broken_ai(_http, _pages):
+    async def broken_ai(_http, _pages, _names):
         raise research.AppError(502, "upstream_error", "LLM error 500")
 
     monkeypatch.setattr(site_ai, "analyze", broken_ai)

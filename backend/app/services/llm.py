@@ -27,6 +27,7 @@ async def chat_json(
     *,
     max_tokens: int = 4000,
     model: str | None = None,
+    temperature: float = 0.3,
 ) -> dict[str, Any]:
     """One OpenRouter chat call that must return a JSON object."""
     model = model or settings.SCRIPT_MODEL
@@ -37,7 +38,7 @@ async def chat_json(
         headers={"Authorization": f"Bearer {settings.OPENROUTER_API_KEY}"},
         json={
             "model": model,
-            "temperature": 0.3,
+            "temperature": temperature,
             "max_tokens": max_tokens,
             "response_format": {"type": "json_object"},
             "messages": [
