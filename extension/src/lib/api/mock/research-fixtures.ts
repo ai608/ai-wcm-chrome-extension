@@ -279,9 +279,9 @@ export function mockOverview(domain: string): OverviewSection {
 const TRACE_LABEL: Record<string, string> = {
   home: 'Fetch home page',
   analyze: 'Analyse home page',
-  map: 'Map site with Firecrawl',
+  map: 'Find pages',
   pick: 'Choose pages to read',
-  scrape: 'Read pages with Firecrawl',
+  scrape: 'Read pages',
   enrich: 'Build site facts',
   ai: 'AI page analysis',
   gbp: 'Google Business Profile',

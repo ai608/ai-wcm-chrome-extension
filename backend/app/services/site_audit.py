@@ -10,7 +10,15 @@ import httpx
 import orjson
 from selectolax.lexbor import LexborHTMLParser
 
+from app.core.config import settings
 from app.core.exceptions import AppError
+from app.services.constants import (
+    BOOKING,
+    PLATFORMS,
+    SERVICES,
+    SOCIAL_HOSTS,
+    TRUST,
+)
 
 MAX_HTML_BYTES = 3_000_000
 SECTION_KEYS = (
@@ -21,30 +29,6 @@ SECTION_KEYS = (
     "site",
     "convert",
     "research",
-)
-SERVICES = {
-    "Neurotoxins": ("botox", "dysport", "xeomin", "neurotoxin"),
-    "Dermal Fillers": ("filler", "juvederm", "restylane"),
-    "Medical Weight Loss": ("weight loss", "semaglutide", "tirzepatide", "glp-1"),
-    "IV Therapy": ("iv therapy", "iv hydration", "nad+", "vitamin injection"),
-    "Hormone Replacement": ("hormone", "hrt", "trt", "testosterone"),
-    "Laser Hair Removal": ("laser hair removal",),
-    "Microneedling": ("microneedling", "micro needling"),
-    "Chemical Peels & Facials": ("chemical peel", "hydrafacial", "facial", "facials"),
-    "Body Contouring": ("body contour", "coolsculpting", "emsculpt"),
-    "PRP / Hair Restoration": ("prp", "hair restoration"),
-    "Chiropractic": ("chiropractic", "chiropractor"),
-    "Functional Medicine": ("functional medicine",),
-}
-
-
-SOCIAL_HOSTS = (
-    ("facebook", "facebook.com"),
-    ("instagram", "instagram.com"),
-    ("tiktok", "tiktok.com"),
-    ("youtube", "youtube.com"),
-    ("linkedin", "linkedin.com"),
-    ("x", "x.com"),
 )
 # Share buttons, tracking pixels, embedded videos and widgets are not the clinic's profile.
 _NOT_PROFILE = re.compile(
@@ -137,7 +121,31 @@ async def _public_ip(host: str, port: int) -> str:
     return min(str(address) for address in addresses)
 
 
+class TransientFetchError(AppError):
+    """A fetch that failed in a way that can pass: timeout, connection reset, 429 or 5xx.
+    A 403, 404, a non-HTML page or an unsafe address is not transient and is never retried."""
+
+    def __init__(self, message: str, retry_after: float | None = None) -> None:
+        super().__init__(422, "site_unreachable", message)
+        self.retry_after = retry_after
+
+
+TRANSIENT_STATUS = (429, 500, 502, 503, 504)
+
+
 async def fetch_html(
+    url: str, accept: tuple[str, ...] = ("text/html",)
+) -> tuple[str, str]:
+    """GET a public page. One retry after a short wait when the failure may pass."""
+    try:
+        return await _fetch_once(url, accept)
+    except TransientFetchError as exc:
+        # Retry-After is honoured up to 5 s: a page worth waiting longer for can be skipped.
+        await asyncio.sleep(min(exc.retry_after or settings.CRAWL_RETRY_DELAY_S, 5.0))
+        return await _fetch_once(url, accept)
+
+
+async def _fetch_once(
     url: str, accept: tuple[str, ...] = ("text/html",)
 ) -> tuple[str, str]:
     current = url
@@ -171,6 +179,12 @@ async def fetch_html(
                             )
                         current = urljoin(current, location)
                         continue
+                    if response.status_code in TRANSIENT_STATUS:
+                        wait = response.headers.get("retry-after", "")
+                        raise TransientFetchError(
+                            "Website could not be fetched",
+                            float(wait) if wait.isdigit() else None,
+                        )
                     if response.status_code >= 400:
                         raise AppError(
                             422, "site_unreachable", "Website could not be fetched"
@@ -193,9 +207,7 @@ async def fetch_html(
                         response.encoding or "utf-8", "replace"
                     ), current
             except httpx.HTTPError as exc:
-                raise AppError(
-                    422, "site_unreachable", "Website could not be fetched"
-                ) from exc
+                raise TransientFetchError("Website could not be fetched") from exc
     raise AppError(422, "site_unreachable", "Website redirected too many times")
 
 
@@ -481,24 +493,7 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
     phone = next(
         (unescape(_text(i)) for i in doc.css('a[href^="tel:"]') if _text(i)), None
     ) or raw_phone(html)
-    # Frameworks first: a Gatsby or Next.js site can still load images from wp-content/.
-    platform = next(
-        (
-            name
-            for name, marker in (
-                ("Gatsby", "data-gatsby-head"),
-                ("Next.js", "__NEXT_DATA__"),
-                ("Webflow", "data-wf-site"),
-                ("Wix", "wixstatic.com"),
-                ("Squarespace", "squarespace.com"),
-                ("Shopify", "cdn.shopify.com"),
-                ("Kajabi", "Kajabi."),
-                ("WordPress", "wp-content/"),
-            )
-            if marker in html
-        ),
-        None,
-    )
+    platform = next((name for name, marker in PLATFORMS if marker in html), None)
     site = {
         "platform": {"name": platform, "detail": None},
         "pages_crawled": 1,
@@ -541,37 +536,17 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
             {
                 "key": key,
                 "label": label,
-                "status": "found"
-                if any(any(word in i for word in words) for i in site_urls)
-                else "missing",
-                "url": next(
-                    (i for i in site_urls if any(word in i for word in words)), None
-                ),
+                "status": "found" if hit else "missing",
+                "url": hit,
             }
-            for key, label, words in (
-                ("about_page", "About page", ("/about",)),
-                ("faq_page", "FAQ page", ("/faq",)),
-                ("pricing_page", "Pricing page", ("/pricing", "/prices")),
-                ("privacy_policy", "Privacy policy", ("/privacy",)),
-            )
+            for key, label, words in TRUST
+            for hit in [
+                next((i for i in site_urls if any(w in i.lower() for w in words)), None)
+            ]
         ],
     }
-    booking = next(
-        (
-            name
-            for name, marker in (
-                ("Boulevard", "joinblvd.com"),
-                ("Vagaro", "vagaro.com"),
-                ("Mindbody", "mindbodyonline.com"),
-                ("Zenoti", "zenoti.com"),
-                ("Jane", "janeapp.com"),
-                ("Calendly", "calendly.com"),
-                ("Square", "squareup.com"),
-            )
-            if marker in html.lower()
-        ),
-        None,
-    )
+    lower = html.lower()
+    booking = next((name for marker, name in BOOKING.items() if marker in lower), None)
     checks = [
         {
             "key": "online_booking",

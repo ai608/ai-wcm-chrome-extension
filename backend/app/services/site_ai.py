@@ -13,11 +13,11 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
 from app.services import llm
-from app.services.site_audit import SERVICES
+from app.services.constants import SERVICES
 
-PAGE_CHARS = 2500
-MAX_PAGES = 30
 # What a patient expects a good service page to answer. Fixed list, so results are comparable.
+CHROME_CHARS = 3000  # the site header or footer, sent once
+MIN_PAGE_CHARS = 1500  # a page cut shorter than this by the total budget is left out
 TOPICS = [
     "What it is",
     "Who it is for",
@@ -31,7 +31,7 @@ TOPICS = [
 ]
 
 SYSTEM = f"""You audit a wellness or med spa clinic website for a marketing agency.
-You get the text of several pages. Return JSON only, with exactly this shape:
+You get the site's header and footer once, then the text of several pages. Return JSON only, with exactly this shape:
 {{"services": [{{"service": "<one of: {", ".join(SERVICES)}>",
    "page_url": "<url of the page that covers it>",
    "topics_present": ["<from the topic list>"], "topics_missing": ["<from the topic list>"]}}],
@@ -45,28 +45,81 @@ each service. Use only service names from the list. Never invent providers or ci
 Empty lists are fine."""
 
 
-def page_text(html: str) -> str:
+def _parse(html: str) -> LexborHTMLParser:
     doc = LexborHTMLParser(html)
     for tag in doc.css("script, style, noscript, svg"):
         tag.decompose()
+    return doc
+
+
+def _chrome(doc: LexborHTMLParser) -> list[Any]:
+    """The site-wide header and footer. A <header> inside an article, main or section is that
+    block's own title, and a header/footer nested in another one goes with its parent: both stay."""
+
+    def site_wide(node: Any) -> bool:
+        parent = node.parent
+        while parent is not None:
+            if parent.tag in ("article", "main", "section", "header", "footer"):
+                return False
+            parent = parent.parent
+        return True
+
+    return [n for n in doc.css("header, footer") if site_wide(n)]
+
+
+def _flat(node: Any) -> str:
+    return (
+        re.sub(r"\s+", " ", node.text(separator=" ", strip=True)).strip()
+        if node
+        else ""
+    )
+
+
+def page_text(html: str) -> str:
+    """Title, headings and the whole body text of one page, without the site-wide header and
+    footer: they repeat on every page, so site_text() sends them once. Headings are read
+    first, as some themes put the H1 inside the header. The text is not cut here; analyze()
+    keeps the total inside AI_TOTAL_CHARS."""
+    doc = _parse(html)
     title = doc.css_first("title")
-    heads = [h.text(strip=True) for h in doc.css("h1, h2, h3")][:20]
-    body = doc.css_first("body")
-    text = re.sub(r"\s+", " ", body.text(separator=" ", strip=True) if body else "")
-    head = f"TITLE: {title.text(strip=True) if title else ''}\nHEADINGS: {' | '.join(heads)}\n"
-    return head + text[:PAGE_CHARS]
+    heads = [_flat(h) for h in doc.css("h1, h2, h3")][:20]
+    for node in _chrome(doc):
+        node.decompose()
+    head = f"TITLE: {_flat(title)}\nHEADINGS: {' | '.join(heads)}\n"
+    return head + _flat(doc.css_first("body"))
+
+
+def site_text(html: str) -> str:
+    """The home page's header and footer (phone, address, menu, socials), sent once."""
+    return "\n".join(
+        f"{node.tag.upper()}: {_flat(node)[:CHROME_CHARS]}"
+        for node in _chrome(_parse(html))
+        if _flat(node)
+    )
 
 
 async def analyze(http: httpx.AsyncClient, pages: dict[str, str]) -> dict[str, Any]:
-    chunks = [
-        f"=== PAGE {url}\n{page_text(html)}"
-        for url, html in list(pages.items())[:MAX_PAGES]
-    ]
+    """One AI call over the site header/footer and the pages in reading order (home first,
+    then services, then the rest). Pages are sent whole until AI_TOTAL_CHARS runs out; the
+    page that does not fit is cut, and later pages (the least important) are left out."""
+    chunks: list[str] = []
+    left = settings.AI_TOTAL_CHARS
+    items = list(pages.items())[: settings.AI_MAX_PAGES]
+    # pages starts with the home page (see research._enrich)
+    if items and (chrome := site_text(items[0][1])):
+        chunks.append(f"=== SITE HEADER AND FOOTER (same on every page)\n{chrome}")
+        left -= len(chrome)
+    for url, html in items:
+        text = page_text(html)
+        if left < MIN_PAGE_CHARS:
+            break
+        chunks.append(f"=== PAGE {url}\n{text[:left]}")
+        left -= len(text)
     return await llm.chat_json(
         http,
         SYSTEM,
         "\n\n".join(chunks),
-        max_tokens=3000,
+        max_tokens=6000,
         model=settings.RESEARCH_MODEL,
     )
 

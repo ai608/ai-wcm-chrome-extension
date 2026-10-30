@@ -202,12 +202,17 @@ async def test_crawl_and_gbp_fill_in_after_home_page(client, monkeypatch):
     monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
     monkeypatch.setattr(research.settings, "APIFY_API_TOKEN", "fake")
 
-    async def fake_crawl(_http, url, _report=None):
-        return [
-            url,
-            "https://glowmedspa.com/services/botox",
-            "https://glowmedspa.com/about",
-        ], {}
+    async def fake_crawl(_http, url, *_args):
+        return (
+            [
+                url,
+                "https://glowmedspa.com/services/botox",
+                "https://glowmedspa.com/about",
+            ],
+            {},
+            True,
+            [],
+        )
 
     async def fake_gbp(_http, queries, domain, phone=None):
         assert domain == "glowmedspa.com" and "glowmedspa.com" in queries
@@ -243,7 +248,7 @@ async def test_provider_failure_keeps_home_results_and_marks_partial(
 
     monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
 
-    async def broken(_http, _url, _report=None):
+    async def broken(*_args):
         raise httpx.ConnectError("firecrawl down")
 
     monkeypatch.setattr(site_crawl, "crawl", broken)
@@ -262,8 +267,8 @@ async def test_blocked_home_page_falls_back_to_firecrawl(client, monkeypatch):
     async def fake_scrape(_http, _url):
         return HTML
 
-    async def no_crawl(_http, url, _report=None):
-        return [url], {}
+    async def no_crawl(_http, url, *_args):
+        return [url], {}, True, []
 
     monkeypatch.setattr(site_crawl, "scrape", fake_scrape)
     monkeypatch.setattr(site_crawl, "crawl", no_crawl)
@@ -481,12 +486,25 @@ async def test_trace_records_each_step_of_a_full_run(client, monkeypatch):
     ] == ["done"] * 5
     assert steps["home"]["detail"]["via"] == "direct"
     assert steps["map"]["detail"]["count"] == 4
-    groups = {g["name"]: g for g in steps["pick"]["detail"]["groups"]}
-    assert groups["service"]["picked"] == [f"{home}/services/botox"]
-    assert groups["trust"]["picked"] == [f"{home}/about"]
-    assert steps["scrape"]["detail"] == {"ok": 1, "failed": 1}
-    assert steps[f"page:{home}/services/botox"]["status"] == "done"
-    assert steps[f"page:{home}/about"]["status"] == "failed"
+    assert steps["map"]["detail"]["sources"] == {"map": 4, "menu": 0, "home": 2}
+    pick = steps["pick"]["detail"]
+    groups = {g["name"]: g for g in pick["groups"]}
+    assert pick["mode"] == "all"  # 3 pages: a small site is read in full
+    assert groups["Services"]["picked"] == [f"{home}/services/botox"]
+    # /about comes only from the map, and map pages join only the last two groups
+    assert groups["About the clinic"]["picked"] == []
+    assert groups["About the clinic"]["skipped"] == 1
+    assert groups["Other pages"]["picked"] == [f"{home}/contact"]
+    # direct reads are offline in tests, so every page falls back to Firecrawl
+    assert steps["scrape"]["detail"] == {
+        "ok": 2,
+        "failed": 0,
+        "direct": 0,
+        "firecrawl": 2,
+        "timed_out": 0,
+    }
+    assert steps[f"page:{home}/services/botox"]["detail"]["via"] == "firecrawl"
+    assert f"page:{home}/about" not in steps
     assert steps["psi"]["detail"] == {"mobile": 71, "desktop": None}
     assert steps["ai"]["status"] == "skipped" and steps["gbp"]["status"] == "skipped"
     assert steps["final"]["detail"] == {"outcome": "ready"}

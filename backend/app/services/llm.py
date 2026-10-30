@@ -1,10 +1,23 @@
 import json
+import re
 from typing import Any
 
 import httpx
 
 from app.core.config import settings
 from app.core.exceptions import AppError
+
+_FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
+
+
+def parse_json_object(text: str) -> dict[str, Any]:
+    """The JSON object in a model reply. Some models wrap it in a ```json fence even when
+    asked for a JSON object, so strip that; ValueError when there is no object."""
+    fenced = _FENCE.match(text)
+    out = json.loads(fenced.group(1) if fenced else text)
+    if not isinstance(out, dict):
+        raise TypeError("not an object")
+    return out
 
 
 async def chat_json(
@@ -36,10 +49,13 @@ async def chat_json(
     )
     if r.status_code >= 400:
         raise AppError(502, "upstream_error", f"LLM error {r.status_code}")
+    choice = r.json()["choices"][0]
     try:
-        out = json.loads(r.json()["choices"][0]["message"]["content"])
-    except (KeyError, IndexError, ValueError) as exc:
-        raise AppError(502, "upstream_error", "LLM returned invalid JSON") from exc
-    if not isinstance(out, dict):
-        raise AppError(502, "upstream_error", "LLM returned invalid JSON")
-    return out
+        return parse_json_object(choice["message"]["content"] or "")
+    except (KeyError, IndexError, ValueError, TypeError) as exc:
+        reason = (
+            "LLM output was cut off"
+            if choice.get("finish_reason") == "length"
+            else "LLM returned invalid JSON"
+        )
+        raise AppError(502, "upstream_error", reason) from exc

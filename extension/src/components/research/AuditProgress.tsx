@@ -14,9 +14,9 @@ import { cn } from '@/lib/utils'
 const STEPS: { id: string; label: string }[] = [
   { id: 'home', label: 'Fetch home page' },
   { id: 'analyze', label: 'Analyse home page' },
-  { id: 'map', label: 'Map site with Firecrawl' },
+  { id: 'map', label: 'Find pages' },
   { id: 'pick', label: 'Choose pages to read' },
-  { id: 'scrape', label: 'Read pages with Firecrawl' },
+  { id: 'scrape', label: 'Read pages' },
   { id: 'enrich', label: 'Build site facts' },
   { id: 'ai', label: 'AI page analysis' },
   { id: 'gbp', label: 'Google Business Profile' },

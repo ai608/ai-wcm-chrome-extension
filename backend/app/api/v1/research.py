@@ -49,9 +49,9 @@ def _domain(host: str) -> str:
 LABELS = {
     "home": "Fetch home page",
     "analyze": "Analyse home page",
-    "map": "Map site with Firecrawl",
+    "map": "Find pages",
     "pick": "Choose pages to read",
-    "scrape": "Read pages with Firecrawl",
+    "scrape": "Read pages",
     "enrich": "Build site facts",
     "ai": "AI page analysis",
     "gbp": "Google Business Profile",
@@ -115,7 +115,9 @@ class _Trace:
 
 async def _home(
     http: httpx.AsyncClient, url: str, hints: dict[str, str], trace: _Trace
-) -> tuple[dict[str, Any], str, str]:
+) -> tuple[dict[str, Any], str, str, str]:
+    """Returns (sections, final URL, home HTML, via): via is "firecrawl" when the site
+    blocked the direct fetch, so the crawl reads every other page through Firecrawl too."""
     await trace.report("home", "running")
     via, reason = "direct", None
     try:
@@ -135,7 +137,7 @@ async def _home(
     await trace.report("analyze", "running")
     sections = site_audit.analyze(html, final_url, hints)
     await trace.report("analyze", "done")
-    return sections, final_url, html
+    return sections, final_url, html, via
 
 
 async def _enrich(
@@ -145,31 +147,34 @@ async def _enrich(
     sections: dict[str, Any],
     final_url: str,
     home_html: str,
+    via: str,
     hints: dict[str, str],
     trace: _Trace,
 ) -> bool:
     """Add whole-site, AI and GBP data. Returns False if a provider step failed."""
     ok = True
     pages = {final_url: home_html}
-    if settings.FIRECRAWL_API_KEY:
-        try:
-            urls, crawled = await site_crawl.crawl(http, final_url, trace.report)
-            await trace.report("enrich", "running")
-            posts = await site_crawl.blog_posts(http, urls, crawled, final_url)
-            site_crawl.enrich(sections, urls, crawled, posts)
-            await trace.report(
-                "enrich",
-                "done",
-                pages=len(crawled) + 1,
-                posts=sections["site"]["blog"]["post_count"],
-            )
-            pages |= crawled
-        except (httpx.HTTPError, ValueError, KeyError) as exc:
-            logger.warning("audit %s: site crawl failed", audit_id, exc_info=True)
-            await trace.fail_open(_why(exc))
-            ok = False  # home-page site/convert data is kept
-    else:
-        await trace.skip("Firecrawl key not set", "map", "pick", "scrape", "enrich")
+    # Runs without a Firecrawl key too: the home page menu and links are enough to start.
+    try:
+        urls, crawled, crawl_ok, sitemap = await site_crawl.crawl(
+            http, final_url, home_html, via, trace.report
+        )
+        ok = crawl_ok  # False when the site map failed; the menu-based crawl still ran
+        await trace.report("enrich", "running")
+        posts = await site_crawl.blog_posts(http, urls, crawled, final_url, sitemap)
+        menu = site_crawl.nav_links(home_html, final_url)
+        site_crawl.enrich(sections, urls, crawled, posts, menu)
+        await trace.report(
+            "enrich",
+            "done",
+            pages=len(crawled) + 1,
+            posts=sections["site"]["blog"]["post_count"],
+        )
+        pages |= crawled
+    except (httpx.HTTPError, ValueError, KeyError) as exc:
+        logger.warning("audit %s: site crawl failed", audit_id, exc_info=True)
+        await trace.fail_open(_why(exc))
+        ok = False  # home-page site/convert data is kept
     if settings.OPENROUTER_API_KEY:
         await trace.report("ai", "running")
         try:
@@ -181,12 +186,11 @@ async def _enrich(
             ok = False  # keyword results are kept
     else:
         await trace.skip("OpenRouter key not set", "ai")
-    if settings.FIRECRAWL_API_KEY or settings.OPENROUTER_API_KEY:
-        await repo.update(
-            audit_id,
-            sections={"site": sections["site"], "convert": sections["convert"]},
-            state={"site": "ready", "convert": "ready"},
-        )
+    await repo.update(
+        audit_id,
+        sections={"site": sections["site"], "convert": sections["convert"]},
+        state={"site": "ready", "convert": "ready"},
+    )
     if settings.APIFY_API_TOKEN and settings.APIFY_GMAPS_ACTOR_ID:
         domain = _domain(urlsplit(final_url).hostname or "")
         await trace.report("gbp", "running")
@@ -279,10 +283,9 @@ async def _run(
         )
         speed: asyncio.Task[bool] | None = None
         try:
-            sections, final_url, home_html = await _home(http, url, hints, trace)
-            later = {"overview"}  # scored once every step below has finished
-            if settings.FIRECRAWL_API_KEY or settings.OPENROUTER_API_KEY:
-                later |= {"site", "convert"}
+            sections, final_url, home_html, via = await _home(http, url, hints, trace)
+            # scored once every step below has finished; the crawl always runs
+            later = {"overview", "site", "convert"}
             if settings.APIFY_API_TOKEN and settings.APIFY_GMAPS_ACTOR_ID:
                 later.add("business")
             if settings.GOOGLE_PAGESPEED_API_KEY:
@@ -300,7 +303,7 @@ async def _run(
             else:
                 await trace.skip("PageSpeed key not set", "psi")
             ok = await _enrich(
-                repo, http, audit_id, sections, final_url, home_html, hints, trace
+                repo, http, audit_id, sections, final_url, home_html, via, hints, trace
             )
             psi_ok: bool | None = None  # None: PageSpeed not run (no key)
             if speed:

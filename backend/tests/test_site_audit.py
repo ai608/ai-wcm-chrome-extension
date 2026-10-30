@@ -96,3 +96,43 @@ def test_overview_scores_passing_and_failing_checks() -> None:
     assert cluster["service"] == "Neurotoxins"
     assert cluster["found"] == 1
     assert cluster["expected"] == len(site_audit.SERVICES["Neurotoxins"])
+
+
+@pytest.mark.anyio
+async def test_fetch_html_retries_a_passing_failure_once_but_not_a_final_one(
+    monkeypatch,
+):
+    from app.core.exceptions import AppError
+
+    monkeypatch.setattr(site_audit.settings, "CRAWL_RETRY_DELAY_S", 0)
+    calls = []
+
+    def once(results):
+        seq = iter(results)
+
+        async def fake(url, accept=("text/html",)):
+            calls.append(url)
+            r = next(seq)
+            if isinstance(r, Exception):
+                raise r
+            return r
+
+        return fake
+
+    transient = site_audit.TransientFetchError("down")
+    final = AppError(422, "site_unreachable", "Website could not be fetched")
+    monkeypatch.setattr(site_audit, "_fetch_once", once([transient, ("<html>", "u")]))
+    assert await site_audit.fetch_html("https://a.example/") == ("<html>", "u")
+    assert len(calls) == 2
+    calls.clear()
+    monkeypatch.setattr(site_audit, "_fetch_once", once([final, ("<html>", "u")]))
+    with pytest.raises(AppError):  # a 403/404 is not retried
+        await site_audit.fetch_html("https://a.example/")
+    assert len(calls) == 1
+    calls.clear()
+    monkeypatch.setattr(
+        site_audit, "_fetch_once", once([transient, transient, ("x", "u")])
+    )
+    with pytest.raises(AppError):  # one retry only
+        await site_audit.fetch_html("https://a.example/")
+    assert len(calls) == 2

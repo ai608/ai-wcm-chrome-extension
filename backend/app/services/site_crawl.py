@@ -13,7 +13,8 @@ import re
 import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
-from typing import Any
+from itertools import zip_longest
+from typing import Any, NamedTuple
 from urllib.parse import urljoin, urlsplit
 
 import httpx
@@ -21,39 +22,24 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
 from app.core.exceptions import AppError
-from app.services.site_audit import SERVICES, fetch_html, raw_phone
+from app.services.constants import (
+    BOOKING,
+    CHAT,
+    SERVICES,
+    TRUST,
+    TRUST_LINK_TEXT,
+)
+from app.services.site_audit import TRANSIENT_STATUS, fetch_html, raw_phone
 
 logger = logging.getLogger(__name__)
 
 FIRECRAWL = "https://api.firecrawl.dev/v2"
 PAGESPEED = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 MAX_URLS = 500
-MAX_PAGES = 25
-# ponytail: 4 parallel scrapes per audit; raise if Firecrawl plan allows more concurrency.
-_SCRAPE_CONCURRENCY = 4
+# Slots per tier (see plan()); slots a tier does not use pass to the next one. D gets the rest.
+TIER_CAPS = {"A": 20, "B": 12, "C": 6}
+MIN_TEXT_CHARS = 500  # less visible text than this: the page likely needs JavaScript
 
-BOOKING = {
-    "joinblvd.com": "Boulevard",
-    "vagaro.com": "Vagaro",
-    "mindbodyonline.com": "Mindbody",
-    "zenoti.com": "Zenoti",
-    "janeapp.com": "Jane",
-    "acuityscheduling.com": "Acuity",
-    "calendly.com": "Calendly",
-    "squareup.com": "Square",
-    "leadconnectorhq.com": "GoHighLevel",
-    "msgsndr.com": "GoHighLevel",
-    "setmore.com": "Setmore",
-    "glossgenius.com": "GlossGenius",
-}
-CHAT = {
-    "podium.com": "Podium",
-    "birdeye.com": "Birdeye",
-    "intercom": "Intercom",
-    "tidio": "Tidio",
-    "widgets.leadconnectorhq.com": "GHL chat",
-    "livechatinc": "LiveChat",
-}
 CITY = re.compile(
     r"/(locations?|service-areas?|areas-we-serve|near-me)(/|$)|-near-me", re.IGNORECASE
 )
@@ -77,18 +63,6 @@ PROOF = {
     "reviews": re.compile(r"/reviews?(/|$)", re.IGNORECASE),
     "case_study": re.compile(r"case-stud", re.IGNORECASE),
 }
-TRUST = (
-    ("about_page", "About page", ("/about",)),
-    (
-        "team_page",
-        "Providers / team page",
-        ("/team", "/providers", "/our-staff", "/meet-"),
-    ),
-    ("faq_page", "FAQ page", ("/faq",)),
-    ("pricing_page", "Pricing page", ("/pricing", "/prices", "/price-list")),
-    ("financing_page", "Financing page", ("/financing", "/payment-plans")),
-    ("privacy_policy", "Privacy policy", ("/privacy",)),
-)
 
 
 def _host(url: str) -> str:
@@ -124,12 +98,23 @@ async def map_site(http: httpx.AsyncClient, url: str) -> list[str]:
 
 
 async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
-    r = await http.post(
-        f"{FIRECRAWL}/scrape",
-        headers={"Authorization": f"Bearer {settings.FIRECRAWL_API_KEY}"},
-        json={"url": url, "formats": ["rawHtml"], "onlyMainContent": False},
-        timeout=60,
-    )
+    """Page HTML through Firecrawl; None when it has none. One retry after a timeout, a
+    connection error, 429 or 5xx; a 402 (out of credits) or 4xx is final."""
+    for attempt in (1, 2):
+        try:
+            r = await http.post(
+                f"{FIRECRAWL}/scrape",
+                headers={"Authorization": f"Bearer {settings.FIRECRAWL_API_KEY}"},
+                json={"url": url, "formats": ["rawHtml"], "onlyMainContent": False},
+                timeout=60,
+            )
+        except httpx.HTTPError:
+            if attempt == 2:
+                raise
+        else:
+            if r.status_code not in TRANSIENT_STATUS or attempt == 2:
+                break
+        await asyncio.sleep(settings.CRAWL_RETRY_DELAY_S)
     if r.status_code >= 400:
         return None
     data = r.json().get("data") or {}
@@ -137,99 +122,457 @@ async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
     return html if isinstance(html, str) and html.strip() else None
 
 
-PER_GROUP = max(3, MAX_PAGES // 5)
-
 # Called as report(step_id, status, **detail); used to show the crawl live in the panel.
 Report = Callable[..., Awaitable[None]]
 
+# Pages that list a clinic's services; their children (/treatments/<slug>) are service pages.
+HUB = re.compile(
+    r"^/(services|treatments|procedures|menu|our-services|med-spa-services|injectables"
+    r"|aesthetics|wellness)(\.html?)?$",
+    re.IGNORECASE,
+)
+# Files and system paths: never a page worth reading.
+JUNK = re.compile(
+    r"\.(pdf|jpe?g|png|webp|gif|svg|mp4|zip|xml|ics|kml)$"
+    r"|/(wp-json|wp-admin|wp-content|feed|cart|checkout|my-account|login|cdn-cgi)(/|$)",
+    re.IGNORECASE,
+)
+# Menu dropdowns that hold no services, by their label.
+NOT_SERVICE_MENU = re.compile(
+    r"about|news|blog|contact|resource|patient|career|shop|store", re.IGNORECASE
+)
+TIER_NAMES = {
+    "A": "Services",
+    "B": "Other treatments",
+    "C": "About the clinic",
+    "D": "More service pages",
+    "E": "Other pages",
+}
+CONTEXT = ("team_page", "pricing_page", "financing_page", "about_page", "faq_page")
+# Firecrawl map runs next to the menu reads; on a big blog it took 46 s. It only adds
+# extra pages, so a slow map is dropped instead of holding up the audit.
 
-def group_pages(urls: list[str], home: str) -> dict[str, list[str]]:
-    """Sort mapped URLs into the five page groups, most useful group first, before any cut."""
-    groups: dict[str, list[str]] = {
-        "service": [],
-        "city": [],
-        "proof": [],
-        "trust": [],
-        "blog": [],
-    }
+
+class Menu(NamedTuple):
+    """The site menu read from the home page."""
+
+    children: dict[str, str]  # page in a dropdown -> the dropdown's label
+    parents: dict[str, str]  # dropdown's own page -> its label
+    top: dict[str, str]  # every page linked from the menu -> its link text, lower case
+
+    def has(self, url: str) -> bool:
+        return url in self.top
+
+
+NO_MENU = Menu({}, {}, {})
+
+
+def clean_url(url: str, home: str) -> str | None:
+    """`url` on the home page's scheme and host, with no query or fragment, so www/http
+    variants become one URL. None for another host, a file or a system path."""
+    parts, base = urlsplit(url), urlsplit(home)
+    if parts.scheme not in ("http", "https") or _host(url) != _host(home):
+        return None
+    path = parts.path or "/"
+    # ponytail: the query is dropped, so WordPress ?page_id= links collapse to one; keep
+    # page_id if a site without pretty links shows up.
+    return None if JUNK.search(path) else f"{base.scheme}://{base.netloc}{path}"
+
+
+def _dropdown_of(link: Any) -> tuple[str, str | None] | None:
+    """(label, href) of the menu item whose dropdown holds `link`; None for a top-level item."""
+    own = None
+    node = link.parent
+    while node is not None:
+        if node.tag == "li":
+            if own is None:
+                own = node
+            else:
+                head = next(
+                    (c for c in node.css("a, span, button") if c.text(strip=True)), None
+                )
+                if head is None:
+                    return None
+                href = head.attributes.get("href") if head.tag == "a" else None
+                return " ".join(head.text(strip=True).split()), href
+        node = node.parent
+    return None
+
+
+def nav_links(html: str, home: str) -> Menu:
+    """The site menu. The clinic's own menu is the best list of its services, whatever its
+    URLs are called: every page in a dropdown is a candidate, unless the dropdown is About,
+    News and the like."""
+    menu = Menu({}, {}, {})
+    for root in LexborHTMLParser(html).css("nav, header, [role=navigation]"):
+        for a in root.css("a[href]"):
+            url = clean_url(urljoin(home, a.attributes.get("href") or ""), home)
+            if url is None:
+                continue
+            text = " ".join(a.text(strip=True).split()).lower()
+            if text or url not in menu.top:  # a logo link has no text; a later one may
+                menu.top[url] = text
+            dropdown = _dropdown_of(a)
+            if dropdown is None:
+                continue
+            label, href = dropdown
+            menu.children.setdefault(url, label)
+            # a dropdown heading linked to "#" is no page
+            if href and not href.startswith("#"):
+                parent = clean_url(urljoin(home, href), home)
+                menu.parents.setdefault(parent or "", label)
+    menu.parents.pop("", None)
+    return menu
+
+
+def _trust_key(url: str, menu: Menu = NO_MENU) -> str | None:
+    """Which trust page this is: by its URL, else by the text of its menu link."""
+    low = url.lower()
+    by_url = next((k for k, _, words in TRUST if any(w in low for w in words)), None)
+    if by_url:
+        return by_url
+    text = menu.top.get(url, "")
+    return next(
+        (k for k, words in TRUST_LINK_TEXT.items() if any(w in text for w in words)),
+        None,
+    )
+
+
+def _under_hub(url: str) -> bool:
+    path = urlsplit(url).path.strip("/").lower()
+    return "/" in path and bool(HUB.match("/" + path.split("/")[0]))
+
+
+def classify(url: str, menu: Menu = NO_MENU) -> str:
+    """One class per URL; the first rule that matches wins."""
+    path = urlsplit(url).path.rstrip("/").lower()
+    deep = path.strip("/").count("/") >= 1
+    if BLOG.search(url) and deep:
+        return "blog_post"
+    if BLOG_INDEX.search(url):
+        return "blog_index"
+    if HUB.match(path) or (
+        url in menu.parents and not NOT_SERVICE_MENU.search(menu.parents[url])
+    ):
+        return "hub"
+    if _service_of(url):
+        return "service"
+    if _under_hub(url):
+        return "hub_child"
+    trust, city, proof = (
+        _trust_key(url, menu),
+        CITY.search(url),
+        any(p.search(url) for p in PROOF.values()),
+    )
+    if (
+        url in menu.children
+        and not NOT_SERVICE_MENU.search(menu.children[url])
+        and not (trust or city or proof)
+    ):
+        return "menu_child"
+    if trust:
+        return "trust"
+    if city:
+        return "city"
+    return "proof" if proof else "other"
+
+
+def tiers(
+    urls: list[str],
+    home: str,
+    menu: Menu = NO_MENU,
+    posts: set[str] | None = None,
+) -> dict[str, list[str]]:
+    """Candidate pages by tier, best first, before any cut.
+
+    A: service hubs, then the main page of each known service. Only a page in the menu or
+       under a hub can be a main page: a URL that just contains a service word is often a
+       blog post ("/what-to-expect-with-first-botox-appointment").
+    B: every other page of the menu, in menu order (unknown treatments, and a second page of a
+       known service), then unknown pages under a hub.
+    C: pages the AI reads for providers, pricing and areas, then the blog index.
+    D: the other pages of each known service that are not in the menu, one round per service.
+    E: the rest; read only when the whole site fits in MAX_PAGES.
+    `posts` are URL keys from the post sitemap: blog posts, never service pages.
+    """
+    posts = posts or set()
+    hubs: list[str] = []
+    services: dict[str, list[str]] = {}
+    in_menu: list[str] = []
+    under_hub: list[str] = []
+    context: dict[str, str] = {}
+    cities: list[str] = []
+    rest: list[str] = []
+    blog_index = None
     for u in urls:
-        if u.rstrip("/") == home.rstrip("/"):
-            continue
-        if _service_of(u):
-            groups["service"].append(u)
-        elif CITY.search(u):
-            groups["city"].append(u)
-        elif any(p.search(u) for p in PROOF.values()):
-            groups["proof"].append(u)
-        elif any(w in u.lower() for _, _, words in TRUST for w in words):
-            groups["trust"].append(u)
-        elif BLOG_INDEX.search(u) or (
-            BLOG.search(u) and urlsplit(u).path.strip("/").count("/") <= 1
+        if _key(u) in posts or _key(u) == _key(home) or NOT_POST.search(u):
+            continue  # posts, home, and archives such as /tag/botox are no service
+        cls = classify(u, menu)
+        if cls == "hub":
+            hubs.append(u)
+        elif cls == "service":
+            services.setdefault(_service_of(u) or "", []).append(u)
+        elif cls == "menu_child":
+            in_menu.append(u)
+        elif cls == "hub_child":
+            under_hub.append(u)
+        elif (
+            cls == "trust"
+            and (k := _trust_key(u, menu)) in CONTEXT
+            and k not in context
         ):
-            groups["blog"].append(u)
-    # The blog index lists posts with dates, so it is always read first.
-    groups["blog"].sort(key=lambda u: not BLOG_INDEX.search(u))
-    return groups
+            context[k] = u
+        elif cls == "blog_index":
+            blog_index = blog_index or u
+        elif cls == "city":
+            cities.append(u)
+        elif cls != "blog_post":
+            rest.append(u)
+    mains: list[str] = []
+    others: list[list[str]] = []
+    for name in SERVICES:
+        if name not in services:
+            continue
+        pages = sorted(
+            services[name],
+            key=lambda u: (urlsplit(u).path.strip("/").count("/"), len(u), u),
+        )
+        main = next((u for u in pages if menu.has(u) or _under_hub(u)), None)
+        if main:
+            mains.append(main)
+        # a page the clinic put in its menu is never "more pages": it goes to B
+        in_menu += [u for u in pages if u != main and menu.has(u)]
+        others.append([u for u in pages if u != main and not menu.has(u)])
+    order = {
+        u: i for i, u in enumerate(urls)
+    }  # urls start with the menu, in menu order
+    in_menu.sort(key=lambda u: order[u])
+    city_hub = next(
+        (
+            u
+            for u in cities
+            if re.search(r"/(locations?|service-areas?)/?$", u, re.IGNORECASE)
+        ),
+        None,
+    )
+    extra = [u for pages in zip_longest(*others) for u in pages]
+    return {
+        "A": hubs + mains,
+        "B": in_menu + sorted(under_hub, key=len),
+        "C": [context[k] for k in CONTEXT if k in context]
+        + [u for u in (city_hub, blog_index) if u],
+        "D": [u for u in extra if u],
+        "E": [u for u in cities if u != city_hub] + rest,
+    }
 
 
-def pick_pages(urls: list[str], home: str) -> list[str]:
-    """Most useful pages first: services, cities, proof, trust, then the blog index."""
-    picked: list[str] = []
-    for b in group_pages(
-        urls, home
-    ).values():  # a few per group so none crowds out the rest
-        picked += b[:PER_GROUP]
-    return list(dict.fromkeys(picked))[:MAX_PAGES]
+def plan(
+    urls: list[str],
+    home: str,
+    menu: Menu = NO_MENU,
+    posts: set[str] | None = None,
+    taken: list[str] | None = None,
+) -> tuple[list[str], list[dict[str, Any]], str]:
+    by_tier = tiers(urls, home, menu, posts)
+    taken = taken or []
+    total = sum(len(b) for b in by_tier.values())
+    mode = "all" if total <= settings.CRAWL_MAX_PAGES else "tiers"
+    picked: dict[str, list[str]] = {}
+    spare, left = 0, settings.CRAWL_MAX_PAGES
+    for name, pages in by_tier.items():
+        old = [u for u in pages if u in taken]
+        new = [u for u in pages if u not in taken]
+        if taken and name not in ("D", "E"):
+            new = []
+        if mode == "all":
+            room = len(pages)
+        elif name in TIER_CAPS:
+            room = TIER_CAPS[name] + spare
+        else:
+            room = left if name == "D" else 0
+        picked[name] = old + new[: max(min(room, left) - len(old), 0)]
+        left -= len(picked[name])
+        spare = max(room - len(picked[name]), 0) if name in TIER_CAPS else 0
+    groups = [
+        {
+            "name": TIER_NAMES[name],
+            "found": len(pages),
+            "picked": picked[name],
+            "skipped": len(pages) - len(picked[name]),
+        }
+        for name, pages in by_tier.items()
+    ]
+    return [u for name in by_tier for u in picked[name]], groups, mode
+
+
+def _visible_chars(html: str) -> int:
+    doc = LexborHTMLParser(html)
+    for tag in doc.css("script, style, noscript, svg"):
+        tag.decompose()
+    body = doc.css_first("body")
+    return len(" ".join(body.text(separator=" ", strip=True).split())) if body else 0
+
+
+class _Reader:
+    """Reads one page: directly first (free, SSRF-guarded by fetch_html), then with Firecrawl
+    when the direct fetch fails or returns almost no text (blocked, or built by JavaScript).
+    At most settings.FIRECRAWL_FALLBACKS pages fall back. When the home page itself needed Firecrawl,
+    the site blocks us, so every page goes to Firecrawl."""
+
+    def __init__(self, http: httpx.AsyncClient, home: str, direct: bool) -> None:
+        self.http, self.home, self.direct = http, home, direct
+        self.fallbacks = (
+            settings.FIRECRAWL_FALLBACKS if settings.FIRECRAWL_API_KEY else 0
+        )
+
+    async def __call__(self, url: str) -> tuple[str | None, str]:
+        thin = None
+        if self.direct:
+            try:
+                html, final = await fetch_html(url)
+            except AppError:
+                html, final = None, url
+            if html is not None and _host(final) != _host(self.home):
+                return None, "direct"  # redirected off the site
+            if html is not None and _visible_chars(html) >= MIN_TEXT_CHARS:
+                return html, "direct"
+            thin = html
+            if self.fallbacks <= 0:
+                return thin, "direct"
+            self.fallbacks -= 1
+        elif not settings.FIRECRAWL_API_KEY:
+            return None, "direct"
+        try:
+            return await scrape(self.http, url) or thin, "firecrawl"
+        except (httpx.HTTPError, ValueError):
+            return thin, "firecrawl"
+
+
+def _why(exc: Exception) -> str:
+    """Never str(exc): httpx errors can carry the request URL."""
+    if isinstance(exc, httpx.TimeoutException):
+        return "Timed out"
+    if isinstance(exc, httpx.HTTPStatusError):
+        return f"HTTP {exc.response.status_code}"
+    return type(exc).__name__
 
 
 async def crawl(
-    http: httpx.AsyncClient, url: str, report: Report | None = None
-) -> tuple[list[str], dict[str, str]]:
+    http: httpx.AsyncClient,
+    url: str,
+    home_html: str = "",
+    via: str = "direct",
+    report: Report | None = None,
+) -> tuple[list[str], dict[str, str], bool, list[dict[str, Any]]]:
+    """Find, choose and read the site's pages.
+
+    1. Start Firecrawl map (when a key is set) in the background.
+    2. Read the post sitemap, so blog posts are never taken for service pages.
+    3. Plan from the home page menu and links, and start reading those pages at once.
+    4. When map returns, add its new pages to "More service pages" and "Other pages" only.
+
+    Returns (every URL found, HTML by URL in reading order, ok, sitemap posts). ok is False
+    when the map failed with an error; a map that is only slow is dropped and ok stays True.
+    Reads stop settings.CRAWL_BUDGET_S after they start; finished pages are kept."""
+
     async def say(step: str, status: str, **detail: Any) -> None:
         if report:
             await report(step, status, **detail)
 
-    await say("map", "running")
-    urls = await map_site(http, url)
-    await say("map", "done", count=len(urls))
-    chosen = pick_pages(urls, url)
-    keep = set(chosen)
-    await say(
-        "pick",
-        "done",
-        total=len(chosen),
-        groups=[
-            {
-                "name": name,
-                "found": len(b),
-                "picked": [u for u in b[:PER_GROUP] if u in keep],
-                "skipped": len(b) - len([u for u in b[:PER_GROUP] if u in keep]),
-            }
-            for name, b in group_pages(urls, url).items()
-        ],
-    )
-    await say("scrape", "running", total=len(chosen))
-    sem = asyncio.Semaphore(_SCRAPE_CONCURRENCY)
+    def cleaned(raw: list[str], into: dict[str, str]) -> None:
+        for u in raw:
+            if c := clean_url(u, url):
+                into.setdefault(_key(c), c)
 
-    async def one(u: str) -> tuple[str, str | None]:
-        async with sem:
+    await say("map", "running")
+    mapping = (
+        asyncio.create_task(map_site(http, url)) if settings.FIRECRAWL_API_KEY else None
+    )
+    try:
+        sitemap = await asyncio.wait_for(
+            sitemap_posts(url), settings.CRAWL_SITEMAP_WAIT_S
+        )
+    except TimeoutError:
+        sitemap = []
+    posts = {_key(p["url"]) for p in sitemap}
+    menu = nav_links(home_html, url) if home_html else NO_MENU
+    home_links = (
+        [
+            urljoin(url, a.attributes.get("href") or "")
+            for a in LexborHTMLParser(home_html).css("a[href]")
+        ]
+        if home_html
+        else []
+    )
+    found: dict[str, str] = {}
+    cleaned([*menu.top, *home_links], found)  # menu first: the clinic's own order
+    chosen, groups, mode = plan(list(found.values()), url, menu, posts)
+    await say("pick", "done", total=len(chosen), mode=mode, groups=groups)
+
+    await say("scrape", "running", total=len(chosen))
+    read = _Reader(http, url, direct=via == "direct")
+    sem = asyncio.Semaphore(settings.CRAWL_CONCURRENCY)
+    started_reads = time.monotonic()
+
+    async def one(u: str) -> tuple[str, str | None, str]:
+        async with sem:  # FIFO: pages start in tier order, so a cut loses tier D first
             started = time.monotonic()
-            try:
-                html = await scrape(http, u)
-            except httpx.HTTPError:
-                html = None
+            html, how = await read(u)
             await say(
                 f"page:{u}",
                 "done" if html else "failed",
                 url=u,
                 ms=round((time.monotonic() - started) * 1000),
+                via=how,
             )
-            return u, html
+            return u, html, how
 
-    results = await asyncio.gather(*(one(u) for u in chosen))
-    pages = {u: h for u, h in results if h}
-    await say("scrape", "done", ok=len(pages), failed=len(chosen) - len(pages))
-    return urls, pages
+    tasks = [asyncio.create_task(one(u)) for u in chosen]
+
+    # Map runs while the menu pages are read. A slow map is dropped (the menu already gave
+    # the services); a map error marks the audit partial, as a provider problem.
+    ok, error, mapped = True, None, []
+    if mapping:
+        try:
+            mapped = await asyncio.wait_for(mapping, settings.CRAWL_MAP_TIMEOUT_S)
+        except (TimeoutError, httpx.TimeoutException):
+            error = "Timed out"
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            logger.warning("site map failed for %s: %s", url, _why(exc))
+            ok, error = False, _why(exc)
+    cleaned(mapped, found)
+    sources = {"map": len(mapped), "menu": len(menu.top), "home": len(home_links)}
+    if error:
+        await say("map", "failed", error=error, count=len(found), sources=sources)
+    else:
+        await say("map", "done", count=len(found), sources=sources)
+    if mapped:
+        more, groups, mode = plan(list(found.values()), url, menu, posts, chosen)
+        extra = [u for u in more if u not in chosen]
+        chosen += extra
+        tasks += [asyncio.create_task(one(u)) for u in extra]
+        await say("pick", "done", total=len(chosen), mode=mode, groups=groups)
+        await say("scrape", "running", total=len(chosen))
+
+    pending: set[asyncio.Task[tuple[str, str | None, str]]] = set()
+    if tasks:
+        left = max(settings.CRAWL_BUDGET_S - (time.monotonic() - started_reads), 0.01)
+        _, pending = await asyncio.wait(tasks, timeout=left)
+        for t in pending:
+            t.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
+    results = [t.result() for t in tasks if t not in pending and t.exception() is None]
+    pages = {u: h for u, h, _ in results if h}
+    await say(
+        "scrape",
+        "done",
+        ok=len(pages),
+        failed=len(chosen) - len(pages),
+        direct=sum(1 for u, h, how in results if h and how == "direct"),
+        firecrawl=sum(1 for u, h, how in results if h and how == "firecrawl"),
+        timed_out=len(pending),
+    )
+    return list(found.values()), pages, ok, sitemap
 
 
 _MONTHS = {
@@ -458,7 +801,11 @@ async def date_posts(posts: list[dict[str, Any]]) -> None:
 
 
 async def blog_posts(
-    http: httpx.AsyncClient, urls: list[str], pages: dict[str, str], home: str
+    http: httpx.AsyncClient,
+    urls: list[str],
+    pages: dict[str, str],
+    home: str,
+    sitemap: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
     """Every post we can find, with dates. Sources, best first: the blog index page (post
     cards, in the site's own order), the post sitemap, then posts found by URL pattern. Posts
@@ -470,13 +817,11 @@ async def blog_posts(
     if index:
         html = pages.get(index)
         if html is None:
-            try:
-                html = await scrape(http, index)
-            except httpx.HTTPError:
-                html = None
+            html, _ = await _Reader(http, home, direct=True)(index)
         if html:
             found += index_posts(html, index)
-    found += await sitemap_posts(home)
+    # crawl() already read the sitemap (to keep posts out of the service pages)
+    found += sitemap if sitemap is not None else await sitemap_posts(home)
     found += _url_posts(urls, pages)
     merged: dict[str, dict[str, Any]] = {}
     for p in found:
@@ -500,8 +845,10 @@ def enrich(
     urls: list[str],
     pages: dict[str, str],
     extra_posts: list[dict[str, Any]] | None = None,
+    menu: Menu = NO_MENU,
 ) -> None:
     """Rewrite `site` and widen `convert` using every mapped URL and the scraped pages.
+    `menu` lets a trust page be found by its link text ("Cost" is the pricing page).
     `extra_posts` come from blog_posts(); earlier entries win when a URL repeats."""
     site, convert = sections["site"], sections["convert"]
     all_urls = list(dict.fromkeys([*urls, *pages]))
@@ -600,16 +947,14 @@ def enrich(
         {
             "key": key,
             "label": label,
-            "status": "found"
-            if (
-                hit := next(
-                    (u for u in all_urls if any(w in u.lower() for w in words)), None
-                )
-            )
-            else "missing",
+            "status": "found" if hit else "missing",
             "url": hit,
         }
         for key, label, words in TRUST
+        for hit in [
+            next((u for u in all_urls if any(w in u.lower() for w in words)), None)
+            or next((u for u in menu.top if _trust_key(u, menu) == key), None)
+        ]
     ]
     site["pages_crawled"] = len(pages) + 1
 
