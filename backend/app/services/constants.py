@@ -118,3 +118,32 @@ CHAT = {
     "widgets.leadconnectorhq.com": "GHL chat",
     "livechatinc": "LiveChat",
 }
+
+# Structured data type -> (required, recommended) properties, from Google's LocalBusiness and
+# Organization guides. Keys are lower case; local business types share one row.
+SCHEMA_PROPS = {
+    "local": (
+        ("name", "address"),
+        ("telephone", "url", "geo", "openingHoursSpecification", "priceRange", "image"),
+    ),
+    "organization": ((), ("name", "url", "logo", "sameAs")),
+    "person": (("name",), ("url", "image", "jobTitle")),
+    "physician": (("name",), ("url", "image", "medicalSpecialty")),
+    "website": ((), ("name", "url")),
+    "breadcrumblist": (("itemListElement",), ()),
+}
+
+GENERIC_TITLES = frozenset(
+    {"home", "homepage", "untitled", "welcome", "index", "just another wordpress site"}
+)
+
+REFERENCE_HOSTS = (
+    ".gov",
+    ".edu",
+    "who.int",
+    "pubmed",
+    "mayoclinic.org",
+    "clevelandclinic.org",
+    "webmd.com",
+    "healthline.com",
+)
