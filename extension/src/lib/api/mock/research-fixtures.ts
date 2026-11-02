@@ -327,7 +327,6 @@ export function mockTrace(
   const steps: Step[] = [
     { id: 'home', start: 0, end: 500, detail: { via: 'direct', url: `${base}/`, size: 48213 } },
     { id: 'analyze', start: 500, end: 900, detail: {} },
-    { id: 'menu', start: 900, end: 1200, detail: { links: 17, services: 9 } },
     fails
       ? { id: 'map', start: 900, end: 1900, status: 'failed', detail: { error: 'HTTP 402' } }
       : { id: 'map', start: 900, end: 1900, detail: { count: 142 } },

@@ -49,7 +49,6 @@ def _domain(host: str) -> str:
 LABELS = {
     "home": "Fetch home page",
     "analyze": "Analyse home page",
-    "menu": "Read the site menu",
     "map": "Find pages",
     "pick": "Choose pages to read",
     "scrape": "Read pages",
@@ -156,16 +155,6 @@ async def _enrich(
     ok = True
     pages = {final_url: home_html}
     menu = site_crawl.nav_links(home_html, final_url)
-    if settings.OPENROUTER_API_KEY:
-        await trace.report("menu", "running")
-        menu = await site_ai.label_menu(http, menu)
-        services = sum(1 for x in menu.labels.values() if x["kind"] == "service")
-        if menu.labels:
-            await trace.report("menu", "done", links=len(menu.top), services=services)
-        else:
-            await trace.report("menu", "failed", error="No labels; used URL rules")
-    else:
-        await trace.skip("OpenRouter key not set", "menu")
     try:
         urls, crawled, crawl_ok, sitemap = await site_crawl.crawl(
             http, final_url, home_html, via, trace.report, menu

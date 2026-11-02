@@ -120,7 +120,6 @@ def test_tiers_put_one_page_per_service_first_then_round_robin():
         {f"{G}/sculptra": "Treatments"},
         {},
         {f"{G}/sculptra": "", f"{G}/botox": "", f"{G}/weight-loss": ""},
-        {},
     )
     t = site_crawl.tiers(urls, f"{G}/", menu)
     assert t["A"] == [f"{G}/treatments", f"{G}/botox", f"{G}/weight-loss"]
@@ -147,7 +146,7 @@ def test_tiers_keep_blog_posts_and_keyword_only_urls_out_of_services():
         f"{G}/what-to-expect-with-first-botox-appointment",
         f"{G}/bhrt-vs-traditional-hrt",
     ]
-    menu = site_crawl.Menu({}, {}, {f"{G}/low-testosterone/": "low t"}, {})
+    menu = site_crawl.Menu({}, {}, {f"{G}/low-testosterone/": "low t"})
     posts = {site_crawl._key(f"{G}/bhrt-vs-traditional-hrt")}
     t = site_crawl.tiers(urls, f"{G}/", menu, posts)
     assert t["A"] == [f"{G}/low-testosterone/"]  # a menu page is the main page
@@ -170,7 +169,6 @@ def test_every_menu_page_is_read_before_any_page_the_menu_does_not_list():
             f"{G}/bhrt/": "bhrt",
             f"{G}/hormone-programs/": "programs",
         },
-        {},
     )
     t = site_crawl.tiers(urls, f"{G}/", menu)
     assert t["A"] == [f"{G}/bhrt/"]  # fewest path segments, shortest URL
@@ -872,55 +870,6 @@ def test_a_page_keeps_the_text_of_its_first_menu_link():
     assert top[f"{G}/menopause/"] == "menopause treatment" and top[f"{G}/"] == "home"
 
 
-def labelled(**kinds):
-    top = {f"{G}/{k}/": k for k in kinds}
-    labels = {f"{G}/{k}/": {"kind": v[0], "name": v[1]} for k, v in kinds.items()}
-    return site_crawl.Menu({}, {}, top, labels)
-
-
-def test_model_labels_decide_what_a_menu_page_is():
-    menu = labelled(
-        peptides=("service", "Peptide Therapy"),
-        botox=("service", "Botox"),
-        cost=("pricing", ""),
-        recipes=("blog", ""),
-        services=("services_hub", ""),
-        menopause=("other", ""),
-    )
-    cls = lambda k: site_crawl.classify(f"{G}/{k}/", menu)
-    assert [
-        cls(k)
-        for k in ("peptides", "botox", "cost", "recipes", "services", "menopause")
-    ] == [
-        "menu_child",
-        "service",
-        "trust",
-        "other",
-        "hub",
-        "other",
-    ]
-    assert site_crawl._trust_key(f"{G}/cost/", menu) == "pricing_page"
-    assert site_crawl._trust_key(f"{G}/menopause/", menu) is None
-
-
-def test_enrich_lists_the_services_the_model_named_from_the_menu():
-    menu = labelled(
-        nutrition=("service", "Nutrition Program"),
-        mindfulness=("service", "Mindfulness"),
-        cost=("pricing", ""),
-    )
-    sections = base_sections()
-    site_crawl.enrich(sections, list(menu.top), {}, None, menu)
-    clusters = sections["site"]["services"]["clusters"]
-    assert [(c["service"], c["pages"]) for c in clusters] == [
-        ("Nutrition Program", [f"{G}/nutrition/"]),
-        ("Mindfulness", [f"{G}/mindfulness/"]),
-    ]
-    assert {t["key"]: t["url"] for t in sections["site"]["trust"]}[
-        "pricing_page"
-    ] == f"{G}/cost/"
-
-
 def test_faq_sections_on_service_pages_count_as_an_faq_page_and_placeholders_are_listed():
     sections = base_sections()
     faq = "<html><body><h2>Frequently Asked Questions</h2><p>Sample Title</p></body></html>"
@@ -985,3 +934,58 @@ async def test_a_site_that_blocks_direct_reads_gets_only_the_pages_the_firecrawl
 def test_script_text_inside_a_menu_link_is_not_the_link_text():
     html = f'<nav><a href="{G}/botox/"><script>var x = 1</script>Botox</a></nav>'
     assert site_crawl.nav_links(html, f"{G}/").top[f"{G}/botox/"] == "botox"
+
+
+CARDS = f"""<html><body><header><nav><a href="{G}/#about">About</a><a href="{G}/#services">Services</a></nav></header>
+<section><h2>Our services</h2>
+<div><h4>Primary Care</h4><a href="{G}/primary-care">Learn more</a></div>
+<div><h4>Chronic Conditions</h4><a href="{G}/chronic-conditions">Learn more</a></div></section>
+<section><h2>Meet your provider</h2><div><h4>Dr. Jane</h4><a href="{G}/jane">Learn more</a></div></section></body></html>"""
+
+
+def test_service_cards_on_the_home_page_join_the_menu_but_provider_cards_do_not():
+    menu = site_crawl.nav_links(CARDS, f"{G}/")
+    assert menu.top[f"{G}/primary-care"] == "primary care"
+    assert menu.children[f"{G}/chronic-conditions"] == "Our services"
+    assert f"{G}/jane" not in menu.top
+    sections = base_sections()
+    site_crawl.enrich(sections, list(menu.top), {}, None, menu)
+    assert [c["service"] for c in sections["site"]["services"]["clusters"]] == [
+        "Primary Care",
+        "Chronic Conditions",
+    ]
+
+
+def test_a_service_word_in_a_post_a_category_or_the_home_page_is_no_service():
+    menu = site_crawl.Menu(
+        {f"{G}/menopause": "Services"},
+        {},
+        {
+            f"{G}/botox": "botox",
+            f"{G}/hormone-clinic": "contact",
+            f"{G}/menopause": "menopause",
+        },
+    )
+    urls = [
+        f"{G}/",
+        f"{G}/botox",
+        f"{G}/hormone-clinic",
+        f"{G}/menopause",
+        f"{G}/did-someone-say-iv-therapy",
+        f"{G}/category/emsculpt-neo",
+    ]
+    sections = base_sections()
+    site_crawl.enrich(sections, urls, {}, None, menu)
+    assert [c["service"] for c in sections["site"]["services"]["clusters"]] == [
+        "Neurotoxins",
+        "Menopause",
+    ]
+
+
+def test_without_a_readable_menu_a_short_top_level_page_can_still_be_a_service():
+    sections = base_sections()
+    urls = [f"{G}/botox", f"{G}/what-to-expect-with-first-botox-visit"]
+    site_crawl.enrich(sections, urls, {}, None)
+    assert [
+        (c["service"], c["pages"]) for c in sections["site"]["services"]["clusters"]
+    ] == [("Neurotoxins", [f"{G}/botox"])]

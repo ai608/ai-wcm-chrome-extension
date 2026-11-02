@@ -14,6 +14,7 @@ import time
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from itertools import zip_longest
+from string import capwords
 from typing import Any, NamedTuple
 from urllib.parse import urljoin, urlsplit
 
@@ -25,7 +26,6 @@ from app.core.exceptions import AppError
 from app.services.constants import (
     BOOKING,
     CHAT,
-    KIND_TRUST,
     PLACEHOLDER_TEXT,
     SERVICES,
     TRUST,
@@ -159,6 +159,12 @@ CONTEXT = ("team_page", "pricing_page", "financing_page", "about_page", "faq_pag
 
 
 MIN_MENU_LINKS = 8
+MORE_LINK = re.compile(
+    r"^(learn|read|view|see|find out) more\b|^details$", re.IGNORECASE
+)
+SERVICE_HEAD = re.compile(
+    r"service|treatment|what we (offer|treat)|conditions|programs|care", re.IGNORECASE
+)
 MENU_NODE = re.compile(r"menu|nav", re.IGNORECASE)
 
 
@@ -168,13 +174,12 @@ class Menu(NamedTuple):
     children: dict[str, str]  # page in a dropdown -> the dropdown's label
     parents: dict[str, str]  # dropdown's own page -> its label
     top: dict[str, str]  # every page linked from the menu -> its link text, lower case
-    labels: dict[str, dict[str, Any]]  # page -> what the model made of its link
 
     def has(self, url: str) -> bool:
         return url in self.top
 
 
-NO_MENU = Menu({}, {}, {}, {})
+NO_MENU = Menu({}, {}, {})
 
 
 def clean_url(url: str, home: str) -> str | None:
@@ -209,11 +214,36 @@ def _dropdown_of(link: Any) -> tuple[str, str | None] | None:
     return None
 
 
+def _cards(doc: LexborHTMLParser, home: str, menu: Menu) -> None:
+    """Add service cards (a heading and a "Learn more" link) from a home page section whose own
+    heading says services, as a menu that only holds anchors to that section has no service pages."""
+    for a in doc.css("a[href]"):
+        if not MORE_LINK.search(" ".join(a.text(strip=True).split())):
+            continue
+        url = clean_url(urljoin(home, a.attributes.get("href") or ""), home)
+        if url is None or url in menu.top:
+            continue
+        node, section = a.parent, ""
+        title: list[Any] = []
+        for _ in range(10):
+            if node is None:
+                break
+            title = node.css("h2, h3, h4, h5") if not title else title
+            head = node.css_first("h2")
+            if title and head:
+                section = " ".join(head.text(strip=True).split())
+                break
+            node = node.parent
+        if len(title) == 1 and SERVICE_HEAD.search(section) and node is not None:
+            menu.top[url] = " ".join(title[0].text(strip=True).split()).lower()
+            menu.children[url] = section
+
+
 def nav_links(html: str, home: str) -> Menu:
     """The site menu. The clinic's own menu is the best list of its services, whatever its
     URLs are called: every page in a dropdown is a candidate, unless the dropdown is About,
     News and the like."""
-    menu = Menu({}, {}, {}, {})
+    menu = Menu({}, {}, {})
     doc = LexborHTMLParser(html)
     for tag in doc.css("script, style, noscript"):
         tag.decompose()
@@ -244,13 +274,12 @@ def nav_links(html: str, home: str) -> Menu:
                 parent = clean_url(urljoin(home, href), home)
                 menu.parents.setdefault(parent or "", label)
     menu.parents.pop("", None)
+    _cards(doc, home, menu)
     return menu
 
 
 def _trust_key(url: str, menu: Menu = NO_MENU) -> str | None:
     """Which trust page this is: by its URL, else by the text of its menu link."""
-    if url in menu.labels:
-        return KIND_TRUST.get(menu.labels[url]["kind"])
     low = url.lower()
     by_url = next((k for k, _, words in TRUST if any(w in low for w in words)), None)
     if by_url:
@@ -260,6 +289,18 @@ def _trust_key(url: str, menu: Menu = NO_MENU) -> str | None:
         (k for k, words in TRUST_LINK_TEXT.items() if any(w in text for w in words)),
         None,
     )
+
+
+def _backed(url: str, menu: Menu) -> bool:
+    """Could this page be a clinic's own service page? A page the menu lists (unless the link says
+    contact, blog and the like), a page under a hub, or, when the site has no readable menu, a
+    short top-level page. A URL that only holds a service word is often a post or a category."""
+    path = urlsplit(url).path.strip("/")
+    if menu.has(url):
+        return not NOT_SERVICE_MENU.search(menu.top[url])
+    if menu.top:
+        return _under_hub(url)
+    return _under_hub(url) or ("/" not in path and path.count("-") < 3)
 
 
 def _under_hub(url: str) -> bool:
@@ -275,13 +316,6 @@ def classify(url: str, menu: Menu = NO_MENU) -> str:
         return "blog_post"
     if BLOG_INDEX.search(url):
         return "blog_index"
-    if label := menu.labels.get(url):
-        kind = label["kind"]
-        if kind == "service":
-            return "service" if _service_of(url) else "menu_child"
-        return {"services_hub": "hub"}.get(kind) or (
-            "trust" if kind in KIND_TRUST else "other"
-        )
     if HUB.match(path) or (
         url in menu.parents and not NOT_SERVICE_MENU.search(menu.parents[url])
     ):
@@ -889,15 +923,19 @@ def enrich(
     all_urls = list(dict.fromkeys([*urls, *pages]))
 
     clusters: dict[str, list[str]] = {}
-    for u, label in menu.labels.items():
-        if label["kind"] == "service" and label.get("name"):
-            clusters.setdefault(str(label["name"])[:80], []).append(u)
-    if not clusters:
-        for u in all_urls:
-            if name := _service_of(u):
-                clusters.setdefault(name, []).append(u)
-        for c in site["services"]["clusters"]:
-            clusters.setdefault(c["service"], c["pages"])
+    for u in all_urls:
+        if not _backed(u, menu):
+            continue
+        cls = classify(u, menu)
+        name = (
+            _service_of(u)
+            if cls == "service"
+            else capwords(menu.top.get(u) or "")
+            if cls == "menu_child" or (cls == "hub_child" and menu.has(u))
+            else None
+        )
+        if name:
+            clusters.setdefault(name, []).append(u)
     site["services"]["clusters"] = [
         {
             "service": name,

@@ -9,16 +9,12 @@ import logging
 import re
 from datetime import date
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
 from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
-from app.core.exceptions import AppError
 from app.services import llm
-from app.services.constants import MENU_KINDS
-from app.services.site_crawl import Menu
 
 # What a patient expects a good service page to answer. Fixed list, so results are comparable.
 CHROME_CHARS = 3000  # the site header or footer, sent once
@@ -37,13 +33,6 @@ TOPICS = [
 
 logger = logging.getLogger(__name__)
 
-MENU_SYSTEM = f"""You read the navigation menu of a wellness, med spa or health clinic website.
-Each line is: [parent menu > ] link text | path. Return JSON only:
-{{"items": [{{"path": "<path exactly as given>", "kind": "<one of: {", ".join(MENU_KINDS)}>",
-  "name": "<short name a patient would use, only for kind=service>"}}]}}
-Rules: one item per line, only paths that were given. A service is a treatment, program or
-medical service a patient can book. A page that only lists services is services_hub."""
-
 SYSTEM = """You audit a wellness or med spa clinic website for a marketing agency.
 You get the site's header and footer once, then the text of several pages. Return JSON only, with exactly this shape:
 {"services": [{"service": "<name>",
@@ -53,7 +42,7 @@ You get the site's header and footer once, then the text of several pages. Retur
  "areas_served": ["<city or area the site says it serves>"],
  "offers": ["<current special or promotion, short>"],
  "financing": true|false, "insurance_accepted": true|false}
-Services found on the site menu: {names}.
+Services found by URL rules: {names}.
 Topic list: {topics}.
 Today is {today}.
 Rules: only report what the page text shows. Ignore template or sample text. An offer
@@ -144,40 +133,6 @@ async def analyze(
         max_tokens=settings.AI_MAX_OUTPUT_TOKENS,
         model=settings.RESEARCH_MODEL,
     )
-
-
-async def label_menu(http: httpx.AsyncClient, menu: Menu) -> Menu:
-    """Have the model say what each menu link is; the menu comes back unchanged on any failure."""
-    paths = {urlsplit(u).path or "/": u for u in menu.top}
-    if not paths:
-        return menu
-    lines = [
-        f"{f'{menu.children[u]} > ' if u in menu.children else ''}{menu.top[u] or '(no text)'} | {p}"
-        for p, u in paths.items()
-    ]
-    try:
-        out = await llm.chat_json(
-            http,
-            MENU_SYSTEM,
-            "\n".join(lines),
-            max_tokens=6000,
-            model=settings.RESEARCH_MODEL,
-            temperature=0,
-        )
-        labels = {
-            paths[i["path"]]: {
-                "kind": i["kind"],
-                "name": str(i.get("name") or "").strip(),
-            }
-            for i in out["items"]
-            if isinstance(i, dict)
-            and i.get("path") in paths
-            and i.get("kind") in MENU_KINDS
-        }
-    except (AppError, httpx.HTTPError, KeyError, TypeError) as exc:
-        logger.warning("menu labelling failed: %s", type(exc).__name__)
-        return menu
-    return menu._replace(labels=labels)
 
 
 def _strings(value: Any, limit: int = 20) -> list[str]:
