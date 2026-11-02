@@ -17,7 +17,7 @@ from app.core.exceptions import AppError
 from app.core.json import OrjsonResponse
 from app.models.user import UserProfile
 from app.repositories.audit_repository import AuditRepository, to_wire
-from app.services import ghl, site_ai, site_audit, site_crawl, site_score
+from app.services import ghl, onpage, site_ai, site_audit, site_crawl, site_score
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["research"])
@@ -53,6 +53,7 @@ LABELS = {
     "pick": "Choose pages to read",
     "scrape": "Read pages",
     "enrich": "Build site facts",
+    "onpage": "Check every page",
     "ai": "AI page analysis",
     "gbp": "Google Business Profile",
     "psi": "PageSpeed",
@@ -154,6 +155,7 @@ async def _enrich(
     """Add whole-site, AI and GBP data. Returns False if a provider step failed."""
     ok = True
     pages = {final_url: home_html}
+    urls: list[str] = []
     menu = site_crawl.nav_links(home_html, final_url)
     try:
         urls, crawled, crawl_ok, sitemap = await site_crawl.crawl(
@@ -174,6 +176,22 @@ async def _enrich(
         logger.warning("audit %s: site crawl failed", audit_id, exc_info=True)
         await trace.fail_open(_why(exc))
         ok = False  # home-page site/convert data is kept
+    await trace.report("onpage", "running")
+    try:
+        onpage.run(sections, final_url, pages, urls, menu)
+        summary = sections["on_page"]["summary"]
+        await trace.report(
+            "onpage",
+            "done",
+            pages=len(pages),
+            score=summary["score"],
+            critical=summary["critical"],
+            high=summary["high"],
+        )
+    except (ValueError, KeyError, TypeError, AttributeError) as exc:
+        logger.warning("audit %s: on-page checks failed", audit_id, exc_info=True)
+        await trace.report("onpage", "failed", error=_why(exc))
+        ok = False
     if settings.OPENROUTER_API_KEY:
         await trace.report("ai", "running")
         try:
@@ -188,7 +206,12 @@ async def _enrich(
         await trace.skip("OpenRouter key not set", "ai")
     await repo.update(
         audit_id,
-        sections={"site": sections["site"], "convert": sections["convert"]},
+        sections={
+            "site": sections["site"],
+            "convert": sections["convert"],
+            "on_page": sections["on_page"],
+            "schema": sections["schema"],
+        },
         state={"site": "ready", "convert": "ready"},
     )
     if settings.APIFY_API_TOKEN and settings.APIFY_GMAPS_ACTOR_ID:

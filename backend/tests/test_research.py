@@ -643,3 +643,33 @@ async def test_slow_pagespeed_is_capped_and_score_still_saved(client, monkeypatc
     assert steps["psi"]["status"] == "failed"
     assert steps["psi"]["detail"] == {"error": "Timed out"}
     assert steps["score"]["status"] == "done"
+
+
+@pytest.mark.anyio
+async def test_every_read_page_gets_on_page_checks_and_a_summary(client, monkeypatch):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    botox = "<html><head><title>Botox</title></head><body><p>hi</p></body></html>"
+
+    async def fake_crawl(_http, url, *_args):
+        return (
+            [url, "https://glowmedspa.com/botox"],
+            {"https://glowmedspa.com/botox": botox},
+            True,
+            [],
+        )
+
+    monkeypatch.setattr(site_crawl, "crawl", fake_crawl)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    pages = {p["url"]: p for p in done["on_page"]["pages"]}
+    assert pages["https://glowmedspa.com/"]["kind"] == "home"
+    assert {i["key"] for i in pages["https://glowmedspa.com/botox"]["issues"]} >= {
+        "no_h1",
+        "thin_page",
+    }
+    assert done["on_page"]["summary"]["score"] < 100 and "risks" in done["schema"]
+    step = folded(done["trace"])["onpage"]
+    assert step["status"] == "done" and step["detail"]["pages"] == 2
