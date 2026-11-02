@@ -364,6 +364,7 @@ export function mockTrace(
         detail: { url },
       })),
       { id: 'enrich', start: 3700, end: 4000, detail: { pages: picked.length } },
+      { id: 'onpage', start: 4000, end: 4200, detail: { pages: picked.length + 1, score: 52 } },
       { id: 'ai', start: 4000, end: 5000, detail: { pages: picked.length } },
       { id: 'gbp', start: 5000, end: 5600, detail: { matched: true } },
     )
@@ -512,6 +513,98 @@ export function buildAudit(id: string, domain: string, url: string, startedAt: D
       },
     },
     onPage: {
+      summary: strong
+        ? { score: 91, critical: 0, high: 0, medium: 1, low: 3, topFixes: [] }
+        : {
+            score: 52,
+            critical: 1,
+            high: 3,
+            medium: 2,
+            low: 4,
+            topFixes: [
+              {
+                key: 'noindex',
+                severity: 'critical',
+                title: 'Google is told to hide this page',
+                detail: 'A noindex tag removes the page from search results.',
+                count: 1,
+                pages: [`${url}botox`],
+              },
+              {
+                key: 'duplicate_title',
+                severity: 'high',
+                title: 'Same title as 1 other page(s)',
+                detail: 'Google cannot tell these pages apart, so it may show only one of them.',
+                count: 2,
+                pages: [`${url}iv-therapy`, `${url}hydration`],
+              },
+              {
+                key: 'trust_no_credentials',
+                severity: 'medium',
+                title: 'No provider credentials found',
+                detail: 'Health pages should show who treats the patient and their qualifications.',
+                count: 1,
+                pages: [],
+              },
+            ],
+          },
+      pages: [
+        {
+          url: `${url}botox`,
+          kind: 'service',
+          title: 'Botox',
+          titleLen: 5,
+          metaDescription: '',
+          h1: '',
+          h1Count: 0,
+          wordCount: 82,
+          noindex: !strong,
+          canonical: { url: null, status: 'missing' },
+          issues: strong
+            ? []
+            : [
+                {
+                  key: 'noindex',
+                  severity: 'critical',
+                  title: 'Google is told to hide this page',
+                  detail: 'A noindex tag removes the page from search results.',
+                  url: `${url}botox`,
+                },
+                {
+                  key: 'no_h1',
+                  severity: 'high',
+                  title: 'No main heading (H1)',
+                  detail: 'The page does not say in one line what it is about.',
+                  url: `${url}botox`,
+                },
+              ],
+        },
+        {
+          url: `${url}iv-therapy`,
+          kind: 'service',
+          title: 'IV Therapy in Austin | Glow',
+          titleLen: 27,
+          metaDescription: 'IV therapy and vitamin drips.',
+          h1: 'IV Therapy',
+          h1Count: 1,
+          wordCount: 640,
+          noindex: false,
+          canonical: { url: `${url}iv-therapy`, status: 'ok' },
+          issues: [],
+        },
+      ],
+      duplicates: { titles: [], descriptions: [], text: [] },
+      siteIssues: [],
+      trust: {
+        credentialsPages: strong ? [url] : [],
+        reviewedByPages: [],
+        datedPages: [],
+        disclaimerPages: strong ? [url] : [],
+        referenceLinks: strong ? 2 : 0,
+        hasTerms: true,
+      },
+      local: { mapEmbed: strong, hoursText: strong },
+      orphans: strong ? [] : [`${url}services/prp`],
       essentials: [
         {
           key: 'title',

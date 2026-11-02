@@ -18,6 +18,7 @@ const STEPS: { id: string; label: string }[] = [
   { id: 'pick', label: 'Choose pages to read' },
   { id: 'scrape', label: 'Read pages' },
   { id: 'enrich', label: 'Build site facts' },
+  { id: 'onpage', label: 'Check every page' },
   { id: 'ai', label: 'AI page analysis' },
   { id: 'gbp', label: 'Google Business Profile' },
   { id: 'psi', label: 'PageSpeed' },
@@ -85,6 +86,8 @@ function summary(step: string, e: TraceEvent, steps: Map<string, TraceEvent>): s
           : 'Fetched directly'
       return `${via}${size ? ` · ${Math.max(1, Math.round(size / 1024))} KB` : ''}`
     }
+    case 'onpage':
+      return `${num(d.pages) ?? 0} pages checked, score ${num(d.score) ?? '-'}`
     case 'map':
       return `${num(d.count) ?? 0} URLs found`
     case 'pick':

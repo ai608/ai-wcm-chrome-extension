@@ -445,6 +445,33 @@ export function Body({ report }: { report: Report }) {
         </Section>
       ) : null}
 
+      {audit.onPage?.summary ? (
+        <Section title="On-page SEO" kicker="What Google reads on each page">
+          <div className="mb-3 flex gap-3">
+            <Tile value={audit.onPage.summary.score} label="On-page score" />
+            <Tile
+              value={audit.onPage.summary.critical + audit.onPage.summary.high}
+              label="Serious problems"
+              tone={audit.onPage.summary.critical + audit.onPage.summary.high ? 'bad' : 'good'}
+            />
+            <Tile value={audit.onPage.pages?.length ?? 1} label="Pages checked" />
+          </div>
+          {audit.onPage.summary.topFixes.length ? (
+            <ol className="flex list-decimal flex-col gap-2 pl-5 text-[13px]">
+              {audit.onPage.summary.topFixes.slice(0, 5).map((f) => (
+                <li key={f.key}>
+                  <span className="font-semibold">{f.title}.</span> {f.detail}
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <p className="text-[13px] text-muted-foreground">
+              No important on-page problems were found.
+            </p>
+          )}
+        </Section>
+      ) : null}
+
       {speed ? (
         <Section title="PageSpeed (mobile)">
           <div className="flex gap-6">

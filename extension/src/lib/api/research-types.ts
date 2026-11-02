@@ -91,19 +91,81 @@ export interface BusinessSection {
   }
 }
 
+export type Severity = 'critical' | 'high' | 'medium' | 'low'
+
+export interface OnPageIssue {
+  key: string
+  severity: Severity
+  title: string
+  detail: string
+  url: string | null
+}
+
+export interface OnPageFix {
+  key: string
+  severity: Severity
+  title: string
+  detail: string
+  count: number
+  pages: string[]
+}
+
+export interface OnPagePage {
+  url: string
+  kind: string
+  title: string
+  titleLen: number
+  metaDescription: string
+  h1: string
+  h1Count: number
+  wordCount: number
+  noindex: boolean
+  canonical: { url: string | null; status: string }
+  issues: OnPageIssue[]
+}
+
 export interface OnPageSection {
+  /** Absent on audits saved before the per-page checks. */
+  pages?: OnPagePage[]
+  duplicates?: { titles: string[][]; descriptions: string[][]; text: string[][] }
+  siteIssues?: OnPageIssue[]
+  trust?: {
+    credentialsPages: string[]
+    reviewedByPages: string[]
+    datedPages: string[]
+    disclaimerPages: string[]
+    referenceLinks: number
+    hasTerms: boolean
+  }
+  local?: { mapEmbed: boolean; hoursText: boolean }
+  orphans?: string[]
+  summary?: {
+    score: number
+    critical: number
+    high: number
+    medium: number
+    low: number
+    topFixes: OnPageFix[]
+  }
   essentials: { key: string; label: string; value: string; status: CheckStatus; note?: string }[]
   headings: { h1Count: number; outline: { level: 1 | 2 | 3 | 4 | 5 | 6; text: string }[] }
   links: {
     internal: number
     external: number
     nofollow: number
+    genericAnchorCount?: number
+    emptyAnchorCount?: number
+    notCrawlableCount?: number
     items: { href: string; text: string; kind: 'internal' | 'external'; nofollow: boolean }[]
   }
   images: {
     total: number
     missingAlt: number
     lazy: number
+    badAlt?: number
+    badNames?: number
+    legacyFormat?: number
+    firstImageLazy?: boolean
     items: { src: string; alt: string | null; width: number | null; height: number | null }[]
   }
   pagespeed: {
@@ -131,7 +193,14 @@ export interface SchemaSection {
   hasLocalBusiness: boolean
   hasFaqPage: boolean
   hasReviewMarkup: boolean
-  blocks: { type: string; presentProps: string[]; missingRecommended: string[] }[]
+  risks?: string[]
+  localBusinessType?: string | null
+  blocks: {
+    type: string
+    presentProps: string[]
+    missingRequired?: string[]
+    missingRecommended: string[]
+  }[]
   raw: string
 }
 

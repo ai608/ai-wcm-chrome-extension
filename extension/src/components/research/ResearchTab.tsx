@@ -11,7 +11,7 @@ import { call } from '@/lib/messaging'
 import { relativeTime } from '@/lib/time'
 
 function Cards({ audit }: { audit: Audit }) {
-  const { business, site, overview, research } = audit
+  const { business, site, overview, research, onPage } = audit
   const services =
     site?.services.clusters.filter((c) => c.found > 0).map((c) => c.service.split(' (')[0]) ?? []
   const gbpWebsiteMatch = business?.gbp?.matched && business.gbp.websiteLinksToGbp
@@ -78,6 +78,22 @@ function Cards({ audit }: { audit: Audit }) {
           </>
         )}
       </Block>
+      {onPage?.summary ? (
+        <Block title="On-page problems">
+          <p className="text-[13px] text-muted-foreground">
+            On-page score {onPage.summary.score} / 100 across {onPage.pages?.length ?? 1} pages
+          </p>
+          {onPage.summary.topFixes.length ? (
+            <ol className="mt-1 flex list-decimal flex-col gap-1 pl-5 text-[13px]">
+              {onPage.summary.topFixes.slice(0, 3).map((f) => (
+                <li key={f.key}>{f.title}</li>
+              ))}
+            </ol>
+          ) : (
+            <p className="mt-1 text-[13px]">No important problems found.</p>
+          )}
+        </Block>
+      ) : null}
       {overview?.score != null && overview.grade != null ? (
         <Block title="Website score">
           <div className="flex items-center gap-3">

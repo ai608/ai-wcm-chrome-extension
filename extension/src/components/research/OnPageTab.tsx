@@ -1,5 +1,6 @@
 import { ArrowUpRightIcon, CheckIcon, CopyIcon, ImageIcon, SearchIcon } from 'lucide-react'
 import { useState } from 'react'
+import { Pages, Summary } from '@/components/research/OnPageChecks'
 import { Block, FilterChips, Row, SectionTitle, SubTabs } from '@/components/research/shared'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -9,8 +10,10 @@ import { downloadCsv, toCsv } from '@/lib/csv'
 import { cn } from '@/lib/utils'
 import { usePanelStore } from '@/stores/panel-store'
 
-type Sub = 'essentials' | 'headings' | 'links' | 'images' | 'speed'
+type Sub = 'summary' | 'pages' | 'essentials' | 'headings' | 'links' | 'images' | 'speed'
 const SUBS: { value: Sub; label: string }[] = [
+  { value: 'summary', label: 'Summary' },
+  { value: 'pages', label: 'Pages' },
   { value: 'essentials', label: 'Essentials' },
   { value: 'headings', label: 'Headings' },
   { value: 'links', label: 'Links' },
@@ -745,11 +748,19 @@ function Speed({ audit, p }: { audit: Audit; p: OnPageSection['pagespeed'] }) {
 }
 
 export function OnPageTab({ audit, onPage }: { audit: Audit; onPage: OnPageSection }) {
-  const sub = (usePanelStore((s) => s.researchSubTab.on_page) as Sub | undefined) ?? 'essentials'
+  const chosen = usePanelStore((s) => s.researchSubTab.on_page) as Sub | undefined
   const setSub = usePanelStore((s) => s.setResearchSubTab)
+  const items = onPage.summary
+    ? SUBS
+    : SUBS.filter((i) => i.value !== 'summary' && i.value !== 'pages')
+  const sub = items.some((i) => i.value === chosen)
+    ? (chosen as Sub)
+    : (items[0]?.value ?? 'essentials')
   return (
     <div className="flex flex-col gap-3">
-      <SubTabs value={sub} onChange={(v) => setSub('on_page', v)} items={SUBS} />
+      <SubTabs value={sub} onChange={(v) => setSub('on_page', v)} items={items} />
+      {sub === 'summary' ? <Summary onPage={onPage} /> : null}
+      {sub === 'pages' ? <Pages onPage={onPage} /> : null}
       {sub === 'essentials' ? (
         <Block>
           {onPage.essentials.map((e) => (

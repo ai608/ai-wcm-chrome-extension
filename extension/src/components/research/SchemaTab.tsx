@@ -1,5 +1,6 @@
 import { ChevronRightIcon } from 'lucide-react'
 import { Block, Chip, ExtLink, Row } from '@/components/research/shared'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 import type { Audit, SchemaSection } from '@/lib/api/research-types'
 
 export function SchemaTab({ audit, schema }: { audit: Audit; schema: SchemaSection }) {
@@ -25,6 +26,14 @@ export function SchemaTab({ audit, schema }: { audit: Audit; schema: SchemaSecti
           {schema.hasReviewMarkup ? 'Present' : 'Missing'}
         </Row>
       </Block>
+      {schema.risks?.includes('self_serving_review') ? (
+        <Alert variant="destructive">
+          <AlertDescription>
+            The business marks up its own reviews. Google does not allow a business to give itself
+            review stars.
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <ExtLink
         href={`https://search.google.com/test/rich-results?url=${encodeURIComponent(audit.url)}`}
       >
@@ -37,6 +46,11 @@ export function SchemaTab({ audit, schema }: { audit: Audit; schema: SchemaSecti
             {b.presentProps.map((p) => (
               <Chip key={p} tone="good">
                 ✓ {p}
+              </Chip>
+            ))}
+            {(b.missingRequired ?? []).map((p) => (
+              <Chip key={`r-${p}`} tone="bad">
+                missing {p}
               </Chip>
             ))}
             {b.missingRecommended.map((p) => (
