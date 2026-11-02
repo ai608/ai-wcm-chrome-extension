@@ -18,7 +18,7 @@ from app.services.constants import (
 
 CORE = frozenset({"home", "service", "menu_child", "hub", "hub_child"})
 RANK = {"critical": 0, "high": 1, "medium": 2, "low": 3}
-WEIGHT = {"critical": 25, "high": 10, "medium": 4, "low": 0}
+WEIGHT = {"critical": 20, "high": 6, "medium": 3, "low": 0}
 PER_KEY = 3
 THIN_WORDS = 150
 JS_WORDS = 100
@@ -503,6 +503,7 @@ def schema_checks(sections: dict[str, Any], html: str) -> list[dict[str, Any]]:
     risks: list[str] = []
     phones: set[str] = set()
     local_types: list[str] = []
+    local_items: list[dict[str, Any]] = []
     for item in items:
         low = {t.lower() for t in _types(item)}
         row = (
@@ -522,6 +523,7 @@ def schema_checks(sections: dict[str, Any], html: str) -> list[dict[str, Any]]:
             }
         )
         if row == "local":
+            local_items.append(item)
             local_types += [
                 t for t in _types(item) if t.lower() in LOCAL_BUSINESS_TYPES
             ]
@@ -529,18 +531,20 @@ def schema_checks(sections: dict[str, Any], html: str) -> list[dict[str, Any]]:
                 phones.add(
                     "".join(c for c in str(item["telephone"]) if c.isdigit())[-10:]
                 )
-            if missing_required:
-                issues.append(
-                    _site_issue("schema_missing_required", ", ".join(missing_required))
-                )
-            if missing:
-                issues.append(
-                    _site_issue("schema_missing_recommended", ", ".join(missing[:4]))
-                )
         if row in ("local", "organization") and (
             item.get("aggregateRating") or item.get("review")
         ):
             risks.append("self_serving_review")
+    if local_items:
+        required, recommended = SCHEMA_PROPS["local"]
+        lacking = [p for p in required if not any(_has(i, p) for i in local_items)]
+        missing = [p for p in recommended if not any(_has(i, p) for i in local_items)]
+        if lacking:
+            issues.append(_site_issue("schema_missing_required", ", ".join(lacking)))
+        if missing:
+            issues.append(
+                _site_issue("schema_missing_recommended", ", ".join(missing[:4]))
+            )
     if len(phones) > 1:
         issues.append(_site_issue("schema_conflict"))
     if local_types and {t.lower() for t in local_types} == {"localbusiness"}:
@@ -570,8 +574,10 @@ def _home_checks(
         href = _attr(a, "href")
         text = _flat(a) or _attr(a, "aria-label") or _attr(a, "title")
         img = a.css_first("img")
-        if not href or href.lower().startswith("javascript:") or href == "#":
+        if href.lower().startswith("javascript:") or (not href and _attr(a, "onclick")):
             dead += 1
+            continue
+        if not href or href.startswith("#"):
             continue
         if not text and not (img is not None and _attr(img, "alt")):
             empty += 1
@@ -697,11 +703,12 @@ def _summary(issues: list[dict[str, Any]]) -> dict[str, Any]:
             g["pages"].append(i["url"])
     counts = {s: sum(1 for i in issues if i["severity"] == s) for s in RANK}
     penalty = sum(
-        WEIGHT[g["severity"]] * min(g["count"], PER_KEY) for g in groups.values()
+        WEIGHT[g["severity"]] * (1 + 0.5 * (min(g["count"], PER_KEY) - 1))
+        for g in groups.values()
     )
     top = sorted(groups.values(), key=lambda g: (RANK[g["severity"]], -g["count"]))[:8]
     return {
-        "score": max(0, 100 - penalty),
+        "score": max(0, round(100 - penalty)),
         **counts,
         "top_fixes": [
             {k: g[k] for k in ("key", "severity", "title", "detail", "count", "pages")}
@@ -738,6 +745,7 @@ def run(
         u
         for u in urls
         if site_crawl.classify(u, menu) in ("service", "menu_child", "hub_child")
+        and site_crawl._under_hub(u)
         and site_crawl._key(u) not in linked
         and site_crawl._key(u) != site_crawl._key(home)
     ]

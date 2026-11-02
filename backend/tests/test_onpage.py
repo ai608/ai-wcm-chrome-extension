@@ -126,7 +126,7 @@ def test_a_complete_specific_business_block_raises_no_schema_issue():
 
 HOME = """<html><head><title>Glow Med Spa Austin</title></head><body><h1>Glow</h1>
 <a href="/botox">Learn more</a><a href="/iv">Learn more</a><a href="/peels">click here</a>
-<a href="/x"></a><a href="javascript:void(0)">Open</a><a>No link</a>
+<a href="/x"></a><a href="javascript:void(0)">Open</a><a onclick="go()">No link</a><a href="#">Menu</a>
 <img src="/img/IMG_0023.jpg" width="800" alt="image" loading="lazy">
 <p>Provider: Dr. Jane Doe, MD. Medically reviewed by Dr. Doe. Results may vary.
 Updated: March 3, 2026. See <a href="https://www.nih.gov/x">NIH</a>.</p></body></html>"""
@@ -138,7 +138,12 @@ def test_home_checks_find_anchors_images_trust_and_missing_local_facts():
         sections,
         f"{G}/",
         {f"{G}/": HOME},
-        [f"{G}/", f"{G}/botox", f"{G}/hidden-botox"],
+        [
+            f"{G}/",
+            f"{G}/botox",
+            f"{G}/services/hidden-botox",
+            f"{G}/what-to-expect-with-botox",
+        ],
         site_crawl.Menu({}, {}, {f"{G}/botox": "botox"}),
     )
     on_page = sections["on_page"]
@@ -153,7 +158,7 @@ def test_home_checks_find_anchors_images_trust_and_missing_local_facts():
         and trust["dated_pages"]
         and trust["disclaimer_pages"]
     )
-    assert on_page["orphans"] == [f"{G}/hidden-botox"]
+    assert on_page["orphans"] == [f"{G}/services/hidden-botox"]
     keys_ = {i["key"] for i in on_page["site_issues"]}
     assert {
         "anchors_generic",
@@ -191,7 +196,7 @@ def test_summary_scores_by_severity_and_lists_only_real_fixes():
         },
     ]
     s = onpage._summary(issues)
-    assert s["score"] == 100 - 25 * 2 - 10 and s["critical"] == 2 and s["low"] == 1
+    assert s["score"] == 100 - 30 - 6 and s["critical"] == 2 and s["low"] == 1
     assert [f["key"] for f in s["top_fixes"]] == ["noindex", "no_h1"]
     assert s["top_fixes"][0]["count"] == 2 and s["top_fixes"][0]["pages"] == [
         "u1",
@@ -210,4 +215,17 @@ def test_the_score_counts_one_issue_at_most_three_times():
         }
         for i in range(9)
     ]
-    assert onpage._summary(issues)["score"] == 100 - 10 * onpage.PER_KEY
+    assert onpage._summary(issues)["score"] == 100 - 6 * 2
+
+
+def test_a_business_described_across_two_blocks_is_judged_as_one():
+    ld = (
+        '[{"@type":["MedicalClinic","Organization"],"name":"Glow","url":"https://glow.example"},'
+        '{"@type":"MedicalBusiness","name":"Glow","address":"1 Main St","telephone":"512-555-0000",'
+        '"openingHoursSpecification":[{"opens":"09:00"}]}]'
+    )
+    sections, html = sections_for(ld)
+    issues = {i["key"]: i for i in onpage.schema_checks(sections, html)}
+    assert "schema_missing_required" not in issues
+    assert "geo" in issues["schema_missing_recommended"]["title"]
+    assert "telephone" not in issues["schema_missing_recommended"]["title"]
