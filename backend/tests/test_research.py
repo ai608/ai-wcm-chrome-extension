@@ -94,7 +94,7 @@ async def client(monkeypatch):
     repo = FakeRepo()
     monkeypatch.setattr(research, "_repo", lambda _request: repo)
 
-    async def fake_fetch(url: str) -> tuple[str, str]:
+    async def fake_fetch(url: str, accept=None) -> tuple[str, str]:
         if "down" in url:
             raise research.AppError(
                 422, "site_unreachable", "Website could not be fetched"

@@ -17,7 +17,15 @@ from app.core.exceptions import AppError
 from app.core.json import OrjsonResponse
 from app.models.user import UserProfile
 from app.repositories.audit_repository import AuditRepository, to_wire
-from app.services import ghl, onpage, site_ai, site_audit, site_crawl, site_score
+from app.services import (
+    crawl_access,
+    ghl,
+    onpage,
+    site_ai,
+    site_audit,
+    site_crawl,
+    site_score,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(tags=["research"])
@@ -178,7 +186,13 @@ async def _enrich(
         ok = False  # home-page site/convert data is kept
     await trace.report("onpage", "running")
     try:
-        onpage.run(sections, final_url, pages, urls, menu)
+        try:
+            access = await asyncio.wait_for(
+                crawl_access.load(final_url), settings.CRAWL_SITEMAP_WAIT_S
+            )
+        except TimeoutError:
+            access = None
+        onpage.run(sections, final_url, pages, urls, menu, access)
         summary = sections["on_page"]["summary"]
         await trace.report(
             "onpage",

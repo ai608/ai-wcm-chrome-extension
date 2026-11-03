@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlsplit
 import orjson
 from selectolax.lexbor import LexborHTMLParser
 
-from app.services import site_crawl
+from app.services import crawl_access, site_crawl
 from app.services.constants import (
     GENERIC_TITLES,
     LOCAL_BUSINESS_TYPES,
@@ -184,6 +184,56 @@ ISSUES: dict[str, tuple[str, str, str, str]] = {
 }
 
 SITE_ISSUES: dict[str, tuple[str, str, str]] = {
+    "robots_unreachable": (
+        "high",
+        "robots.txt gives a server error",
+        "When robots.txt fails with a server error, Google may stop crawling the whole site.",
+    ),
+    "robots_blocks_site": (
+        "critical",
+        "robots.txt blocks the whole site",
+        "Google is told not to crawl any page, so none can rank.",
+    ),
+    "robots_blocks_pages": (
+        "high",
+        "robots.txt blocks {detail} service or main pages",
+        "Google cannot read a blocked page, so it cannot rank for what the page says.",
+    ),
+    "robots_blocks_assets": (
+        "medium",
+        "robots.txt blocks {detail} style or script files of the home page",
+        "Google needs these files to see the page the way a visitor does.",
+    ),
+    "sitemap_missing": (
+        "medium",
+        "No sitemap found",
+        "A sitemap lists every page you want found. Google can use it to find pages faster.",
+    ),
+    "sitemap_broken": (
+        "high",
+        "The sitemap in robots.txt cannot be read",
+        "Google cannot use a sitemap that fails or is not valid XML.",
+    ),
+    "sitemap_not_in_robots": (
+        "low",
+        "robots.txt does not point to the sitemap",
+        "A Sitemap line in robots.txt lets every search engine find it.",
+    ),
+    "sitemap_missing_pages": (
+        "medium",
+        "{detail} service or main pages are not in the sitemap",
+        "Add every page that should rank, so Google finds it even without a link.",
+    ),
+    "sitemap_bad_urls": (
+        "high",
+        "{detail} sitemap pages are noindex or point to another page",
+        "A sitemap should list only pages you want in search results.",
+    ),
+    "sitemap_blocked": (
+        "high",
+        "{detail} sitemap pages are blocked by robots.txt",
+        "The sitemap asks Google to crawl pages that robots.txt forbids.",
+    ),
     "schema_missing_required": (
         "high",
         "Business markup lacks {detail}",
@@ -724,6 +774,7 @@ def run(
     pages: dict[str, str],
     urls: list[str],
     menu: site_crawl.Menu,
+    access: dict[str, Any] | None = None,
 ) -> None:
     """Add the per-page checks, duplicates, trust, local and schema checks to `sections`."""
     on_page = sections["on_page"]
@@ -752,6 +803,12 @@ def run(
     if orphans:
         issues.append(_site_issue("orphan_pages", str(len(orphans))))
     issues += trust_issues + schema_checks(sections, home_html)
+    if access:
+        core = [home, *(u for u in urls if site_crawl.classify(u, menu) in CORE)]
+        on_page["access"], found = crawl_access.judge(
+            access, home, home_html, list(dict.fromkeys(core)), parsed
+        )
+        issues += [_site_issue(key, detail) for key, detail in found]
     page_issues = [i for p in parsed for i in p["issues"]]
     for p in parsed:
         p.pop("_text")
