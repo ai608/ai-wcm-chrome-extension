@@ -46,6 +46,39 @@ function Fix({ fix }: { fix: NonNullable<OnPageSection['summary']>['topFixes'][n
   )
 }
 
+function Access({ access }: { access: NonNullable<OnPageSection['access']> }) {
+  const { robots, sitemap } = access
+  const robotsBad = robots.state === 'error' || robots.blocksSite
+  const blocked = robots.blockedPages.length
+  const sitemapBad = !sitemap.urls || sitemap.badUrls.length || sitemap.blocked
+  return (
+    <Block title="Crawl access">
+      <Row
+        label="robots.txt"
+        status={robotsBad ? 'fail' : blocked || robots.blockedAssets ? 'warn' : 'ok'}
+      >
+        {robots.blocksSite
+          ? 'Blocks the whole site'
+          : robots.state === 'error'
+            ? 'Server error'
+            : robots.state === 'missing'
+              ? 'Not found (everything may be crawled)'
+              : blocked
+                ? `Blocks ${blocked} main pages`
+                : 'Allows the main pages'}
+      </Row>
+      <Row
+        label="Sitemap"
+        status={sitemapBad ? 'fail' : sitemap.missingPages.length ? 'warn' : 'ok'}
+      >
+        {sitemap.urls
+          ? `${sitemap.urls} pages listed${sitemap.missingPages.length ? `, ${sitemap.missingPages.length} main pages missing` : ''}`
+          : 'No readable sitemap'}
+      </Row>
+    </Block>
+  )
+}
+
 export function Summary({ onPage }: { onPage: OnPageSection }) {
   const s = onPage.summary
   if (!s)
@@ -89,6 +122,7 @@ export function Summary({ onPage }: { onPage: OnPageSection }) {
           </Row>
         </Block>
       ) : null}
+      {onPage.access ? <Access access={onPage.access} /> : null}
       <Block title="Links, images and local">
         <Row
           label="Link text"

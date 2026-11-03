@@ -139,6 +139,22 @@ export interface OnPageSection {
   }
   local?: { mapEmbed: boolean; hoursText: boolean }
   orphans?: string[]
+  access?: {
+    robots: {
+      state: 'ok' | 'missing' | 'error'
+      blocksSite: boolean
+      blockedPages: string[]
+      blockedAssets: number
+    }
+    sitemap: {
+      declared: boolean
+      files: { url: string; state: string; urls: number }[]
+      urls: number
+      missingPages: string[]
+      badUrls: string[]
+      blocked: number
+    }
+  }
   summary?: {
     score: number
     critical: number

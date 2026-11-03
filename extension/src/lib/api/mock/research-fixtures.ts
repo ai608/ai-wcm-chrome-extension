@@ -605,6 +605,24 @@ export function buildAudit(id: string, domain: string, url: string, startedAt: D
       },
       local: { mapEmbed: strong, hoursText: strong },
       orphans: strong ? [] : [`${url}services/prp`],
+      access: {
+        robots: {
+          state: 'ok',
+          blocksSite: false,
+          blockedPages: strong ? [] : [`${url}services/prp`],
+          blockedAssets: 0,
+        },
+        sitemap: {
+          declared: strong,
+          files: [
+            { url: `${url}sitemap.xml`, state: strong ? 'ok' : 'missing', urls: strong ? 12 : 0 },
+          ],
+          urls: strong ? 12 : 0,
+          missingPages: [],
+          badUrls: [],
+          blocked: 0,
+        },
+      },
       essentials: [
         {
           key: 'title',

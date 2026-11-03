@@ -32,6 +32,8 @@ describe('On-page checks', () => {
     expect(screen.getByText('Same title as 1 other page(s)')).toBeDefined()
     expect(screen.getByText('Provider credentials')).toBeDefined()
     expect(screen.getByText('None linked')).toBeDefined()
+    expect(screen.getByText('Blocks 1 main pages')).toBeDefined()
+    expect(screen.getByText('No readable sitemap')).toBeDefined()
   })
 
   it('lists pages with issues first and shows a page’s issues when opened', async () => {
