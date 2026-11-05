@@ -5,13 +5,14 @@ from pathlib import Path
 from typing import Any
 
 import httpx
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.core.config import settings
 from app.core.dependencies import get_http_client, require_extension_access
 from app.core.exceptions import AppError
-from app.services import ghl
+from app.models.user import UserProfile
+from app.services import ghl, openrouter_usage
 
 router = APIRouter(dependencies=[Depends(require_extension_access)], tags=["ext"])
 
@@ -50,6 +51,40 @@ async def get_config() -> dict[str, Any]:
         "ghl_location_id": settings.GHL_SALES_LOCATION_ID,
         "booking_widget_url": settings.GHL_BOOKING_WIDGET_URL,
         "script_version": SCRIPT["version"],
+    }
+
+
+def _usd(micro: int) -> float:
+    return round(micro / 1_000_000, 4)
+
+
+@router.get("/admin/ai-usage")
+async def ai_usage(
+    request: Request,
+    refresh: bool = False,
+    profile: UserProfile = Depends(require_extension_access),
+    http: Http = Depends(get_http_client),
+) -> dict[str, Any]:
+    """AI spend of all users, for the Settings screen. Owners and admins only."""
+    if profile.role not in ("owner", "admin"):
+        raise AppError(403, "forbidden", "Only an owner or admin can see AI usage")
+    from app.api.v1 import research  # late: research imports this module's siblings
+
+    repo = research._repo(request)
+    live = await openrouter_usage.fetch(http, force=refresh)
+    tracked = await repo.ai_spend_summary()
+    return {
+        **live,
+        "tracked": {
+            "total_usd": _usd(tracked["total"]),
+            "today_usd": _usd(tracked["day"]),
+            "week_usd": _usd(tracked["week"]),
+            "month_usd": _usd(tracked["month"]),
+            "audits_usd": _usd(tracked["audits"]),
+            "ai_visibility_usd": _usd(tracked["ai_visibility"]),
+            "users": tracked["users"],
+        },
+        "fetched_at": datetime.now(UTC).isoformat(),
     }
 
 

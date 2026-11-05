@@ -13,6 +13,17 @@ MAX_FETCHES = 8
 MAX_URLS = 5000
 MAX_CHILDREN = 5
 CHECKED_URLS = 500
+# Crawlers whose block is worth a line in the report. Bing's index also feeds ChatGPT search.
+# The AI crawlers are named as their owners publish them; blocking one is a choice, so it is
+# reported with that wording and never as a failure of robots.txt.
+BING = "bingbot"
+AI_BOTS = {
+    "oai-searchbot": "OAI-SearchBot",
+    "gptbot": "GPTBot",
+    "claudebot": "ClaudeBot",
+    "perplexitybot": "PerplexityBot",
+    "google-extended": "Google-Extended",
+}
 LOC = re.compile(r"<loc>\s*(.*?)\s*</loc>", re.DOTALL)
 
 
@@ -141,10 +152,22 @@ def judge(
     site_blocked = blocked(rules, "/")
     hit_pages = [u for u in core if blocked(rules, _target(u))]
     hit_assets = [u for u in _assets(home_html, home) if blocked(rules, _target(u))]
+    bots: list[str] = []
     if site_blocked:
         found.append(("robots_blocks_site", ""))
-    elif hit_pages:
-        found.append(("robots_blocks_pages", str(len(hit_pages))))
+    else:
+        # A site-wide block of everyone is reported above; here only a bot singled out.
+        if hit_pages:
+            found.append(("robots_blocks_pages", str(len(hit_pages))))
+        if blocked(rules_for(raw["groups"], BING), "/"):
+            bots.append("Bingbot")
+            found.append(("robots_blocks_bing", ""))
+        names = [
+            n for a, n in AI_BOTS.items() if blocked(rules_for(raw["groups"], a), "/")
+        ]
+        if names:
+            bots += names
+            found.append(("robots_blocks_ai", ", ".join(names)))
     if hit_assets:
         found.append(("robots_blocks_assets", str(len(hit_assets))))
     listed = {norm(u) for u in raw["urls"]}
@@ -178,6 +201,7 @@ def judge(
             "state": raw["state"],
             "blocks_site": site_blocked,
             "blocked_pages": hit_pages[:10],
+            "blocked_bots": bots,
             "blocked_assets": len(hit_assets),
         },
         "sitemap": {

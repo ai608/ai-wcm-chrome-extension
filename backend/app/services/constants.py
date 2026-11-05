@@ -1,18 +1,3 @@
-"""Lookup tables for the website audit: who the clinic's vendors are and which services we know.
-
-Data only, no logic and no imports. Add a vendor or a service here and every part of the audit
-sees it: before this file, site_audit and site_crawl each kept their own booking list and the
-two had drifted apart (7 vendors against 12).
-
-Matching rules, so a new entry works the first time:
-- BOOKING and CHAT keys are matched against the LOWER-CASED page source: write them lower case.
-- TRUST words are matched against the lower-cased URL path, TRUST_LINK_TEXT against the
-  lower-cased text of a menu link.
-- SERVICES terms are matched against lower-cased URLs and text, with "-" read as a space.
-- PLATFORMS markers are matched against the RAW source (case matters), first match wins.
-- Tunable numbers (timeouts, caps) and scoring weights stay next to the code they tune.
-"""
-
 # Service name -> words that mean the clinic offers it. Order is the order of the report.
 SERVICES = {
     "Neurotoxins": ("botox", "dysport", "xeomin", "neurotoxin"),

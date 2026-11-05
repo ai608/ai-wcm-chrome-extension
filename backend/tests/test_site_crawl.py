@@ -236,6 +236,86 @@ async def test_reader_falls_back_to_firecrawl_within_its_cap(monkeypatch):
     )
 
 
+# The page SiteGround serves to a crawler it distrusts: HTTP 200, no title, no text, only a redirect.
+WALL = (
+    '<html><head><link rel="icon" href="data:;">'
+    '<meta http-equiv="refresh" content="0;/.well-known/sgcaptcha/?r=%2Fservices%2F"></head></html>'
+)
+CLOUDFLARE = "<html><head><title>Just a moment...</title></head><body>Checking your browser</body></html>"
+SHORT_REAL = (
+    "<html><head><title>Hormone Assessment | Renew</title></head>"
+    "<body><h1>Hormone Assessments</h1></body></html>"
+)
+LONG_WITH_CAPTCHA = (
+    "<html><head><title>Contact</title></head><body><p>"
+    + "Call us to book a visit today. " * 30
+    + "Please complete the captcha below.</p></body></html>"
+)
+
+
+@pytest.mark.parametrize(
+    ("html", "blocked"),
+    [
+        (WALL, True),
+        ("<html></html>", True),
+        (CLOUDFLARE, True),
+        (SHORT_REAL, False),  # short but real: audited as a thin page, never dropped
+        (LONG_WITH_CAPTCHA, False),  # a real page may mention a captcha
+        (RICH, False),
+    ],
+)
+def test_blocked_matches_bot_walls_and_empty_replies_but_not_short_real_pages(
+    html, blocked
+):
+    assert site_crawl._blocked(html) is blocked
+
+
+@pytest.mark.anyio
+async def test_reader_never_returns_a_bot_wall_as_the_page(monkeypatch):
+    pages = {f"{G}/wall": WALL, f"{G}/short": SHORT_REAL}
+
+    async def fetch(url, **_kw):
+        return pages[url], url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fetch)
+    read = site_crawl._Reader(
+        None, f"{G}/", direct=True
+    )  # no Firecrawl key: no fallback
+    assert await read(f"{G}/wall") == (None, "blocked")
+    assert await read(f"{G}/short") == (SHORT_REAL, "direct")
+
+
+@pytest.mark.anyio
+async def test_firecrawl_result_that_is_a_bot_wall_is_dropped_too(monkeypatch):
+    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_API_KEY", "fake")
+
+    async def fetch(url, **_kw):
+        return WALL, url
+
+    async def scrape(_http, _url):
+        return CLOUDFLARE
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fetch)
+    monkeypatch.setattr(site_crawl, "scrape", scrape)
+    read = site_crawl._Reader(None, f"{G}/", direct=True)
+    assert await read(f"{G}/x") == (None, "firecrawl")
+
+
+@pytest.mark.anyio
+async def test_crawl_reports_a_blocked_page_as_failed_and_never_audits_it(monkeypatch):
+    async def fetch(url, **_kw):
+        return (WALL if "iv-therapy" in url else RICH), url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fetch)
+    events, report = recorder()
+    _, pages, _, _ = await site_crawl.crawl(None, f"{G}/", MENU, "direct", report)
+    wall = f"{G}/iv-therapy/"
+    assert wall not in pages and f"{G}/peptide-therapy/" in pages
+    status, detail = events[f"page:{wall}"]
+    assert status == "failed" and detail["via"] == "blocked"
+    assert events["scrape"][1]["failed"] == 1
+
+
 def recorder():
     events: dict[str, tuple[str, dict]] = {}
 

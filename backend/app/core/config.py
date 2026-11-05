@@ -27,7 +27,24 @@ class Settings(BaseSettings):
     SCRIPT_MODEL: str = ""
     # Model that reads the crawled clinic pages (OpenRouter id).
     RESEARCH_MODEL: str = "anthropic/claude-sonnet-5.5"
+    # "Label=openrouter/model-id" pairs, comma separated, e.g.
+    # "ChatGPT=openai/gpt-4o-mini,Gemini=google/gemini-2.5-flash,Perplexity=perplexity/sonar".
+    # Empty turns AI visibility off.
     AI_VISIBILITY_MODELS: str = ""
+    # The judge: reads every AI answer and decides who was named, rank, position, link and
+    # sentiment (one call per answer). Also writes the report's questions and, when there are no
+    # local competitors, lists the businesses the answers name. Cheap is fine, but a weaker model
+    # misreads names more often. Empty uses SCRIPT_MODEL.
+    AI_VISIBILITY_JUDGE_MODEL: str = ""
+    # What one user's runs may cost in 24 hours. The next run is refused past this.
+    AI_VISIBILITY_DAILY_BUDGET_USD: float = Field(default=5.0, gt=0)
+    # Full report size. Calls = prompts x engines x repeats (plus one judge call per answer).
+    AI_VISIBILITY_FULL_PROMPTS: int = Field(default=12, ge=1, le=100)
+    AI_VISIBILITY_FULL_RUNS: int = Field(default=2, ge=1, le=5)
+    # A run that would make more answer calls than this is refused at start (typo guard).
+    AI_VISIBILITY_FULL_MAX_CALLS: int = Field(default=400, gt=0)
+    # One full run stops asking once it has spent this much; the result is then "partial".
+    AI_VISIBILITY_FULL_RUN_BUDGET_USD: float = Field(default=3.0, gt=0)
     FIRECRAWL_API_KEY: str = ""
     GOOGLE_PAGESPEED_API_KEY: str = ""
     APIFY_API_TOKEN: str = ""
@@ -41,11 +58,11 @@ class Settings(BaseSettings):
     # Site crawl and AI reading (see site_crawl.crawl). Change them in Railway, no code change;
     # a bad value (0 or negative) stops the app at start-up, not in the middle of an audit.
     # Pages read per audit.
-    CRAWL_MAX_PAGES: int = Field(default=40, gt=0)
+    CRAWL_MAX_PAGES: int = Field(default=60, gt=0)
     # Parallel reads against one clinic server.
     CRAWL_CONCURRENCY: int = Field(default=4, gt=0)
     # Reads stop after this many seconds; finished pages are kept.
-    CRAWL_BUDGET_S: float = Field(default=45.0, gt=0)
+    CRAWL_BUDGET_S: float = Field(default=60.0, gt=0)
     # A Firecrawl map slower than this is dropped.
     CRAWL_MAP_TIMEOUT_S: float = Field(default=20.0, gt=0)
     CRAWL_SITEMAP_WAIT_S: float = Field(default=10.0, gt=0)
@@ -57,7 +74,7 @@ class Settings(BaseSettings):
     # clinic pages: about 2.8 characters per token, so 160k characters is about 57k tokens
     # (roughly $0.12 input on Sonnet 5.5). Pages are never cut one by one; when the total runs
     # out, the last pages in reading order are cut, and those are the least important ones.
-    AI_MAX_PAGES: int = Field(default=40, gt=0)
+    AI_MAX_PAGES: int = Field(default=60, gt=0)
     AI_MAX_OUTPUT_TOKENS: int = Field(default=16000, gt=0)
     AI_TOTAL_CHARS: int = Field(default=160_000, gt=0)
 

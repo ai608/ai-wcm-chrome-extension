@@ -1,9 +1,3 @@
-"""Final weighted website score (TDD section 5). Pure: no network, no database.
-
-Runs once, after the whole audit (crawl, AI, GBP, PageSpeed) has finished. Every number a
-sales lead may want to tune is a module-level constant below.
-"""
-
 from collections.abc import Callable
 from datetime import UTC, date, datetime
 from typing import Any

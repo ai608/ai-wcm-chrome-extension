@@ -1,10 +1,3 @@
-"""Whole-site data for an audit: Firecrawl (map + scrape) and Apify (Google Business Profile).
-
-site_audit.analyze() only sees the home page. This module adds the rest of the site to the
-`site` and `convert` sections and fills `business.gbp`. Every provider call is optional:
-without a key, or on any provider error, the home-page result is kept as it is.
-"""
-
 import asyncio
 import html as html_lib
 import json
@@ -23,6 +16,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
 from app.core.exceptions import AppError
+from app.services import usage
 from app.services.constants import (
     BOOKING,
     CHAT,
@@ -91,6 +85,7 @@ async def map_site(http: httpx.AsyncClient, url: str) -> list[str]:
         timeout=60,
     )
     r.raise_for_status()
+    usage.record_firecrawl("map")
     links = r.json().get("links") or []
     home = _host(url)
     urls = [str(x.get("url") if isinstance(x, dict) else x) for x in links]
@@ -122,6 +117,7 @@ async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
         await asyncio.sleep(settings.CRAWL_RETRY_DELAY_S)
     if r.status_code >= 400:
         return None
+    usage.record_firecrawl("scrape")
     data = r.json().get("data") or {}
     html = data.get("rawHtml") or data.get("html")
     return html if isinstance(html, str) and html.strip() else None
@@ -470,12 +466,43 @@ def plan(
     return [u for name in by_tier for u in picked[name]], groups, mode
 
 
+# Words that bot-protection pages carry. SiteGround answers 200 with a 190-byte page that only
+# redirects to /.well-known/sgcaptcha/, so a page like that has a head and no title or text.
+BLOCK_MARKERS = (
+    "sgcaptcha",
+    "/cdn-cgi/challenge",
+    "cf-browser-verification",
+    "just a moment",
+    "attention required",
+    "_incapsula_",
+    "px-captcha",
+    "datadome",
+    "access denied",
+    "are you a robot",
+)
+BLOCKED_MAX_CHARS = 50  # no title and less visible text than this: nothing to audit
+
+
 def _visible_chars(html: str) -> int:
     doc = LexborHTMLParser(html)
     for tag in doc.css("script, style, noscript, svg"):
         tag.decompose()
     body = doc.css_first("body")
     return len(" ".join(body.text(separator=" ", strip=True).split())) if body else 0
+
+
+def _blocked(html: str) -> bool:
+    """True for a bot-protection or empty response that is not the clinic's page. A short REAL
+    page is not matched: it has a title or some text and is audited as a thin page. A long page
+    that mentions "captcha" in a contact form is never matched either."""
+    chars = _visible_chars(html)
+    if chars >= MIN_TEXT_CHARS:
+        return False
+    title = LexborHTMLParser(html).css_first("title")
+    if not (title and title.text(strip=True)) and chars < BLOCKED_MAX_CHARS:
+        return True
+    head = html[:6000].lower()
+    return any(marker in head for marker in BLOCK_MARKERS)
 
 
 class _Reader:
@@ -501,16 +528,21 @@ class _Reader:
                 return None, "direct"  # redirected off the site
             if html is not None and _visible_chars(html) >= MIN_TEXT_CHARS:
                 return html, "direct"
-            thin = html
+            # A bot-protection page is not the page: never audit it as if it were.
+            blocked = html is not None and _blocked(html)
+            thin = None if blocked else html
             if self.fallbacks <= 0:
-                return thin, "direct"
+                return thin, "blocked" if blocked else "direct"
             self.fallbacks -= 1
         elif not settings.FIRECRAWL_API_KEY:
             return None, "direct"
         try:
-            return await scrape(self.http, url) or thin, "firecrawl"
+            got = await scrape(self.http, url)
         except (httpx.HTTPError, ValueError):
-            return thin, "firecrawl"
+            got = None
+        if got and _blocked(got):
+            got = None
+        return got or thin, "firecrawl"
 
 
 def _why(exc: Exception) -> str:
@@ -1181,6 +1213,7 @@ def _gbp_from(p: dict[str, Any], reason: str, tried: list[str]) -> dict[str, Any
         "address": p.get("address"),
         "phone": p.get("phone"),
         "maps_url": p.get("url"),
+        "place_id": p.get("placeId"),
         "lat": loc.get("lat"),
         "lng": loc.get("lng"),
         "found_by": tried[-1],
@@ -1213,6 +1246,7 @@ async def gbp_lookup(
             timeout=120,
         )
         r.raise_for_status()
+        usage.record_apify()
         items = r.json()
         for p in items if isinstance(items, list) else []:
             site = p.get("website") or ""
@@ -1228,8 +1262,50 @@ async def gbp_lookup(
     return None, tried
 
 
+def _pick(
+    metrics: dict[str, Any], name: str, scale: float = 1.0
+) -> tuple[float | None, str | None]:
+    m = metrics.get(name) or {}
+    v = m.get("percentile")
+    return (None if v is None else v / scale), m.get("category")
+
+
+def _field(body: dict[str, Any]) -> dict[str, Any] | None:
+    """Real-visitor numbers (Chrome's CrUX) from a PageSpeed reply: this URL's if Google has
+    enough visits, else the whole site's. None when it has neither, which is normal for a small
+    clinic site. Each metric is its 75th-percentile value and Google's FAST/AVERAGE/SLOW verdict.
+    CrUX sends the layout shift multiplied by 100."""
+    for source, key in (
+        ("url", "loadingExperience"),
+        ("origin", "originLoadingExperience"),
+    ):
+        metrics = (body.get(key) or {}).get("metrics") or {}
+        if not metrics:
+            continue
+        lcp, lcp_c = _pick(metrics, "LARGEST_CONTENTFUL_PAINT_MS")
+        inp, inp_c = _pick(metrics, "INTERACTION_TO_NEXT_PAINT")
+        cls, cls_c = _pick(metrics, "CUMULATIVE_LAYOUT_SHIFT_SCORE", 100.0)
+        return {
+            "source": source,
+            "lcp_ms": lcp,
+            "lcp": lcp_c,
+            "inp_ms": inp,
+            "inp": inp_c,
+            "cls": cls,
+            "cls_category": cls_c,
+        }
+    return None
+
+
+def _passes(lh: dict[str, Any], audit: str) -> bool | None:
+    """True/False for a pass/fail Lighthouse audit; None when it did not run or does not apply."""
+    score = (lh.get("audits", {}).get(audit) or {}).get("score")
+    return None if score is None else score >= 1
+
+
 async def _psi_run(http: httpx.AsyncClient, url: str, strategy: str) -> dict[str, Any]:
-    """One PageSpeed Insights pass: Lighthouse scores (0-100) plus LCP and CLS."""
+    """One PageSpeed Insights pass: Lighthouse scores (0-100), LCP and CLS, whether touch targets
+    are big enough and zoom is allowed, and the real-visitor data when Google has it."""
     r = await http.get(
         PAGESPEED,
         params=[
@@ -1244,7 +1320,8 @@ async def _psi_run(http: httpx.AsyncClient, url: str, strategy: str) -> dict[str
         timeout=120,  # PSI runs a real Lighthouse pass; 30-60s is normal
     )
     r.raise_for_status()
-    lh = r.json()["lighthouseResult"]
+    body = r.json()
+    lh = body["lighthouseResult"]
 
     def score(key: str) -> int | None:
         value = (lh.get("categories", {}).get(key) or {}).get("score")
@@ -1261,6 +1338,11 @@ async def _psi_run(http: httpx.AsyncClient, url: str, strategy: str) -> dict[str
         "best_practices": score("best-practices"),
         "lcp_ms": None if lcp is None else round(lcp),
         "cls": None if cls is None else round(cls, 3),
+        # Lighthouse dropped its old tap-target and font-size audits; `target-size` and
+        # `meta-viewport` are the ones left that speak to phones.
+        "tap_targets_ok": _passes(lh, "target-size"),
+        "zoom_ok": _passes(lh, "meta-viewport"),
+        "field": _field(body),
     }
 
 
@@ -1300,5 +1382,8 @@ async def pagespeed(http: httpx.AsyncClient, url: str) -> dict[str, Any]:
         "best_practices": mobile["best_practices"],
         "lcp_ms": mobile["lcp_ms"],
         "cls": mobile["cls"],
+        "tap_targets_ok": mobile["tap_targets_ok"],
+        "zoom_ok": mobile["zoom_ok"],
+        "field": mobile["field"],
         "desktop": desktop,
     }

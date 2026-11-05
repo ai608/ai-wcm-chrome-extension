@@ -12,6 +12,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
 from app.core.exceptions import AppError
+from app.services import fetchlog
 from app.services.constants import (
     BOOKING,
     LOCAL_BUSINESS_TYPES,
@@ -157,7 +158,7 @@ async def _fetch_once(
 ) -> tuple[str, str]:
     current = url
     async with httpx.AsyncClient(trust_env=False, follow_redirects=False) as client:
-        for _ in range(6):
+        for hop in range(6):
             current, host = normalize_url(current)
             parts = urlsplit(current)
             port = parts.port or (443 if parts.scheme == "https" else 80)
@@ -193,6 +194,13 @@ async def _fetch_once(
                             float(wait) if wait.isdigit() else None,
                         )
                     if response.status_code >= 400:
+                        if "text/html" in accept:
+                            fetchlog.record(
+                                url,
+                                final=current,
+                                hops=hop,
+                                status=response.status_code,
+                            )
                         raise AppError(
                             422, "site_unreachable", "Website could not be fetched"
                         )
@@ -210,6 +218,16 @@ async def _fetch_once(
                                 422, "site_unreachable", "Website page is too large"
                             )
                         chunks.append(chunk)
+                    if (
+                        "text/html" in accept
+                    ):  # a page read, not robots.txt or a sitemap
+                        fetchlog.record(
+                            url,
+                            final=current,
+                            hops=hop,
+                            status=response.status_code,
+                            x_robots=response.headers.get("x-robots-tag"),
+                        )
                     return b"".join(chunks).decode(
                         response.encoding or "utf-8", "replace"
                     ), current

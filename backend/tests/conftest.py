@@ -2,7 +2,7 @@ import pytest
 
 from app.core.config import settings
 from app.core.exceptions import AppError
-from app.services import site_crawl
+from app.services import probes, site_crawl
 
 # Tests must never touch the real database or paid providers configured in .env.
 # Individual tests opt back in with their own fakes (e.g. GHL via MockTransport).
@@ -29,3 +29,11 @@ def _no_live_services(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AppError(422, "site_unreachable", "offline in tests")
 
     monkeypatch.setattr(site_crawl, "fetch_html", offline)
+
+    # The extra link/redirect probes make their own requests; none may leave the machine.
+    async def no_network(
+        *_args: object, **_kwargs: object
+    ) -> tuple[int, dict[str, str]]:
+        raise AppError(422, "site_unreachable", "offline in tests")
+
+    monkeypatch.setattr(probes, "_once", no_network)

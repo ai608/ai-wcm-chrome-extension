@@ -16,7 +16,6 @@ for method, path in (
     ("POST", "/contacts/{id}/enrich"),
     ("GET", "/contacts/{id}/history"),
     ("POST", "/research/audits/{id}/domain-overview"),
-    ("POST", "/research/audits/{id}/ai-visibility"),
     ("POST", "/research/audits/{id}/send"),
 ):
     router.add_api_route(path, unavailable, methods=[method])

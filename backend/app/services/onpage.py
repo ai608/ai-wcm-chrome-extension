@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlsplit
 import orjson
 from selectolax.lexbor import LexborHTMLParser
 
-from app.services import crawl_access, site_crawl
+from app.services import crawl_access, onpage_more, site_crawl
 from app.services.constants import (
     GENERIC_TITLES,
     LOCAL_BUSINESS_TYPES,
@@ -396,8 +396,11 @@ def _terms(url: str) -> set[str]:
     )
 
 
-def analyze_page(html: str, url: str, kind: str) -> dict[str, Any]:
-    """Title, description, headings, indexing and text facts of one page, with its issues."""
+def analyze_page(
+    html: str, url: str, kind: str, fetched: dict[str, Any] | None = None
+) -> dict[str, Any]:
+    """Title, description, headings, indexing and text facts of one page, with its issues.
+    `fetched` is what reading the URL revealed (redirects, X-Robots-Tag; see fetchlog)."""
     doc = _parse(html)
     core = kind in CORE
     title = _flat(doc.css_first("title"))
@@ -450,6 +453,16 @@ def analyze_page(html: str, url: str, kind: str) -> dict[str, Any]:
         found.append(_issue("js_only", core, url))
     if UGLY_URL.search(urlsplit(url).path + ("?" + (urlsplit(url).query or ""))):
         found.append(_issue("ugly_url", core, url))
+    found += onpage_more.page_checks(
+        html,
+        url,
+        title=title,
+        h1=_flat(h1s[0]) if h1s else "",
+        text=body,
+        core=core,
+        has_disclaimer=bool(DISCLAIMER.search(body)),
+        fetched=fetched,
+    )
     page["issues"] = [i for i in found if i]
     page["_text"] = body
     return page
@@ -503,6 +516,9 @@ def _add_duplicate_issues(
             new = _issue("duplicate_text", p["kind"] in CORE, u, detail=other)
             if new:
                 p["issues"].append(new)
+
+
+SITE_ISSUES.update(onpage_more.SITE_ISSUES)
 
 
 def _site_issue(key: str, detail: str = "") -> dict[str, Any]:
@@ -768,6 +784,45 @@ def _summary(issues: list[dict[str, Any]]) -> dict[str, Any]:
     }
 
 
+def _probe_summary(probes: dict[str, Any] | None) -> dict[str, Any]:
+    """What the extra requests did, for the panel. `ran` is False when they were skipped."""
+    if not probes:
+        return {"ran": False, "checked": 0, "timed_out": 0, "hosts": []}
+    return {
+        "ran": True,
+        "checked": probes.get("checked", 0),
+        "timed_out": probes.get("timed_out", 0),
+        "hosts": [
+            {k: h.get(k) for k in ("url", "status", "final", "hops")}
+            for h in probes.get("hosts", [])
+        ],
+    }
+
+
+SPEED_KEYS = frozenset(
+    {
+        "tap_targets_small",
+        "viewport_blocks_zoom",
+        "field_lcp_poor",
+        "field_inp_poor",
+        "field_cls_poor",
+    }
+)
+
+
+def add_speed_issues(sections: dict[str, Any]) -> None:
+    """Add what PageSpeed says about phones and real visitors to the issues, and score again.
+    PageSpeed runs next to the page checks and finishes at its own time, so this is called once
+    both are done. Calling it twice does not duplicate anything."""
+    on_page = sections.get("on_page") or {}
+    if "summary" not in on_page:
+        return
+    kept = [i for i in on_page.get("site_issues", []) if i["key"] not in SPEED_KEYS]
+    on_page["site_issues"] = kept + onpage_more.speed_issues(on_page.get("pagespeed"))
+    page_issues = [i for p in on_page.get("pages", []) for i in p["issues"]]
+    on_page["summary"] = _summary(page_issues + on_page["site_issues"])
+
+
 def run(
     sections: dict[str, Any],
     home: str,
@@ -775,8 +830,12 @@ def run(
     urls: list[str],
     menu: site_crawl.Menu,
     access: dict[str, Any] | None = None,
+    fetched: dict[str, dict[str, Any]] | None = None,
+    probes: dict[str, Any] | None = None,
 ) -> None:
-    """Add the per-page checks, duplicates, trust, local and schema checks to `sections`."""
+    """Add the per-page checks, duplicates, trust, local, schema, link, structure and image checks
+    to `sections`. `fetched` is what reading the pages revealed and `probes` the extra requests
+    (`probes.run`); either may be absent, and the checks that need it are then skipped."""
     on_page = sections["on_page"]
     home_html = pages[home]
     parsed = []
@@ -786,7 +845,7 @@ def run(
             if _path(url) == _path(home) and _host(url) == _host(home)
             else site_crawl.classify(url, menu)
         )
-        parsed.append(analyze_page(html, url, kind))
+        parsed.append(analyze_page(html, url, kind, (fetched or {}).get(url)))
     dups = _duplicates(parsed)
     _add_duplicate_issues(parsed, dups)
     link_info, image_info, local, issues = _home_checks(home_html, home)
@@ -803,6 +862,29 @@ def run(
     if orphans:
         issues.append(_site_issue("orphan_pages", str(len(orphans))))
     issues += trust_issues + schema_checks(sections, home_html)
+    kinds = {p["url"]: p["kind"] for p in parsed}
+    home_text = next((p["_text"] for p in parsed if p["kind"] == "home"), "")
+    service = [p for p in parsed if p["kind"] in ("service", "menu_child", "hub_child")]
+    link_check, link_issues = onpage_more.link_checks(fetched, probes)
+    structure, structure_issues = onpage_more.structure(
+        pages,
+        kinds,
+        home,
+        {site_crawl._key(u) for u in menu.top},
+        lambda u: site_crawl.classify(u, menu),
+    )
+    image_extra, image_issues = onpage_more.images_more(pages, probes)
+    issues += (
+        link_issues
+        + onpage_more.host_checks(probes)
+        + onpage_more.home_checks(home_html, probes)
+        + onpage_more.freshness([(p["_text"], pages[p["url"]]) for p in service])
+        + structure_issues
+        + onpage_more.locations(pages, kinds)
+        + onpage_more.providers(pages)
+        + onpage_more.schema_vs_page(home_html, home_text)
+        + image_issues
+    )
     if access:
         core = [home, *(u for u in urls if site_crawl.classify(u, menu) in CORE)]
         on_page["access"], found = crawl_access.judge(
@@ -819,5 +901,8 @@ def run(
     on_page["local"] = local
     on_page["orphans"] = orphans[:20]
     on_page["links"].update(link_info)
-    on_page["images"].update(image_info)
+    on_page["images"].update(image_info | image_extra)
+    on_page["link_check"] = link_check
+    on_page["structure"] = structure
+    on_page["probes"] = _probe_summary(probes)
     on_page["summary"] = _summary(page_issues + issues)

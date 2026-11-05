@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager, suppress
@@ -45,6 +46,11 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.pool = pool
     async with httpx.AsyncClient(timeout=10) as client:
         app.state.http_client = client
+        if pool is not None:  # carry on full AI reports a restart cut short
+            try:
+                await research.resume_full_runs(AuditRepository(pool), client)
+            except Exception:
+                logging.getLogger(__name__).exception("could not resume AI reports")
         prune_task = asyncio.create_task(prune_rate_limits())
         try:
             yield

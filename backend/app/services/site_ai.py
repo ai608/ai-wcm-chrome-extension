@@ -1,9 +1,3 @@
-"""AI reading of crawled clinic pages: service topics, providers, areas served, offers.
-
-Keyword checks in site_audit/site_crawl find *whether* pages exist. This pass reads what
-the pages *say*. One OpenRouter call per audit; on any error the keyword results stand.
-"""
-
 import json
 import logging
 import re
@@ -132,6 +126,7 @@ async def analyze(
         "\n\n".join(chunks),
         max_tokens=settings.AI_MAX_OUTPUT_TOKENS,
         model=settings.RESEARCH_MODEL,
+        purpose="Page analysis",
     )
 
 
