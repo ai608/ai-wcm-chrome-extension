@@ -284,6 +284,7 @@ const TRACE_LABEL: Record<string, string> = {
   pick: 'Choose pages to read',
   scrape: 'Read pages',
   enrich: 'Build site facts',
+  probe: 'Check links and redirects',
   ai: 'AI page analysis',
   gbp: 'Google Business Profile',
   psi: 'PageSpeed',
@@ -364,6 +365,7 @@ export function mockTrace(
         detail: { url },
       })),
       { id: 'enrich', start: 3700, end: 4000, detail: { pages: picked.length } },
+      { id: 'probe', start: 3700, end: 4000, detail: { checked: 31, timedOut: 0 } },
       { id: 'onpage', start: 4000, end: 4200, detail: { pages: picked.length + 1, score: 52 } },
       { id: 'ai', start: 4000, end: 5000, detail: { pages: picked.length } },
       { id: 'gbp', start: 5000, end: 5600, detail: { matched: true } },
@@ -403,6 +405,33 @@ export function mockTrace(
     }
   }
   if (elapsed >= 6000) {
+    out.push({
+      id: 'usage',
+      status: 'done',
+      label: 'Cost and tokens',
+      ms: 6000,
+      at: at(5990),
+      detail: {
+        calls: 1,
+        tokens: 117888,
+        promptTokens: 111291,
+        completionTokens: 6597,
+        costUsd: 0.1226,
+        lines: [
+          {
+            kind: 'ai',
+            label: 'Page analysis · claude-sonnet-5.5',
+            calls: 1,
+            tokens: 117888,
+            promptTokens: 111291,
+            completionTokens: 6597,
+            costUsd: 0.1226,
+          },
+          { kind: 'firecrawl', label: 'Firecrawl', calls: 11, note: '1 map, 10 scrapes' },
+          { kind: 'apify', label: 'Google Maps (Apify)', calls: 1 },
+        ],
+      },
+    })
     out.push({
       id: 'final',
       status: 'done',
@@ -954,20 +983,108 @@ export function competitorsFixture(query?: string, location?: string): LocalComp
 
 export function aiVisibilityFixture(strong: boolean, prompts: string[]): AiVisibility {
   const engines = ['ChatGPT', 'Gemini', 'Perplexity', 'Claude']
+  const rivals = ['Revive Medical Spa', 'Skin Lab Austin', 'The IV Bar']
+  const at = new Date().toISOString()
+  const results = engines.map((engine, i) => {
+    const cited = strong && i < 2
+    const excerpt = cited
+      ? 'For med spas in Austin, Glow Aesthetics Med Spa and Revive Medical Spa are frequently recommended for Botox and IV therapy…'
+      : 'Top-rated options include Revive Medical Spa, Skin Lab Austin and The IV Bar, known for neurotoxins and medical weight loss…'
+    const competitors = cited ? rivals.slice(0, 1) : rivals
+    return {
+      engine,
+      model: `mock/${engine.toLowerCase()}`,
+      cited,
+      mentioned: cited,
+      linked: cited && i === 0,
+      promptsMentioned: cited ? prompts.length : 0,
+      promptsTotal: prompts.length,
+      promptsFailed: 0,
+      citedBusinesses: competitors,
+      answerExcerpt: excerpt,
+      error: null,
+      answers: prompts.map((prompt) => ({
+        prompt,
+        ok: true,
+        mentioned: cited,
+        linked: cited && i === 0,
+        competitors,
+        excerpt,
+        error: null,
+      })),
+    }
+  })
   return {
+    version: 1,
+    brand: 'Glow Aesthetics Med Spa',
     prompts,
-    engines: engines.map((engine, i) => {
-      const cited = strong && i < 2
-      return {
-        engine,
-        cited,
-        citedBusinesses: cited
-          ? ['Glow Aesthetics Med Spa', 'Revive Medical Spa']
-          : ['Revive Medical Spa', 'Skin Lab Austin', 'The IV Bar'],
-        answerExcerpt: cited
-          ? 'For med spas in Austin, Glow Aesthetics Med Spa and Revive Medical Spa are frequently recommended for Botox and IV therapy…'
-          : 'Top-rated options include Revive Medical Spa, Skin Lab Austin and The IV Bar, known for neurotoxins and medical weight loss…',
-      }
-    }),
+    engines: results,
+    competitors: { source: 'local_competitors', names: rivals },
+    usage: {
+      calls: engines.length * prompts.length,
+      failed: 0,
+      tokens: 4800,
+      promptTokens: 4000,
+      completionTokens: 800,
+      costUsd: 0.0123,
+      ms: 6400,
+    },
+    log: [
+      {
+        id: 'prompts',
+        status: 'done',
+        label: 'Questions',
+        ms: null,
+        at,
+        detail: { count: prompts.length },
+      },
+      {
+        id: 'competitors',
+        status: 'done',
+        label: 'Competitors to compare',
+        ms: null,
+        at,
+        detail: { source: 'local_competitors', count: rivals.length },
+      },
+      ...results.map((r) => ({
+        id: `ask:${r.engine}:0`,
+        status: 'done' as const,
+        label: `${r.engine} · question 1`,
+        ms: 1800,
+        at,
+        detail: { mentioned: r.mentioned, linked: r.linked, tokens: 400, costUsd: 0.001 },
+      })),
+      {
+        id: 'usage',
+        status: 'done',
+        label: 'Cost and tokens',
+        ms: 6400,
+        at,
+        detail: {
+          calls: engines.length * prompts.length,
+          failed: 0,
+          tokens: 4800,
+          promptTokens: 4000,
+          completionTokens: 800,
+          costUsd: 0.0123,
+          byEngine: engines.map((engine, i) => ({
+            engine,
+            calls: prompts.length,
+            tokens: 1200,
+            promptTokens: 1000,
+            completionTokens: 200,
+            costUsd: [0.0012, 0.0021, 0.005, 0.004][i],
+          })),
+        },
+      },
+      {
+        id: 'final',
+        status: 'done',
+        label: 'AI visibility check',
+        ms: null,
+        at,
+        detail: { outcome: 'ready' },
+      },
+    ],
   }
 }

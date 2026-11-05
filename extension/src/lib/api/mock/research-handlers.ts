@@ -1,5 +1,10 @@
 import { ApiError } from '@/lib/api/errors'
 import {
+  aiQuestionsFixture,
+  aiReportFixture,
+  aiRunAnswersFixture,
+} from '@/lib/api/mock/ai-report-fixture'
+import {
   aiVisibilityFixture,
   buildAudit,
   competitorsFixture,
@@ -9,6 +14,8 @@ import {
   STRONG_DOMAIN,
 } from '@/lib/api/mock/research-fixtures'
 import type {
+  AiQuestions,
+  AiRunAnswers,
   Audit,
   ContactResearch,
   OnDemand,
@@ -16,6 +23,7 @@ import type {
   SectionKey,
   SendReportResult,
 } from '@/lib/api/research-types'
+import type { AiUsage } from '@/lib/api/types'
 
 interface Stored {
   full: Audit
@@ -185,6 +193,27 @@ export async function runAiVisibility(auditId: string, prompts: string[]): Promi
   )
 }
 
+export async function getAiQuestions(auditId: string): Promise<AiQuestions> {
+  await latency()
+  get(auditId)
+  return aiQuestionsFixture()
+}
+
+export async function runAiReport(auditId: string, _prompts?: string[]): Promise<Audit> {
+  await latency()
+  return startRun(auditId, 'ai', aiReportFixture(get(auditId).full.domain === STRONG_DOMAIN))
+}
+
+export async function getAiRunAnswers(
+  _runId: string,
+  engine?: string,
+  prompt?: number,
+  _offset?: number,
+): Promise<AiRunAnswers> {
+  await latency()
+  return aiRunAnswersFixture(engine, prompt)
+}
+
 export async function getReport(auditId: string): Promise<Report> {
   await latency()
   const audit = view(get(auditId))
@@ -216,6 +245,26 @@ export async function sendReport(
 }
 
 const contactAudit = new Map<string, string>()
+
+export async function getAiUsage(): Promise<AiUsage> {
+  await latency()
+  return {
+    configured: true,
+    account: { creditsUsd: 85, usedUsd: 74.7198, remainingUsd: 10.2802 },
+    key: { usedUsd: 28.5231, todayUsd: 4.9007, weekUsd: 11.2247, monthUsd: 11.2247, limitUsd: 250 },
+    errors: {},
+    tracked: {
+      totalUsd: 0.5564,
+      todayUsd: 0.5564,
+      weekUsd: 0.5564,
+      monthUsd: 0.5564,
+      auditsUsd: 0.1226,
+      aiVisibilityUsd: 0.4338,
+      users: 2,
+    },
+    fetchedAt: new Date().toISOString(),
+  }
+}
 
 export async function getContactResearch(contactId: string): Promise<ContactResearch> {
   await latency()

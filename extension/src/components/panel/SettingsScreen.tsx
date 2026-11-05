@@ -1,6 +1,7 @@
 import { ArrowLeft, LogOut, Monitor, Moon, Sun } from 'lucide-react'
 import { useState } from 'react'
 import { queryClient } from '@/app/providers'
+import { AiCreditsCard } from '@/components/panel/AiCreditsCard'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -101,6 +102,8 @@ export function SettingsScreen({ user }: { user: User }) {
               ))}
             </fieldset>
           </section>
+
+          {user.role === 'owner' || user.role === 'admin' ? <AiCreditsCard /> : null}
 
           <section aria-labelledby="settings-connection">
             <h2 id="settings-connection" className="mb-3 text-base font-semibold leading-6">

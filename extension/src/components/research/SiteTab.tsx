@@ -208,6 +208,7 @@ function Blog({ audit, b }: { audit: Audit; b: SiteSection['blog'] }) {
       <Button
         variant="outline"
         size="sm"
+        className="self-start"
         onClick={() =>
           downloadCsv(
             audit.domain,
@@ -243,6 +244,7 @@ function Trust({ audit, t }: { audit: Audit; t: SiteSection['trust'] }) {
       <Button
         variant="outline"
         size="sm"
+        className="self-start"
         onClick={() => downloadCsv(audit.domain, 'gap-inventory', toCsv(gapInventory(audit)))}
       >
         Export full gap inventory to CSV

@@ -1,5 +1,7 @@
+import { Globe, Star } from 'lucide-react'
 import { useState } from 'react'
-import { Block, Chip, StatBox, SubTabs } from '@/components/research/shared'
+import { AiReportPanel } from '@/components/research/AiReportPanel'
+import { Block, StatBox, SubTabs } from '@/components/research/shared'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -8,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { useRunOnDemand } from '@/hooks/research-queries'
 import type { Audit, OnDemand } from '@/lib/api/research-types'
 import { getEnv } from '@/lib/env'
+import { cn } from '@/lib/utils'
 import { usePanelStore } from '@/stores/panel-store'
 
 type Sub = 'domain' | 'local' | 'ai'
@@ -71,7 +74,10 @@ export function LocalCompetitorsForm({
 }) {
   const run = useRunOnDemand(audit.id, audit.domain)
   const [query, setQuery] = useState(defaultService(audit))
-  const [location, setLocation] = useState(defaultLocation(audit))
+  // With the clinic's coordinates, a blank location means "around the clinic" (what a nearby
+  // patient sees). A typed place always wins.
+  const near = audit.business?.gbp?.lat != null && audit.business?.gbp?.lng != null
+  const [location, setLocation] = useState(near ? '' : defaultLocation(audit))
   return (
     <form
       className="flex flex-col gap-2"
@@ -88,7 +94,17 @@ export function LocalCompetitorsForm({
       <Label htmlFor="lc-q">Search</Label>
       <Input id="lc-q" value={query} onChange={(e) => setQuery(e.target.value)} />
       <Label htmlFor="lc-l">Location</Label>
-      <Input id="lc-l" value={location} onChange={(e) => setLocation(e.target.value)} />
+      <Input
+        id="lc-l"
+        value={location}
+        placeholder={near ? 'Around the clinic' : 'City, State'}
+        onChange={(e) => setLocation(e.target.value)}
+      />
+      {near ? (
+        <p className="text-[12px] text-muted-foreground">
+          Blank searches within 8 km of the clinic. Type a city to search somewhere else.
+        </p>
+      ) : null}
       <Button type="submit" disabled={run.isPending}>
         Find competitors
       </Button>
@@ -103,52 +119,113 @@ export function LocalCompetitorsForm({
   )
 }
 
+function siteHref(website: string | null): string | null {
+  if (!website) return null
+  try {
+    const url = new URL(website)
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
 export function CompetitorList({
   data,
+  links = false,
 }: {
   data: import('@/lib/api/research-types').LocalCompetitors
+  /** Panel lists can open the listing's site. The printed report leaves this off. */
+  links?: boolean
 }) {
   const me = data.items.find((i) => i.isThisBusiness)
   return (
     <div className="flex flex-col gap-2">
       <p className="text-[13px] text-muted-foreground">
-        “{data.query}” in {data.location}
+        “{data.query}” {data.location.startsWith('within') ? data.location : `in ${data.location}`}
       </p>
-      <ol className="flex flex-col gap-1 text-[13px]">
-        {data.items.map((i) => (
-          <li
-            key={i.rank}
-            className={`rounded-md border px-2 py-1.5 ${i.isThisBusiness ? 'border-primary bg-primary/5' : 'border-border'}`}
-          >
-            {i.rank}. <span className="font-medium">{i.name}</span>
-            {i.rating != null ? ` · ★ ${i.rating} (${i.reviewCount ?? 0})` : ''}
-            {i.isThisBusiness ? <span className="ml-2 font-semibold">This clinic</span> : null}
-          </li>
-        ))}
+      <ol className="overflow-hidden rounded-lg border border-border">
+        {data.items.map((item) => {
+          const href = links ? siteHref(item.website) : null
+          return (
+            <li
+              key={item.rank}
+              className={cn(
+                'grid items-center gap-x-2 border-b border-border px-2.5 py-1.5 last:border-b-0',
+                links
+                  ? 'grid-cols-[1.25rem_minmax(0,1fr)_4.75rem_1.5rem]'
+                  : 'grid-cols-[1.25rem_minmax(0,1fr)_4.75rem]',
+                item.isThisBusiness &&
+                  'bg-primary/5 shadow-[inset_2px_0_0_0_var(--primary)]',
+              )}
+            >
+              <span
+                className={cn(
+                  'text-right text-[12px] font-medium tabular-nums',
+                  item.isThisBusiness ? 'text-primary' : 'text-muted-foreground',
+                )}
+              >
+                {item.rank}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[13px] font-medium leading-snug">{item.name}</p>
+                {item.isThisBusiness ? (
+                  <p className="text-[11px] font-medium leading-4 text-primary">This clinic</p>
+                ) : null}
+              </div>
+              <div className="flex flex-col items-end leading-4">
+                {item.rating != null ? (
+                  <>
+                    <p className="flex items-center gap-0.5 text-[12px] font-medium tabular-nums">
+                      <Star
+                        className="size-3 shrink-0 fill-accent-wcm text-accent-wcm"
+                        aria-hidden="true"
+                      />
+                      {item.rating}
+                    </p>
+                    <p className="whitespace-nowrap text-[11px] text-muted-foreground tabular-nums">
+                      {(item.reviewCount ?? 0).toLocaleString('en-US')} reviews
+                    </p>
+                  </>
+                ) : null}
+              </div>
+              {links ? (
+                href ? (
+                  <a
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                    aria-label="Visit site"
+                    className="inline-flex size-6 items-center justify-center justify-self-end rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <Globe className="size-3.5" aria-hidden="true" />
+                  </a>
+                ) : (
+                  <span className="size-6 justify-self-end" aria-hidden="true" />
+                )
+              ) : null}
+            </li>
+          )
+        })}
       </ol>
       {me ? null : (
-        <p className="text-[13px] text-destructive">Not in the top {data.items.length}.</p>
+        <p className="text-[13px] text-destructive">
+          Not found in the top {data.items.length}. The listing may use a different name or website.
+        </p>
       )}
+      <p className="text-[12px] text-muted-foreground">
+        Order of one Google Maps search, so the rank is approximate.
+      </p>
     </div>
   )
 }
 
 export function ResearchSubTabs({ audit }: { audit: Audit }) {
   const selected = usePanelStore((s) => s.researchSubTab.research) as Sub | undefined
-  const subs = getEnv().apiMock ? SUBS : SUBS.filter((item) => item.value === 'local')
+  const subs = getEnv().apiMock ? SUBS : SUBS.filter((item) => item.value !== 'domain')
   const sub = subs.some((item) => item.value === selected) ? selected : subs[0]?.value
   const setSub = usePanelStore((s) => s.setResearchSubTab)
   const run = useRunOnDemand(audit.id, audit.domain)
   const r = audit.research
-  const [prompts, setPrompts] = useState(() => {
-    const svc = defaultService(audit)
-    const city = defaultLocation(audit).split(',')[0] || 'your city'
-    return [
-      `best ${svc} in ${city}`,
-      `who should I see for ${svc} near ${city}`,
-      `top rated ${svc} in ${city}`,
-    ]
-  })
   if (!r) return null
   return (
     <div className="flex flex-col gap-3">
@@ -203,67 +280,14 @@ export function ResearchSubTabs({ audit }: { audit: Audit }) {
             <LocalCompetitorsForm audit={audit} />
           ) : (
             <State od={r.localCompetitors} onRetry={() => run.mutate({ kind: 'local' })}>
-              {(d) => <CompetitorList data={d} />}
+              {(d) => <CompetitorList data={d} links />}
             </State>
           )}
         </Block>
       ) : null}
       {sub === 'ai' ? (
         <Block title="AI Visibility">
-          {r.aiVisibility.state === 'not_run' ? (
-            <form
-              className="flex flex-col gap-2"
-              onSubmit={(e) => {
-                e.preventDefault()
-                run.mutate({ kind: 'ai', prompts: prompts.filter((p) => p.trim()).slice(0, 3) })
-              }}
-            >
-              <p className="text-[13px] text-muted-foreground">
-                Asks ChatGPT, Gemini, Perplexity and Claude (via web search) and shows whether this
-                clinic is mentioned. ~20–40 s.
-              </p>
-              {prompts.map((p, i) => (
-                <Input
-                  // biome-ignore lint/suspicious/noArrayIndexKey: fixed three slots
-                  key={i}
-                  aria-label={`Prompt ${i + 1}`}
-                  value={p}
-                  onChange={(e) =>
-                    setPrompts(prompts.map((x, j) => (j === i ? e.target.value : x)))
-                  }
-                />
-              ))}
-              <Button type="submit" disabled={run.isPending}>
-                Check AI visibility
-              </Button>
-            </form>
-          ) : (
-            <State od={r.aiVisibility} onRetry={() => run.mutate({ kind: 'ai', prompts })}>
-              {(d) => (
-                <ul className="flex flex-col gap-2 text-[13px]">
-                  {d.engines.map((e) => (
-                    <li key={e.engine} className="rounded-md border border-border p-2">
-                      <div className="flex items-center gap-2">
-                        <span className="flex-1 font-medium">{e.engine}</span>
-                        <Chip tone={e.cited ? 'good' : 'bad'}>
-                          {e.cited ? '✓ Cited' : '✗ Not cited'}
-                        </Chip>
-                      </div>
-                      {e.citedBusinesses.length ? (
-                        <p className="mt-1 text-muted-foreground">
-                          Mentioned instead: {e.citedBusinesses.join(', ')}
-                        </p>
-                      ) : null}
-                      <details className="mt-1">
-                        <summary className="cursor-pointer text-[12px]">Answer excerpt</summary>
-                        <p className="mt-1 text-[12px] text-muted-foreground">{e.answerExcerpt}</p>
-                      </details>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </State>
-          )}
+          <AiReportPanel audit={audit} />
         </Block>
       ) : null}
     </div>

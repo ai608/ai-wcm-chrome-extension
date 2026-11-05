@@ -62,7 +62,7 @@ function Cards({ audit }: { audit: Audit }) {
       )}
       <Block title="Local competitors">
         {research?.localCompetitors.state === 'ready' && research.localCompetitors.data ? (
-          <CompetitorList data={research.localCompetitors.data} />
+          <CompetitorList data={research.localCompetitors.data} links />
         ) : research?.localCompetitors.state === 'running' ? (
           <Skeleton className="h-16 w-full" />
         ) : (

@@ -54,7 +54,10 @@ export default defineConfig({
       name: mode === 'production' ? 'WCM Sales Assistant' : 'WCM Sales Assistant (dev)',
       description: 'Call script, history and research for WCM SDRs inside GoHighLevel.',
       permissions: ['sidePanel', 'storage', 'tabs'],
-      host_permissions: [`https://${ghlHost}/*`, `${apiOrigin}/*`],
+      host_permissions: [
+        ...ghlHost.split(',').map((h) => `https://${h.trim()}/*`),
+        `${apiOrigin}/*`,
+      ],
       externally_connectable: {
         matches: [`${o1WebUrl.protocol}//${o1WebUrl.hostname}/*`],
       },

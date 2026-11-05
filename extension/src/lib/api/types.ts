@@ -8,6 +8,35 @@ export interface User {
   hasExtensionAccess: boolean
 }
 
+/**
+ * OpenRouter spend of all users (owners and admins only). `account` is the whole OpenRouter
+ * account, so it also counts other keys and apps. `key` is this backend's key: the all-users
+ * total of this app. `tracked` is what the app recorded itself, by feature, since tracking began.
+ * A part that could not be read is null, with the reason in `errors`.
+ */
+export interface AiUsage {
+  configured: boolean
+  account: { creditsUsd: number; usedUsd: number; remainingUsd: number } | null
+  key: {
+    usedUsd: number | null
+    todayUsd: number | null
+    weekUsd: number | null
+    monthUsd: number | null
+    limitUsd: number | null
+  } | null
+  errors: { account?: string; key?: string }
+  tracked: {
+    totalUsd: number
+    todayUsd: number
+    weekUsd: number
+    monthUsd: number
+    auditsUsd: number
+    aiVisibilityUsd: number
+    users: number
+  }
+  fetchedAt: string
+}
+
 export interface Config {
   ghlLocationId: string
   bookingWidgetUrl: string

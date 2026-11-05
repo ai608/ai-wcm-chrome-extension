@@ -266,7 +266,7 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
                 <AlertDescription>{audit.error ?? 'The audit failed.'}</AlertDescription>
               </Alert>
             ) : null}
-            <AuditProgress audit={audit} />
+            <AuditProgress audit={audit} tab={researchTab} />
             {TABS.map((t) => (
               <TabsContent key={t.value} value={t.value}>
                 {t.value === 'overview' ? (

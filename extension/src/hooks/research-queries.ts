@@ -6,6 +6,8 @@ import { call } from '@/lib/messaging'
 
 export const POLL_MS = 2000
 export const POLL_CAP_MS = 3 * 60_000
+/** A full AI report asks dozens of questions and runs for minutes. */
+export const REPORT_POLL_CAP_MS = 20 * 60_000
 
 export const rk = {
   audit: (id: string) => ['audit', id] as const,
@@ -18,7 +20,10 @@ const retryRule = (count: number, err: unknown) =>
   count < 1 && !(err instanceof ApiError && err.status >= 400 && err.status < 500)
 
 /** Poll interval while busy, stopping after POLL_CAP_MS. Returns [interval, timedOut]. */
-export function usePollWindow(busy: boolean): [number | false, boolean] {
+export function usePollWindow(
+  busy: boolean,
+  capMs: number = POLL_CAP_MS,
+): [number | false, boolean] {
   const [timedOut, setTimedOut] = useState(false)
   const started = useRef<number | null>(null)
   useEffect(() => {
@@ -30,11 +35,17 @@ export function usePollWindow(busy: boolean): [number | false, boolean] {
     if (started.current == null) started.current = Date.now()
     const t = setTimeout(
       () => setTimedOut(true),
-      Math.max(0, POLL_CAP_MS - (Date.now() - started.current)),
+      Math.max(0, capMs - (Date.now() - started.current)),
     )
     return () => clearTimeout(t)
-  }, [busy])
+  }, [busy, capMs])
   return [busy && !timedOut ? POLL_MS : false, busy && timedOut]
+}
+
+/** How long to keep polling: longer while a full AI report runs. */
+export function pollCapFor(audit: Audit | null | undefined): number {
+  const ai = audit?.research?.aiVisibility
+  return ai?.state === 'running' && ai.data?.kind === 'full' ? REPORT_POLL_CAP_MS : POLL_CAP_MS
 }
 
 export function useLatestAudit(domain: string | undefined) {
@@ -47,7 +58,7 @@ export function useLatestAudit(domain: string | undefined) {
     retry: retryRule,
   })
   const busy = auditBusy(query.data)
-  const [interval, timedOut] = usePollWindow(busy)
+  const [interval, timedOut] = usePollWindow(busy, pollCapFor(query.data))
   // poll by id so mutations on the audit land in the same cache entry
   const id = query.data?.id
   const poll = useQuery({
@@ -89,9 +100,8 @@ export function useRunOnDemand(auditId: string, domain: string) {
     onSuccess: (a) => {
       client.setQueryData(rk.latest(domain), a)
       client.setQueryData(rk.audit(auditId), a)
-      client.setQueriesData<{ audit: Audit | null }>(
-        { queryKey: ['contact'] },
-        (current) => current?.audit?.id === auditId ? { ...current, audit: a } : current,
+      client.setQueriesData<{ audit: Audit | null }>({ queryKey: ['contact'] }, (current) =>
+        current?.audit?.id === auditId ? { ...current, audit: a } : current,
       )
     },
   })
@@ -114,7 +124,7 @@ export function useContactResearch(contactId: string) {
   })
   const audit = query.data?.audit ?? null
   const busy = auditBusy(audit)
-  const [interval, timedOut] = usePollWindow(busy)
+  const [interval, timedOut] = usePollWindow(busy, pollCapFor(audit))
   useQuery({
     queryKey: rk.audit(audit?.id ?? ''),
     queryFn: async () => {

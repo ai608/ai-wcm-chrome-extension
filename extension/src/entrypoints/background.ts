@@ -211,6 +211,27 @@ function registerApiHandlers() {
       serializeError(err)
     }
   })
+  onMessage('getAiQuestions', async ({ data }) => {
+    try {
+      return await api.getAiQuestions(data.auditId)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('runAiReport', async ({ data }) => {
+    try {
+      return await api.runAiReport(data.auditId, data.prompts)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('getAiRunAnswers', async ({ data }) => {
+    try {
+      return await api.getAiRunAnswers(data.runId, data.engine, data.prompt, data.offset)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
   onMessage('getReport', async ({ data }) => {
     try {
       return await api.getReport(data.auditId)
@@ -221,6 +242,13 @@ function registerApiHandlers() {
   onMessage('sendReport', async ({ data }) => {
     try {
       return await api.sendReport(data.auditId, data.email, data.note)
+    } catch (err) {
+      serializeError(err)
+    }
+  })
+  onMessage('getAiUsage', async ({ data }) => {
+    try {
+      return await api.getAiUsage(data.refresh)
     } catch (err) {
       serializeError(err)
     }

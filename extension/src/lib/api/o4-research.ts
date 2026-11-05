@@ -1,8 +1,16 @@
 import * as z from 'zod/mini'
 import { request } from '@/lib/api/client'
 import { ApiError } from '@/lib/api/errors'
-import type { Audit, ContactResearch, Report, SendReportResult } from '@/lib/api/research-types'
+import type {
+  AiQuestions,
+  AiRunAnswers,
+  Audit,
+  ContactResearch,
+  Report,
+  SendReportResult,
+} from '@/lib/api/research-types'
 import { auditSchema, reportSchema } from '@/lib/api/schemas'
+import type { AiUsage } from '@/lib/api/types'
 
 const camel = (k: string) => k.replace(/_([a-z0-9])/g, (_, c: string) => c.toUpperCase())
 
@@ -77,6 +85,34 @@ export async function runAiVisibility(auditId: string, prompts: string[]): Promi
   )
 }
 
+/** Step 1: write the questions. Nothing is saved and no run starts. */
+export async function getAiQuestions(auditId: string): Promise<AiQuestions> {
+  return camelize(
+    await request<unknown>('POST', `${base(auditId)}/ai-visibility/questions`, {}),
+  ) as AiQuestions
+}
+
+/** Step 2: start the full report with the approved questions (a background job; poll the audit). */
+export async function runAiReport(auditId: string, prompts?: string[]): Promise<Audit> {
+  return parseAudit(
+    await request<unknown>('POST', `${base(auditId)}/ai-visibility/full`, { body: { prompts } }),
+  )
+}
+
+export async function getAiRunAnswers(
+  runId: string,
+  engine?: string,
+  prompt?: number,
+  offset = 0,
+): Promise<AiRunAnswers> {
+  const q = new URLSearchParams({ limit: '20', offset: String(offset) })
+  if (engine) q.set('engine', engine)
+  if (prompt != null) q.set('prompt', String(prompt))
+  return camelize(
+    await request<unknown>('GET', `/research/ai-visibility/runs/${runId}/answers?${q}`, {}),
+  ) as AiRunAnswers
+}
+
 export async function getReport(auditId: string): Promise<Report> {
   const c = camelize(await request<unknown>('GET', `${base(auditId)}/report`, {}))
   try {
@@ -100,6 +136,11 @@ export async function sendReport(
 function mapContactResearch(data: unknown): ContactResearch {
   const d = data as { audit: unknown | null; reason?: 'no_website' }
   return { audit: d.audit ? parseAudit(d.audit) : null, reason: d.reason }
+}
+
+export async function getAiUsage(refresh?: boolean): Promise<AiUsage> {
+  const raw = await request<unknown>('GET', `/admin/ai-usage${refresh ? '?refresh=true' : ''}`, {})
+  return camelize(raw) as AiUsage
 }
 
 export async function getContactResearch(contactId: string): Promise<ContactResearch> {

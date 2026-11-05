@@ -6,8 +6,9 @@ import {
   CircleXIcon,
   LoaderCircleIcon,
 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { SectionTitle } from '@/components/research/shared'
+import { UsageStep } from '@/components/research/UsageStep'
 import type { Audit, TraceEvent } from '@/lib/api/research-types'
 import { cn } from '@/lib/utils'
 
@@ -18,11 +19,13 @@ const STEPS: { id: string; label: string }[] = [
   { id: 'pick', label: 'Choose pages to read' },
   { id: 'scrape', label: 'Read pages' },
   { id: 'enrich', label: 'Build site facts' },
+  { id: 'probe', label: 'Check links and redirects' },
   { id: 'onpage', label: 'Check every page' },
   { id: 'ai', label: 'AI page analysis' },
   { id: 'gbp', label: 'Google Business Profile' },
   { id: 'psi', label: 'PageSpeed' },
   { id: 'score', label: 'Score the audit' },
+  { id: 'usage', label: 'Cost and tokens' },
 ]
 
 const GROUP_LABEL: Record<string, string> = {
@@ -86,6 +89,10 @@ function summary(step: string, e: TraceEvent, steps: Map<string, TraceEvent>): s
           : 'Fetched directly'
       return `${via}${size ? ` · ${Math.max(1, Math.round(size / 1024))} KB` : ''}`
     }
+    case 'probe': {
+      const late = num(d.timedOut) ?? 0
+      return `${num(d.checked) ?? 0} requests made${late > 0 ? `, ${late} not finished in time` : ''}`
+    }
     case 'onpage':
       return `${num(d.pages) ?? 0} pages checked, score ${num(d.score) ?? '-'}`
     case 'map':
@@ -129,11 +136,11 @@ function PickGroups({ event }: { event: TraceEvent }) {
     : []
   if (!groups.some((g) => g.found > 0)) return null
   return (
-    <details className="group mt-1.5 text-[12px]">
-      <summary className="flex cursor-pointer list-none items-center gap-1 text-primary [&::-webkit-details-marker]:hidden">
+    <details className="group/pages mt-1.5 text-[12px]">
+      <summary className="flex cursor-pointer list-none items-center gap-1 text-primary [&::-webkit-details-marker]:hidden [&::marker]:content-none">
         <ChevronRightIcon
           aria-hidden="true"
-          className="size-3.5 shrink-0 transition-transform duration-200 group-open:rotate-90"
+          className="size-3.5 shrink-0 transition-transform duration-200 group-open/pages:rotate-90"
         />
         Show chosen pages
       </summary>
@@ -161,21 +168,71 @@ function PickGroups({ event }: { event: TraceEvent }) {
   )
 }
 
+/** How many read-page rows stay on screen. Older rows slide up and out. */
+const PAGE_QUEUE = 5
+
 function Pages({ steps }: { steps: Map<string, TraceEvent> }) {
   const pages = [...steps.values()].filter((e) => e.id.startsWith('page:'))
+  const frameRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLUListElement>(null)
+  const signature = pages.map((p) => `${p.id}\0${p.status}\0${p.ms ?? ''}`).join('\n')
+
+  useLayoutEffect(() => {
+    const frame = frameRef.current
+    const list = listRef.current
+    if (!frame || !list) return
+
+    const placeQueue = () => {
+      const items = [...list.children] as HTMLElement[]
+      if (items.length === 0 || signature.length === 0) return
+      // First-seen order, so the window is the newest PAGE_QUEUE rows (FIFO).
+      // Rects stay correct after the list is translated, because the shift cancels out.
+      const start = Math.max(0, items.length - PAGE_QUEUE)
+      const first = items[start]
+      if (!first) return
+      const top = Math.max(0, first.getBoundingClientRect().top - list.getBoundingClientRect().top)
+      const height = list.scrollHeight - top
+      // A closed ancestor lays out at 0. ResizeObserver fits the window once it opens.
+      if (height <= 0) return
+      const nextHeight = `${height}px`
+      const nextTransform = top > 0 ? `translateY(-${top}px)` : ''
+      if (frame.style.height !== nextHeight) frame.style.height = nextHeight
+      if (list.style.transform !== nextTransform) list.style.transform = nextTransform
+    }
+
+    placeQueue()
+    const observer = new ResizeObserver(placeQueue)
+    observer.observe(list)
+    return () => observer.disconnect()
+  }, [signature])
+
   if (pages.length === 0) return null
   return (
-    <ul className="mt-1.5 flex flex-col gap-1 text-[12px]">
-      {pages.map((p) => (
-        <li key={p.id} className="flex items-start gap-1.5">
-          <Icon status={p.status} />
-          <span className="min-w-0 flex-1 break-all text-muted-foreground">
-            {pathOf(text(p.detail.url) ?? p.label)}
-          </span>
-          <span className="shrink-0 text-muted-foreground tabular-nums">{duration(p.ms)}</span>
-        </li>
-      ))}
-    </ul>
+    <div
+      ref={frameRef}
+      data-page-queue={PAGE_QUEUE}
+      className="mt-1.5 overflow-hidden motion-safe:transition-[height] motion-safe:duration-300 motion-safe:ease-out"
+    >
+      <ul
+        ref={listRef}
+        aria-label="Latest pages read"
+        className="relative flex flex-col gap-1 text-[12px] motion-safe:transition-transform motion-safe:duration-300 motion-safe:ease-out"
+      >
+        {pages.map((p, i) => (
+          <li
+            key={p.id}
+            aria-hidden={i < pages.length - PAGE_QUEUE ? true : undefined}
+            className="flex items-start gap-1.5"
+          >
+            <Icon status={p.status} />
+            <span className="min-w-0 flex-1 break-all text-muted-foreground">
+              {pathOf(text(p.detail.url) ?? p.label)}
+            </span>
+            <span className="shrink-0 text-muted-foreground tabular-nums">{duration(p.ms)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -184,6 +241,11 @@ function Steps({ audit, busy }: { audit: Audit; busy: boolean }) {
   const rows: ReactNode[] = []
   for (const { id, label } of STEPS) {
     const e = steps.get(id)
+    if (id === 'usage') {
+      // Only once the audit has spent something; no "waiting" row for it while it runs.
+      if (e) rows.push(<UsageStep key="usage" event={e} />)
+      continue
+    }
     if (!e && !busy) continue
     const note = e ? summary(id, e, steps) : null
     rows.push(
@@ -248,9 +310,21 @@ function runTime(audit: Audit): number | null {
 }
 
 /** Live step list while the audit runs; a collapsed "How this audit ran" once it is over. */
-export function AuditProgress({ audit }: { audit: Audit }) {
+export function AuditProgress({ audit, tab }: { audit: Audit; tab?: string }) {
   const busy = audit.status === 'queued' || audit.status === 'running'
+  const [open, setOpen] = useState(audit.status === 'failed')
+  const seenTab = useRef(tab)
+
+  useEffect(() => {
+    if (seenTab.current === tab) return
+    seenTab.current = tab
+    setOpen(false)
+    console.info('[audit-progress] collapse', { tab })
+  }, [tab])
+
   if (!busy && audit.trace.length === 0) return null
+  // Research has its own "How this check ran". The audit trace only belongs on the other tabs.
+  if (!busy && tab === 'research') return null
   if (busy) {
     return (
       <section
@@ -265,10 +339,11 @@ export function AuditProgress({ audit }: { audit: Audit }) {
   return (
     <details
       aria-label="Audit progress"
-      open={audit.status === 'failed'}
-      className="audit-trace group mb-3 rounded-lg border border-border bg-muted/40 px-3 py-2"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+      className="audit-trace group mb-3 rounded-lg border border-border bg-card px-3 py-2 text-card-foreground"
     >
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] font-semibold text-muted-foreground [&::-webkit-details-marker]:hidden">
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[13px] font-semibold [&::-webkit-details-marker]:hidden">
         <ChevronRightIcon
           aria-hidden="true"
           className="size-4 shrink-0 transition-transform duration-200 group-open:rotate-90"

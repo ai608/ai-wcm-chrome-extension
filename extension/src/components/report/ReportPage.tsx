@@ -1,16 +1,17 @@
 import { CheckIcon, MinusIcon, XIcon } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { type ReactNode, useEffect } from 'react'
 import { CompetitorList } from '@/components/research/ResearchSubTabs'
-import { Chip, gradeClass } from '@/components/research/shared'
-import { Button } from '@/components/ui/button'
+import { gradeClass } from '@/components/research/shared'
 import { Progress } from '@/components/ui/progress'
-import { toast } from '@/components/ui/toast'
 import { useReport } from '@/hooks/research-queries'
 import { useAuth } from '@/hooks/use-auth'
+import { REPORT_PRINT_TYPE } from '@/lib/active-tab'
 import {
+  type BusinessSection,
   type CategoryKey,
   type CheckStatus,
   isLegacyOverview,
+  type OverviewCategory,
   type Report,
 } from '@/lib/api/research-types'
 import { formatDateTime } from '@/lib/time'
@@ -57,25 +58,22 @@ const FIX: Record<CategoryKey, [string, string]> = {
   ],
 }
 
-function Section({
-  title,
-  kicker,
-  children,
-}: {
-  title: string
-  kicker?: string
-  children: ReactNode
-}) {
+function barTone(score: number, goodAt = 80, midAt = 60): string {
+  if (score >= goodAt) return 'fill-good'
+  if (score >= midAt) return 'fill-mid'
+  return 'fill-bad'
+}
+
+function gradeTone(grade: string): string {
+  if (grade === 'A' || grade === 'B') return 'fill-good'
+  if (grade === 'C') return 'fill-mid'
+  return 'fill-bad'
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <section className="break-inside-avoid rounded-xl border border-border bg-card p-5 print:break-inside-avoid">
-      <div className="mb-3 border-b border-primary/20 pb-2">
-        {kicker ? (
-          <p className="text-[11px] font-semibold uppercase tracking-wider text-accent-wcm">
-            {kicker}
-          </p>
-        ) : null}
-        <h2 className="text-[16px] font-semibold text-primary">{title}</h2>
-      </div>
+    <section className="report-section">
+      <h2>{title}</h2>
       {children}
     </section>
   )
@@ -83,17 +81,37 @@ function Section({
 
 function Tile({ value, label, tone }: { value: ReactNode; label: string; tone?: 'good' | 'bad' }) {
   return (
-    <div className="flex-1 break-inside-avoid rounded-lg border border-border px-3 py-2.5 text-center print:break-inside-avoid">
-      <p
-        className={cn(
-          'text-2xl font-semibold leading-tight',
-          tone === 'good' && 'text-success',
-          tone === 'bad' && 'text-destructive',
-        )}
-      >
+    <div className="report-tile">
+      <strong className={cn(tone === 'good' && 'tone-good', tone === 'bad' && 'tone-bad')}>
         {value}
-      </p>
-      <p className="text-[12px] text-muted-foreground">{label}</p>
+      </strong>
+      <span>{label}</span>
+    </div>
+  )
+}
+
+function ScoreLines({ categories }: { categories: OverviewCategory[] }) {
+  return (
+    <div className="report-scores">
+      {categories.map((c) =>
+        c.score == null || c.grade == null ? (
+          <div key={c.key} className="report-row report-grade-line">
+            <span>{c.label}</span>
+            <span className="report-muted report-grade-skip">Not assessed</span>
+          </div>
+        ) : (
+          <div key={c.key} className="report-row report-grade-line">
+            <span>{c.label}</span>
+            <span className="report-grade-meter" aria-hidden="true">
+              <span
+                className={cn(barTone(c.score, 75, 60), EXACT)}
+                style={{ width: `${c.score}%` }}
+              />
+            </span>
+            <span className="report-grade-letter">{c.grade}</span>
+          </div>
+        ),
+      )}
     </div>
   )
 }
@@ -105,13 +123,61 @@ function Mark({ status }: { status: CheckStatus }) {
       role="img"
       aria-label={status}
       className={cn(
-        'mt-0.5 flex size-4 shrink-0 items-center justify-center rounded-full text-white',
-        status === 'ok' ? 'bg-success' : status === 'warn' ? 'bg-accent-wcm' : 'bg-destructive',
+        'report-mark',
+        status === 'ok' ? 'fill-good' : status === 'warn' ? 'fill-mid' : 'fill-bad',
         EXACT,
       )}
     >
-      <Icon className="size-3" strokeWidth={3} />
+      <Icon className="size-2.5" strokeWidth={3} />
     </span>
+  )
+}
+
+function GbpCard({ gbp }: { gbp: NonNullable<BusinessSection['gbp']> }) {
+  const checks: { key: string; label: string; status: CheckStatus }[] = [
+    {
+      key: 'claimed',
+      label: gbp.verified ? 'Claimed' : 'Not claimed',
+      status: gbp.verified ? 'ok' : 'fail',
+    },
+    {
+      key: 'link',
+      label: gbp.websiteLinksToGbp ? 'Site links to profile' : 'Site does not link to profile',
+      status: gbp.websiteLinksToGbp ? 'ok' : 'fail',
+    },
+    {
+      key: 'reviews',
+      label: gbp.reviewLinkOnSite ? 'Review link on site' : 'No review link on site',
+      status: gbp.reviewLinkOnSite ? 'ok' : 'fail',
+    },
+  ]
+  const place = [gbp.address, gbp.phone].filter(Boolean).join(' · ')
+  return (
+    <div className="report-gbp">
+      <div className="report-gbp-head">
+        <div className="min-w-0">
+          {gbp.name ? <p className="report-gbp-name">{gbp.name}</p> : null}
+          {gbp.primaryCategory ? <p className="report-gbp-cat">{gbp.primaryCategory}</p> : null}
+          {place ? <p>{place}</p> : null}
+        </div>
+        {gbp.rating != null ? (
+          <div className="report-gbp-rating">
+            <p className="report-score">
+              {gbp.rating} <span aria-hidden="true">★</span>
+            </p>
+            <p>{gbp.reviewCount ?? 0} Google reviews</p>
+          </div>
+        ) : null}
+      </div>
+      <ul className="report-gbp-checks">
+        {checks.map((c) => (
+          <li key={c.key}>
+            <Mark status={c.status} />
+            <span>{c.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 
@@ -121,13 +187,13 @@ function CheckList({
   items: { key: string; label: string; status: CheckStatus; note?: string }[]
 }) {
   return (
-    <ul className="flex flex-col gap-1.5 text-[13px]">
+    <ul className="report-list">
       {items.map((c) => (
-        <li key={c.key} className="flex break-inside-avoid gap-2 print:break-inside-avoid">
+        <li key={c.key} className="report-row">
           <Mark status={c.status} />
           <span>
             {c.label}
-            {c.note ? <span className="text-muted-foreground"> · {c.note}</span> : null}
+            {c.note ? <span className="report-muted"> · {c.note}</span> : null}
           </span>
         </li>
       ))}
@@ -136,21 +202,14 @@ function CheckList({
 }
 
 function Meter({ label, value }: { label: string; value: number | null | undefined }) {
-  const tone =
-    value == null
-      ? ''
-      : value >= 90
-        ? 'bg-success'
-        : value >= 50
-          ? 'bg-accent-wcm'
-          : 'bg-destructive'
+  const tone = value == null ? '' : barTone(value, 90, 50)
   return (
-    <div className="flex-1 break-inside-avoid print:break-inside-avoid">
-      <div className="flex items-baseline justify-between text-[13px]">
-        <span className="text-muted-foreground">{label}</span>
+    <div className="report-row">
+      <div className="report-score-row">
+        <span className="report-muted">{label}</span>
         <span className="font-semibold">{value ?? '-'}</span>
       </div>
-      <Progress value={value ?? 0} className="mt-1" indicatorClassName={cn(tone, EXACT)} />
+      <Progress value={value ?? 0} className="report-track" indicatorClassName={cn(tone, EXACT)} />
     </div>
   )
 }
@@ -164,405 +223,353 @@ export function Body({ report }: { report: Report }) {
   const site = audit.site
   const r = audit.research
   const speed = audit.onPage?.pagespeed
-  const label = (k: CategoryKey) => o?.categories.find((c) => c.key === k)?.label ?? ''
+  // Every ranked gap. The offer still covers up to four categories.
+  const gaps = o?.topIssues ?? []
   const fixes = o
     ? [...new Set(o.topIssues.map((i) => i.category))].filter((k) => FIX[k]).slice(0, 4)
     : []
-  const found = site?.services.clusters.reduce((n, c) => n + c.found, 0) ?? 0
+  const when = formatDateTime(report.generatedAt)
+  const appendix = Boolean(
+    r?.domainOverview.data || r?.localCompetitors.data || r?.aiVisibility.data,
+  )
+
   return (
-    <div className="flex flex-col gap-4 print:block print:space-y-4">
-      <header
-        className={cn(
-          'flex break-inside-avoid items-center gap-3 rounded-xl bg-primary px-5 py-4 text-primary-foreground',
-          EXACT,
-        )}
-      >
-        <img src="/brand/logo-head-light.webp" alt="WCM" className="h-8 w-auto" />
-        <h1 className="flex-1 text-[18px] font-semibold">Website &amp; Local Visibility Report</h1>
-        <div className="text-right text-[13px]">
-          <p className="font-medium">{audit.domain}</p>
-          <p>{formatDateTime(report.generatedAt)}</p>
-        </div>
-      </header>
-
-      {o ? (
-        <section className="break-inside-avoid rounded-xl border border-border bg-card p-5 print:break-inside-avoid">
-          <div className="flex items-center gap-5">
-            <div
-              className={cn(
-                'flex size-24 shrink-0 items-center justify-center rounded-full text-5xl font-bold',
-                EXACT,
-                gradeClass(o.grade ?? 'F'),
-              )}
-            >
-              {o.grade}
-            </div>
-            <div>
-              <p className="text-[14px] text-muted-foreground">Prepared for {report.preparedFor}</p>
-              <p className="text-3xl font-semibold text-primary">Overall score: {o.score} / 100</p>
-              {o.provisional ? (
-                <p className="text-[12px] text-muted-foreground">
-                  {!legacy && reasons.length
-                    ? `Provisional: ${reasons.join('; ')}.`
-                    : 'Provisional: Google Business Profile not matched; GBP and reviews not scored.'}
-                </p>
-              ) : null}
-            </div>
-          </div>
-          <p className="mt-4 text-[14px] leading-relaxed">{report.intro}</p>
-          <div className="mt-4 flex gap-3">
-            {site ? (
-              <Tile
-                value={found}
-                label="Treatment pages found"
-                tone={found < 5 ? 'bad' : undefined}
-              />
-            ) : null}
-            {site ? (
-              <Tile
-                value={site.cities.pagesFound}
-                label="City pages"
-                tone={site.cities.pagesFound === 0 ? 'bad' : 'good'}
-              />
-            ) : null}
-            <Tile
-              value={gbp?.matched && gbp.rating != null ? `${gbp.rating} ★` : '-'}
-              label={gbp?.matched ? `${gbp.reviewCount ?? 0} Google reviews` : 'Google reviews'}
-            />
-            <Tile
-              value={speed?.mobilePerformance ?? '-'}
-              label="Mobile speed"
-              tone={
-                speed?.mobilePerformance == null
-                  ? undefined
-                  : speed.mobilePerformance >= 90
-                    ? 'good'
-                    : speed.mobilePerformance < 50
-                      ? 'bad'
-                      : undefined
-              }
-            />
-          </div>
-        </section>
-      ) : null}
-
-      {o ? (
-        <Section title="Where the score comes from">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-3 print:grid">
-            {[...o.categories]
-              .sort((x, y) => Number(x.score == null) - Number(y.score == null))
-              .filter((c) => !legacy || c.key !== 'getting_the_call')
-              .map((c) =>
-                c.score == null ? (
-                  <div
-                    key={c.key}
-                    className="flex items-baseline justify-between gap-3 text-[13px] text-muted-foreground"
-                  >
-                    <span className="font-medium">{c.label}</span>
-                    <span className="shrink-0">Not assessed</span>
-                  </div>
-                ) : (
-                  <div key={c.key} className="break-inside-avoid print:break-inside-avoid">
-                    <div className="flex items-baseline justify-between gap-3 text-[13px]">
-                      <span className="font-medium">{c.label}</span>
-                      <span className="shrink-0 font-semibold">
-                        {c.score} / 100 ({c.grade})
-                      </span>
+    <>
+      <table className="report-pages">
+        <thead>
+          <tr>
+            <td>
+              <div className="report-page-gap" />
+            </td>
+          </tr>
+        </thead>
+        <tfoot>
+          <tr>
+            <td>
+              <div className="report-page-gap report-page-gap-end" />
+            </td>
+          </tr>
+        </tfoot>
+        <tbody>
+          <tr className="report-banner">
+            <td>
+              <Masthead report={report} when={when} />
+            </td>
+          </tr>
+          <tr>
+            <td>
+              <div className="report-sheet">
+                {o ? (
+                  <div className="report-cover">
+                    <div className="report-stack">
+                      <div className="report-grade">
+                        <div
+                          className={cn(
+                            'report-grade-mark',
+                            gradeTone(o.grade ?? 'F'),
+                            EXACT,
+                            gradeClass(o.grade ?? 'F'),
+                          )}
+                        >
+                          {o.grade}
+                        </div>
+                        <div>
+                          <p className="report-score">Overall score: {o.score} / 100</p>
+                          {o.provisional ? (
+                            <p className="report-muted">
+                              {!legacy && reasons.length
+                                ? `Provisional: ${reasons.join('; ')}.`
+                                : 'Provisional: Google Business Profile not matched; GBP and reviews not scored.'}
+                            </p>
+                          ) : null}
+                          <p className="report-intro">{report.intro}</p>
+                        </div>
+                      </div>
+                      <Section title="Where the score comes from">
+                        <ScoreLines
+                          categories={o.categories.filter(
+                            (c) => !legacy || c.key !== 'getting_the_call',
+                          )}
+                        />
+                        <p className="report-footnote">
+                          {legacy
+                            ? 'Home page checks only. Google Business Profile and reviews are not scored yet.'
+                            : 'Weighted across nine categories. Categories without data are left out of the score.'}
+                        </p>
+                      </Section>
+                      {gaps.length ? (
+                        <section className="report-section">
+                          <h2>What’s costing them calls</h2>
+                          <ol className="report-issues">
+                            {gaps.map((i) => (
+                              <li key={i.title} className="report-row">
+                                <p className="font-semibold">{i.title}</p>
+                                <p className="report-muted">{i.detail}</p>
+                              </li>
+                            ))}
+                          </ol>
+                        </section>
+                      ) : null}
+                      <p className="report-bridge">
+                        The rest of this report shows where those gaps come from and how they get
+                        closed.
+                      </p>
                     </div>
-                    <Progress
-                      value={c.score}
-                      className="mt-1 print:border print:border-border"
-                      indicatorClassName={cn(
-                        c.score >= 80
-                          ? 'bg-success'
-                          : c.score >= 60
-                            ? 'bg-accent-wcm'
-                            : 'bg-destructive',
-                        EXACT,
-                      )}
-                    />
                   </div>
-                ),
-              )}
-          </div>
-          <p className="mt-3 text-[12px] text-muted-foreground">
-            {legacy
-              ? 'Home page checks only. Google Business Profile and reviews are not scored yet.'
-              : 'Weighted across nine categories. Categories without data are left out of the score.'}
-          </p>
-        </Section>
-      ) : null}
+                ) : null}
 
-      {o ? (
-        <Section title="What’s costing them calls" kicker="The biggest gaps first">
-          <ol className="flex flex-col gap-2.5">
-            {o.topIssues.map((i, n) => (
-              <li
-                key={i.title}
-                className={cn(
-                  'flex break-inside-avoid gap-3 rounded-lg border border-l-4 border-border bg-background px-3 py-2.5 print:break-inside-avoid',
-                  n < 3 ? 'border-l-destructive' : 'border-l-accent-wcm',
-                )}
-              >
-                <span
-                  className={cn(
-                    'flex size-6 shrink-0 items-center justify-center rounded-full text-[12px] font-bold text-white',
-                    n < 3 ? 'bg-destructive' : 'bg-accent-wcm',
-                    EXACT,
-                  )}
-                >
-                  {n + 1}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-[14px] font-semibold">{i.title}</p>
-                  <p className="text-[13px] text-muted-foreground">{i.detail}</p>
-                  {label(i.category) ? (
-                    <p className="mt-1 text-[11px] uppercase tracking-wide text-muted-foreground">
-                      {label(i.category)}
-                    </p>
-                  ) : null}
-                </div>
-              </li>
-            ))}
-          </ol>
-        </Section>
-      ) : null}
+                {o ? (
+                  <div className="report-offer">
+                    <div className="report-stack">
+                      {fixes.length ? (
+                        <section className="report-callout">
+                          <h2>How we fix it</h2>
+                          <ol className="report-fixes">
+                            {fixes.map((k) => (
+                              <li key={k} className="report-row">
+                                <span className="font-semibold">{FIX[k][0]}</span> {FIX[k][1]}
+                              </li>
+                            ))}
+                          </ol>
+                        </section>
+                      ) : null}
+                      <p className="report-why">
+                        <span className="font-semibold">Why this matters: </span>
+                        when someone searches for a treatment, they call the clinic that shows up
+                        first and looks trustworthy. Every gap in this report is a share of those
+                        calls going to a competitor. Closing them is how more of those calls reach
+                        this clinic.
+                      </p>
+                    </div>
+                  </div>
+                ) : null}
 
-      {site ? (
-        <Section title="Treatment pages" kicker="What patients can find">
-          {site.pagesCrawled <= 1 ? (
-            <p className="mb-2 text-[12px] text-muted-foreground">
-              Home page mentions only. Full crawl needed for complete coverage.
-            </p>
-          ) : null}
-          <ul>
-            {site.services.clusters.map((c) => {
-              const checked = c.topicsPresent.length + c.topicsMissing.length > 0
-              return (
-                <li
-                  key={c.service}
-                  className="grid break-inside-avoid grid-cols-[1fr_auto] gap-x-4 border-t border-border py-2 first:border-t-0 print:break-inside-avoid"
-                >
-                  <div>
-                    <p className="text-[14px] font-medium">{c.service}</p>
-                    {checked && c.topicsMissing.length ? (
-                      <div className="mt-1 flex flex-wrap items-center gap-1">
-                        <span className="text-[12px] text-muted-foreground">Missing:</span>
-                        {c.topicsMissing.slice(0, 4).map((t) => (
-                          <Chip key={t} tone="bad">
-                            {t}
-                          </Chip>
-                        ))}
-                        {c.topicsMissing.length > 4 ? (
-                          <span className="text-[12px] text-muted-foreground">
-                            +{c.topicsMissing.length - 4} more
-                          </span>
+                <div className="report-evidence">
+                  <div className="report-stack">
+                    {site ? (
+                      <Section title="Treatment pages">
+                        {site.pagesCrawled <= 1 ? (
+                          <p className="report-footnote">
+                            Home page mentions only. Full crawl needed for complete coverage.
+                          </p>
+                        ) : null}
+                        <table className="report-table">
+                          <thead>
+                            <tr>
+                              <th>Treatment</th>
+                              <th>Coverage</th>
+                              <th>What’s missing</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {site.services.clusters.map((c) => {
+                              const checked = c.topicsPresent.length + c.topicsMissing.length > 0
+                              const missing = c.topicsMissing.slice(0, 4).join(', ')
+                              const extra =
+                                c.topicsMissing.length > 4 ? c.topicsMissing.length - 4 : 0
+                              return (
+                                <tr key={c.service}>
+                                  <td className="font-medium">{c.service}</td>
+                                  <td>
+                                    {site.pagesCrawled <= 1
+                                      ? 'Mentioned on home page'
+                                      : `${c.found}/${c.expected} pages`}
+                                  </td>
+                                  <td>
+                                    {checked && c.topicsMissing.length
+                                      ? `${missing}${extra ? ` +${extra} more` : ''}`
+                                      : checked
+                                        ? 'Answers every patient question'
+                                        : 'Not reviewed'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </Section>
+                    ) : null}
+
+                    {site ? (
+                      <Section title="Local reach">
+                        <p>
+                          {site.cities.pagesFound} service-area pages ·{' '}
+                          {site.cities.hubPage ? 'locations hub present' : 'no locations hub'}
+                        </p>
+                        {site.cities.claimedNotBuilt.length ? (
+                          <>
+                            <p className="report-muted">
+                              Cities the site says it serves, with no page of their own:{' '}
+                              {site.cities.claimedNotBuilt.join(', ')}.
+                            </p>
+                            <p className="report-footnote">
+                              Every city above is a search someone nearby is running right now.
+                            </p>
+                          </>
+                        ) : null}
+                      </Section>
+                    ) : null}
+
+                    {site || audit.convert ? (
+                      <div className={site && audit.convert ? 'report-split' : undefined}>
+                        {site ? (
+                          <Section title="Proof & trust">
+                            <CheckList
+                              items={site.trust.map((t) => ({
+                                key: t.key,
+                                label: t.label,
+                                status: t.status === 'found' ? 'ok' : 'fail',
+                              }))}
+                            />
+                          </Section>
+                        ) : null}
+                        {audit.convert ? (
+                          <Section title="Conversion checks">
+                            <CheckList items={audit.convert.checks} />
+                          </Section>
                         ) : null}
                       </div>
-                    ) : checked ? (
-                      <p className="text-[12px] text-success">Answers every patient question</p>
+                    ) : null}
+
+                    {gbp?.matched ? (
+                      <Section title="Google Business Profile">
+                        <GbpCard gbp={gbp} />
+                      </Section>
+                    ) : null}
+
+                    {audit.onPage?.summary ? (
+                      <Section title="On-page SEO">
+                        <div className="report-tiles">
+                          <Tile value={audit.onPage.summary.score} label="On-page score" />
+                          <Tile
+                            value={audit.onPage.summary.critical + audit.onPage.summary.high}
+                            label="Serious problems"
+                            tone={
+                              audit.onPage.summary.critical + audit.onPage.summary.high
+                                ? 'bad'
+                                : 'good'
+                            }
+                          />
+                          <Tile value={audit.onPage.pages?.length ?? 1} label="Pages checked" />
+                        </div>
+                        {audit.onPage.summary.topFixes.length ? (
+                          <ol className="report-fixes">
+                            {audit.onPage.summary.topFixes.slice(0, 5).map((f) => (
+                              <li key={f.key} className="report-row">
+                                <span className="font-semibold">{f.title}.</span> {f.detail}
+                              </li>
+                            ))}
+                          </ol>
+                        ) : (
+                          <p className="report-muted">No important on-page problems were found.</p>
+                        )}
+                        <p className="report-note">
+                          <span className="font-semibold">Why this matters: </span>
+                          Google reads the title, the heading and the text on each page. When those
+                          are missing or repeated, people searching for a treatment are less likely
+                          to find this clinic.
+                        </p>
+                      </Section>
+                    ) : null}
+
+                    {speed ? (
+                      <Section title="PageSpeed">
+                        <div className="report-speed">
+                          <p className="report-speed-label">Mobile</p>
+                          <div className="report-meters">
+                            <Meter label="Performance" value={speed.mobilePerformance} />
+                            <Meter label="SEO" value={speed.seo} />
+                            <Meter label="Accessibility" value={speed.accessibility} />
+                          </div>
+                        </div>
+                        {speed.desktop ? (
+                          <div className="report-speed">
+                            <p className="report-speed-label">Desktop</p>
+                            <div className="report-meters">
+                              <Meter label="Performance" value={speed.desktop.performance} />
+                              <Meter label="SEO" value={speed.desktop.seo} />
+                              <Meter label="Accessibility" value={speed.desktop.accessibility} />
+                            </div>
+                          </div>
+                        ) : null}
+                      </Section>
+                    ) : null}
+
+                    {appendix ? (
+                      <div className="report-appendix report-stack">
+                        {r?.domainOverview.data ? (
+                          <Section title="Domain overview">
+                            <div className="report-tiles">
+                              <Tile
+                                value={r.domainOverview.data.domainRating ?? '-'}
+                                label="Domain rating"
+                              />
+                              <Tile
+                                value={r.domainOverview.data.organicTraffic ?? '-'}
+                                label="Monthly traffic"
+                              />
+                              <Tile
+                                value={r.domainOverview.data.organicKeywords ?? '-'}
+                                label="Keywords"
+                              />
+                              <Tile
+                                value={r.domainOverview.data.backlinks ?? '-'}
+                                label="Backlinks"
+                              />
+                            </div>
+                          </Section>
+                        ) : null}
+                        {r?.localCompetitors.data ? (
+                          <Section title="Local competitors">
+                            <CompetitorList data={r.localCompetitors.data} />
+                          </Section>
+                        ) : null}
+                        {r?.aiVisibility.data ? (
+                          <Section title="AI visibility">
+                            <CheckList
+                              items={r.aiVisibility.data.engines.map((e) => ({
+                                key: e.engine,
+                                label: e.engine,
+                                status: e.cited ? 'ok' : 'fail',
+                                note: e.cited ? 'cited' : 'not cited',
+                              }))}
+                            />
+                          </Section>
+                        ) : null}
+                      </div>
                     ) : null}
                   </div>
-                  <span className="self-start text-[13px] font-medium text-muted-foreground">
-                    {site.pagesCrawled <= 1
-                      ? 'Mentioned on home page'
-                      : `${c.found}/${c.expected} pages`}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </Section>
-      ) : null}
-
-      {site ? (
-        <Section title="Local reach" kicker="Where patients search">
-          <p className="text-[13px]">
-            {site.cities.pagesFound} service-area pages ·{' '}
-            {site.cities.hubPage ? 'locations hub present' : 'no locations hub'}
-          </p>
-          {site.cities.claimedNotBuilt.length ? (
-            <>
-              <p className="mt-2 text-[12px] text-muted-foreground">
-                Cities the site says it serves, with no page of their own
-              </p>
-              <div className="mt-1 flex flex-wrap gap-1.5">
-                {site.cities.claimedNotBuilt.map((c) => (
-                  <Chip key={c} tone="bad">
-                    {c}
-                  </Chip>
-                ))}
+                </div>
               </div>
-              <p className="mt-2 text-[12px] text-muted-foreground">
-                Every city above is a search someone nearby is running right now.
-              </p>
-            </>
-          ) : null}
-        </Section>
-      ) : null}
-
-      <div className="grid grid-cols-2 gap-4 print:grid">
-        {site ? (
-          <Section title="Proof & trust">
-            <CheckList
-              items={site.trust.map((t) => ({
-                key: t.key,
-                label: t.label,
-                status: t.status === 'found' ? 'ok' : 'fail',
-              }))}
-            />
-          </Section>
-        ) : null}
-        {audit.convert ? (
-          <Section title="Conversion checks">
-            <CheckList items={audit.convert.checks} />
-          </Section>
-        ) : null}
-      </div>
-
-      {gbp?.matched ? (
-        <Section title="Google Business Profile">
-          <p className="text-[14px] font-medium">{gbp.name}</p>
-          <p className="text-[13px] text-muted-foreground">
-            {gbp.address} · {gbp.phone}
-          </p>
-          {gbp.rating != null ? (
-            <p className="mt-1 text-[13px]">
-              ★ {gbp.rating} ({gbp.reviewCount} Google reviews)
-            </p>
-          ) : null}
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            <Chip tone={gbp.verified ? 'good' : 'bad'}>
-              {gbp.verified ? 'Claimed' : 'Not claimed'}
-            </Chip>
-            <Chip tone={gbp.websiteLinksToGbp ? 'good' : 'bad'}>
-              {gbp.websiteLinksToGbp ? 'Site links to profile' : 'Site does not link to profile'}
-            </Chip>
-            <Chip tone={gbp.reviewLinkOnSite ? 'good' : 'bad'}>
-              {gbp.reviewLinkOnSite ? 'Review link on site' : 'No review link on site'}
-            </Chip>
-          </div>
-        </Section>
-      ) : null}
-
-      {audit.onPage?.summary ? (
-        <Section title="On-page SEO" kicker="What Google reads on each page">
-          <div className="mb-3 flex gap-3">
-            <Tile value={audit.onPage.summary.score} label="On-page score" />
-            <Tile
-              value={audit.onPage.summary.critical + audit.onPage.summary.high}
-              label="Serious problems"
-              tone={audit.onPage.summary.critical + audit.onPage.summary.high ? 'bad' : 'good'}
-            />
-            <Tile value={audit.onPage.pages?.length ?? 1} label="Pages checked" />
-          </div>
-          {audit.onPage.summary.topFixes.length ? (
-            <ol className="flex list-decimal flex-col gap-2 pl-5 text-[13px]">
-              {audit.onPage.summary.topFixes.slice(0, 5).map((f) => (
-                <li key={f.key}>
-                  <span className="font-semibold">{f.title}.</span> {f.detail}
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <p className="text-[13px] text-muted-foreground">
-              No important on-page problems were found.
-            </p>
-          )}
-        </Section>
-      ) : null}
-
-      {speed ? (
-        <Section title="PageSpeed (mobile)">
-          <div className="flex gap-6">
-            <Meter label="Performance" value={speed.mobilePerformance} />
-            <Meter label="SEO" value={speed.seo} />
-            <Meter label="Accessibility" value={speed.accessibility} />
-          </div>
-        </Section>
-      ) : null}
-
-      {r?.domainOverview.data ? (
-        <Section title="Domain overview">
-          <div className="flex gap-3">
-            <Tile value={r.domainOverview.data.domainRating ?? '-'} label="Domain rating" />
-            <Tile value={r.domainOverview.data.organicTraffic ?? '-'} label="Monthly traffic" />
-            <Tile value={r.domainOverview.data.organicKeywords ?? '-'} label="Keywords" />
-            <Tile value={r.domainOverview.data.backlinks ?? '-'} label="Backlinks" />
-          </div>
-        </Section>
-      ) : null}
-      {r?.localCompetitors.data ? (
-        <Section title="Local competitors">
-          <CompetitorList data={r.localCompetitors.data} />
-        </Section>
-      ) : null}
-      {r?.aiVisibility.data ? (
-        <Section title="AI visibility">
-          <CheckList
-            items={r.aiVisibility.data.engines.map((e) => ({
-              key: e.engine,
-              label: e.engine,
-              status: e.cited ? 'ok' : 'fail',
-              note: e.cited ? 'cited' : 'not cited',
-            }))}
-          />
-        </Section>
-      ) : null}
-
-      {fixes.length ? (
-        <section
-          className={cn(
-            'break-inside-avoid rounded-xl border border-primary/20 bg-primary/5 p-5 print:break-inside-avoid',
-            EXACT,
-          )}
-        >
-          <h2 className="border-b-2 border-primary pb-2 text-[13px] font-semibold uppercase tracking-wider text-primary">
-            How we fix it
-          </h2>
-          <ol className="mt-3 flex flex-col gap-3">
-            {fixes.map((k, n) => (
-              <li key={k} className="flex break-inside-avoid gap-3 print:break-inside-avoid">
-                <span
-                  className={cn(
-                    'flex size-7 shrink-0 items-center justify-center rounded-full bg-primary text-[13px] font-bold text-primary-foreground',
-                    EXACT,
-                  )}
-                >
-                  {n + 1}
-                </span>
-                <p className="text-[14px] leading-snug">
-                  <span className="font-semibold">{FIX[k][0]}</span> {FIX[k][1]}
-                </p>
-              </li>
-            ))}
-          </ol>
-        </section>
-      ) : null}
-
-      {o ? (
-        <section
-          className={cn(
-            'break-inside-avoid rounded-xl border border-primary/15 bg-primary/5 px-5 py-4 text-[13px] leading-relaxed print:break-inside-avoid',
-            EXACT,
-          )}
-        >
-          <span className="font-semibold text-primary">Why this matters: </span>
-          when someone searches for a treatment, they call the clinic that shows up first and looks
-          trustworthy. Every gap in this report is a share of those calls going to a competitor.
-          Closing them is how more of those calls reach this clinic.
-        </section>
-      ) : null}
-
-      <footer className="break-inside-avoid border-t-2 border-primary pt-3 text-[12px] text-muted-foreground print:break-inside-avoid">
-        <p className="font-semibold text-foreground">Wellness Clinic Marketing</p>
-        <p>
-          Prepared by {report.preparedBy} for {report.preparedFor} ·{' '}
-          {formatDateTime(report.generatedAt)}
-        </p>
-        {/* TODO: WCM contact details */}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+      <footer className="report-running">
+        <span>Wellness Clinic Marketing</span>
+        <span>{audit.domain}</span>
       </footer>
-    </div>
+    </>
+  )
+}
+
+function Masthead({ report, when }: { report: Report; when: string }) {
+  return (
+    <header className={cn('report-masthead', EXACT)}>
+      <div className="report-masthead-inner">
+        <div className="min-w-0 flex-1">
+          <h1>Website &amp; Local Visibility Report</h1>
+          <div className="report-meta">
+            <p className="font-medium">{report.audit.domain}</p>
+            <p>Prepared for {report.preparedFor}</p>
+            <p>{when}</p>
+          </div>
+        </div>
+        <span className="report-logo-lockup">
+          <img src="/brand/logo-head-light.webp" alt="WCM" className="report-logo" />
+        </span>
+      </div>
+    </header>
   )
 }
 
@@ -571,35 +578,43 @@ export function ReportPage() {
   const { user, isLoading } = useAuth()
   const report = useReport(user ? auditId : null)
 
+  useEffect(() => {
+    const onMessage = (message: unknown, _sender: unknown, sendResponse: (r: unknown) => void) => {
+      if (!message || typeof message !== 'object') return
+      const data = message as { type?: string; auditId?: string }
+      if (data.type !== REPORT_PRINT_TYPE || !data.auditId || data.auditId !== auditId) return
+      console.info('[report] pdf start', { auditId })
+      const root = document.querySelector('.report-pages')
+      if (!(root instanceof HTMLElement)) {
+        console.error('[report] pdf failed', { auditId, reason: 'report not ready' })
+        sendResponse({ ok: false })
+        return true
+      }
+      void import('@/lib/report-pdf')
+        .then(({ downloadReportPdf }) => downloadReportPdf(root))
+        .then(() => sendResponse({ ok: true }))
+        .catch((err: unknown) => {
+          console.error('[report] pdf failed', { auditId, err })
+          sendResponse({ ok: false })
+        })
+      return true
+    }
+    browser.runtime.onMessage.addListener(onMessage)
+    return () => browser.runtime.onMessage.removeListener(onMessage)
+  }, [auditId])
+
   return (
-    <div className="report-root mx-auto max-w-[820px] px-4 py-6 print:max-w-none print:px-[14mm] print:py-[12mm]">
-      <div className="mb-4 flex gap-2 print:hidden">
-        <Button onClick={() => window.print()}>Save as PDF</Button>
-        <Button
-          variant="outline"
-          onClick={() =>
-            navigator.clipboard
-              .writeText(auditId ?? '')
-              .then(() => toast('Copied'))
-              .catch(() => toast('Couldn’t copy'))
-          }
-        >
-          Copy link to audit
-        </Button>
-        <Button variant="ghost" onClick={() => window.close()}>
-          Close
-        </Button>
-      </div>
+    <div className="report-root">
       {!auditId ? (
-        <p>No audit selected.</p>
+        <p className="report-frame">No audit selected.</p>
       ) : isLoading ? (
-        <p>Loading…</p>
+        <p className="report-frame">Loading…</p>
       ) : !user ? (
-        <p>Sign in from the side panel, then reload.</p>
+        <p className="report-frame">Sign in from the side panel, then reload.</p>
       ) : report.isPending ? (
-        <p>Loading report…</p>
+        <p className="report-frame">Loading report…</p>
       ) : report.isError || !report.data ? (
-        <p>Couldn’t load the report.</p>
+        <p className="report-frame">Couldn’t load the report.</p>
       ) : (
         <Body report={report.data} />
       )}

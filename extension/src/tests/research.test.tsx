@@ -366,7 +366,9 @@ describe('Report page', () => {
       </Providers>,
     )
     await screen.findByText('Website & Local Visibility Report', undefined, { timeout: 5000 })
-    expect(container.querySelector('.print\\:hidden')).not.toBeNull()
-    expect(screen.getByText('Save as PDF').closest('.print\\:hidden')).not.toBeNull()
+    expect(screen.queryByText('Save as PDF')).toBeNull()
+    expect(screen.queryByText('Copy link to audit')).toBeNull()
+    expect(screen.queryByText(/turn off Headers and footers/)).toBeNull()
+    expect(container.querySelector('.report-pages')).not.toBeNull()
   })
 })

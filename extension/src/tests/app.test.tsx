@@ -152,6 +152,32 @@ describe('App view switch', () => {
     expect(screen.getAllByText('Call Mode').length).toBeGreaterThan(0)
   })
 
+  it('shows report actions in the panel while a report tab is open', async () => {
+    authState.user = USER
+    authState.isLoading = false
+    activeTab = {
+      tabId: 9,
+      url: 'chrome-extension://abc/report.html?audit=aud_9',
+      kind: 'report',
+      auditId: 'aud_9',
+    }
+    const sendMessage = vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((() =>
+      Promise.resolve({ ok: true })) as typeof fakeBrowser.runtime.sendMessage)
+    const remove = vi.spyOn(fakeBrowser.tabs, 'remove').mockResolvedValue(undefined)
+    const writeText = vi.fn(async () => {})
+    Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+    await renderApp()
+    expect(screen.getByText('Report', { exact: true })).toBeDefined()
+    expect(screen.getByRole('heading', { name: 'Report is ready' })).toBeDefined()
+    expect(screen.queryByText('Open a clinic website or a GHL contact')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Download as PDF' }))
+    expect(sendMessage).toHaveBeenCalledWith({ type: 'wcm-report-print', auditId: 'aud_9' })
+    fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
+    expect(writeText).toHaveBeenCalledWith('aud_9')
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+    expect(remove).toHaveBeenCalledWith(9)
+  })
+
   it('shows the unsupported screen on chrome:// pages', async () => {
     authState.user = USER
     authState.isLoading = false

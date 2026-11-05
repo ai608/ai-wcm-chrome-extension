@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AuditProgress, foldTrace } from '@/components/research/AuditProgress'
 import { buildAudit, mockTrace } from '@/lib/api/mock/research-fixtures'
@@ -50,8 +50,28 @@ describe('AuditProgress', () => {
     expect(screen.getByText('How this audit ran')).toBeTruthy()
     expect(screen.getByText('8 read, 1 failed')).toBeTruthy()
     expect(screen.getByText('Audit finished')).toBeTruthy()
-    expect(screen.getByText('Show chosen pages')).toBeTruthy()
+    const chosen = screen.getByText('Show chosen pages').closest('details')
+    expect(chosen?.className).toContain('group/pages')
+    expect(chosen?.querySelector('svg')?.getAttribute('class')).toContain(
+      'group-open/pages:rotate-90',
+    )
     expect(screen.queryByText('Audit progress')).toBeNull()
+  })
+
+  it('collapses when the tab changes', () => {
+    const a = audit({}, mockTrace('glowmedspa.com', 7000, false, started))
+    const { rerender, container } = render(<AuditProgress audit={a} tab="overview" />)
+    fireEvent.click(screen.getByText('How this audit ran'))
+    const details = container.querySelector('details') as HTMLDetailsElement
+    expect(details.open).toBe(true)
+    rerender(<AuditProgress audit={a} tab="business" />)
+    expect(details.open).toBe(false)
+  })
+
+  it('hides the finished trace on the Research tab', () => {
+    const a = audit({}, mockTrace('glowmedspa.com', 7000, false, started))
+    render(<AuditProgress audit={a} tab="research" />)
+    expect(screen.queryByText('How this audit ran')).toBeNull()
   })
 
   it('opens by default and marks the failed step when the audit failed', () => {
@@ -78,6 +98,34 @@ describe('AuditProgress', () => {
     expect(screen.getAllByLabelText('failed').length).toBe(2)
     expect(screen.getByText('Website could not be fetched')).toBeTruthy()
     expect(screen.getByText('Audit failed')).toBeTruthy()
+  })
+
+  it('keeps read pages in a five-row queue with no scrollbar', () => {
+    const pages: TraceEvent[] = Array.from({ length: 7 }, (_, i) => ({
+      id: `page:https://glowmedspa.com/p${i}`,
+      status: 'done',
+      label: `/p${i}`,
+      ms: 1000 + i,
+      at: `t${i}`,
+      detail: { url: `https://glowmedspa.com/p${i}` },
+    }))
+    render(
+      <AuditProgress
+        audit={audit({ status: 'running', finishedAt: null }, [
+          { id: 'scrape', status: 'running', label: 'Read pages', ms: null, at: 's', detail: {} },
+          ...pages,
+        ])}
+      />,
+    )
+    const queue = document.querySelector('[data-page-queue]')
+    expect(queue?.getAttribute('data-page-queue')).toBe('5')
+    expect(queue?.className).toContain('overflow-hidden')
+    expect(queue?.className).not.toContain('overflow-y-auto')
+    expect(screen.queryByText('Show all pages')).toBeNull()
+    expect(screen.getByText('/p0').closest('li')?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByText('/p1').closest('li')?.getAttribute('aria-hidden')).toBe('true')
+    expect(screen.getByText('/p2').closest('li')?.hasAttribute('aria-hidden')).toBe(false)
+    expect(screen.getByText('/p6').closest('li')?.hasAttribute('aria-hidden')).toBe(false)
   })
 
   it('shows why a step was skipped and renders nothing for an old audit without a trace', () => {

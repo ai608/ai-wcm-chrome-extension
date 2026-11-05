@@ -80,9 +80,9 @@ export function Chip({
       className={cn(
         'inline-block rounded-full border px-2 py-0.5 text-[12px]',
         tone === 'default' && 'border-border bg-muted text-foreground',
-        tone === 'good' && 'border-success/40 text-success',
-        tone === 'bad' && 'border-destructive/40 text-destructive',
-        tone === 'warn' && 'border-accent-wcm/40 text-accent-wcm',
+        tone === 'good' && 'border-success/40 bg-background text-success',
+        tone === 'bad' && 'border-destructive/40 bg-background text-destructive',
+        tone === 'warn' && 'border-accent-wcm/40 bg-background text-accent-wcm',
       )}
     >
       {children}

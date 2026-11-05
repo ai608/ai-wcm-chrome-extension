@@ -1,6 +1,9 @@
-import { parseGhlUrl } from '@/lib/ghl-url'
+import { isGhlHost, parseGhlUrl } from '@/lib/ghl-url'
 
-export type TabKind = 'ghl_contact' | 'ghl_other' | 'website' | 'unsupported'
+export type TabKind = 'ghl_contact' | 'ghl_other' | 'website' | 'report' | 'unsupported'
+
+/** Side panel asks the open report tab to save a PDF. Not part of the API protocol. */
+export const REPORT_PRINT_TYPE = 'wcm-report-print'
 
 export interface ActiveTab {
   tabId: number
@@ -10,6 +13,7 @@ export interface ActiveTab {
   contactId?: string
   origin?: string
   domain?: string
+  auditId?: string
 }
 
 const STORE_HOSTS = new Set(['chrome.google.com', 'chromewebstore.google.com'])
@@ -22,11 +26,15 @@ export function classifyTab(tabId: number, url: string, ghlHost: string): Active
   } catch {
     return { ...base, kind: 'unsupported' }
   }
+  if (parsed.protocol === 'chrome-extension:' && parsed.pathname.endsWith('/report.html')) {
+    const auditId = parsed.searchParams.get('audit')
+    if (auditId) return { ...base, kind: 'report', auditId }
+  }
   if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
     return { ...base, kind: 'unsupported' }
   }
   const host = parsed.hostname.toLowerCase()
-  if (host === ghlHost) {
+  if (isGhlHost(ghlHost, host)) {
     const ref = parseGhlUrl(url, ghlHost)
     return ref ? { ...base, kind: 'ghl_contact', ...ref } : { ...base, kind: 'ghl_other' }
   }

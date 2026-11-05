@@ -124,6 +124,29 @@ export interface OnPagePage {
   issues: OnPageIssue[]
 }
 
+/**
+ * Real-visitor data from Chrome (CrUX), 75th percentile with Google's FAST/AVERAGE/SLOW verdict.
+ * `source` says whether it is this page's or the whole site's. A small site has none (null).
+ */
+export interface PageField {
+  source: 'url' | 'origin'
+  lcpMs: number | null
+  lcp: string | null
+  inpMs: number | null
+  inp: string | null
+  cls: number | null
+  clsCategory: string | null
+}
+
+/** One internal link that was checked: where it ends up after redirects. */
+export interface LinkRow {
+  url: string
+  status: number | null
+  hops: number
+  final: string
+  foundOn: string | null
+}
+
 export interface OnPageSection {
   /** Absent on audits saved before the per-page checks. */
   pages?: OnPagePage[]
@@ -145,6 +168,8 @@ export interface OnPageSection {
       blocksSite: boolean
       blockedPages: string[]
       blockedAssets: number
+      /** Crawlers robots.txt singles out: Bingbot and AI crawlers. Absent on older audits. */
+      blockedBots?: string[]
     }
     sitemap: {
       declared: boolean
@@ -154,6 +179,21 @@ export interface OnPageSection {
       badUrls: string[]
       blocked: number
     }
+  }
+  /** Absent on audits saved before the link and redirect checks. */
+  linkCheck?: { checked: number; broken: LinkRow[]; chains: LinkRow[]; redirects: LinkRow[] }
+  structure?: {
+    deep: string[]
+    noBookingLink: string[]
+    noRelatedLinks: string[]
+    maxDepth: number
+  }
+  /** The extra requests of the audit. `ran` is false for a site that blocks direct requests. */
+  probes?: {
+    ran: boolean
+    checked: number
+    timedOut: number
+    hosts: { url: string; status: number | null; final: string | null; hops: number | null }[]
   }
   summary?: {
     score: number
@@ -182,6 +222,10 @@ export interface OnPageSection {
     badNames?: number
     legacyFormat?: number
     firstImageLazy?: boolean
+    noDimensions?: number
+    cssBackgrounds?: number
+    large?: { url: string; bytes: number }[]
+    sizesChecked?: number
     items: { src: string; alt: string | null; width: number | null; height: number | null }[]
   }
   pagespeed: {
@@ -191,6 +235,11 @@ export interface OnPageSection {
     bestPractices: number | null
     lcpMs: number | null
     cls: number | null
+    /** Whether touch targets are big enough, and zoom is allowed. null: not measured. */
+    tapTargetsOk?: boolean | null
+    zoomOk?: boolean | null
+    /** Real-visitor data. null: Google has none for this site. Absent on older audits. */
+    field?: PageField | null
     /** Absent on audits saved before desktop was measured; null when that call failed. */
     desktop?: {
       performance: number | null
@@ -276,7 +325,8 @@ export interface ConvertSection {
 }
 
 export type OnDemand<T> = {
-  state: 'not_run' | 'running' | 'ready' | 'failed'
+  /** `partial`: a full AI report that ended with too few good answers to trust the score. */
+  state: 'not_run' | 'running' | 'ready' | 'partial' | 'failed'
   data: T | null
   error: string | null
   ranAt: string | null
@@ -304,9 +354,151 @@ export interface LocalCompetitors {
   }[]
 }
 
-export interface AiVisibility {
+/** One question asked to one engine. `excerpt` is the preview; `text` is the full reply. */
+export interface AiAnswer {
+  prompt: string
+  ok: boolean
+  mentioned: boolean
+  linked: boolean
+  competitors: string[]
+  excerpt: string
+  /** Absent on checks saved before the full reply was kept. */
+  text?: string
+  error: string | null
+}
+
+export interface AiEngineResult {
+  engine: string
+  model: string
+  /** The clinic is named or linked in at least one answer. Kept for the report page. */
+  cited: boolean
+  mentioned: boolean
+  /** A source link points at the clinic's own domain. */
+  linked: boolean
+  promptsMentioned: number
+  promptsTotal: number
+  promptsFailed: number
+  citedBusinesses: string[]
+  answerExcerpt: string
+  error: string | null
+  answers: AiAnswer[]
+  /** Full report only: how often this engine named the clinic, with its 95% range. */
+  mentionRate?: AiMentionRate
+}
+
+/** The clinic was named in `k` of `n` answers. `low`..`high` is the 95% range of the true rate. */
+export interface AiMentionRate {
+  k: number
+  n: number
+  rate: number
+  low: number
+  high: number
+}
+
+export interface AiBrandScore {
+  VI: number
+  perModel: Record<string, number>
+  coverage: number
+  citationRate: number
+  sentiment: number
+}
+
+/** Scores of a full report. `visibilityIndex` is 0 to 100. `matrix` is engine > question index > 0..1. */
+export interface AiReportMetrics {
+  target: string
+  visibilityIndex: number
+  mentionRate: AiMentionRate
+  shareOfVoice: Record<string, number>
+  perBrand: Record<string, AiBrandScore>
+  leaderboard: string[]
+  gapVsTopCompetitor: number
+  coverage: number
+  citationRate: number
+  sentimentIndex: number
+  sentimentBreakdown: { positive: number; neutral: number; negative: number }
+  matrix: Record<string, Record<string, number>>
+  promptAnalytics: { promptId: number; avgVisibility: number; mentionRate: number }[]
+}
+
+export interface AiReportQuality {
+  calls: number
+  ok: number
+  failed: number
+  skipped: number
+  successRate: number
+  capped: boolean
+  partialReason: string | null
+  judgeFailed: number
+}
+
+export interface AiReportProgress {
+  total: number
+  asked: number
+  failed: number
+  judged: number
+  /** Which step the bar counts. Older reports have neither this nor `readTotal`. */
+  phase?: 'ask' | 'read'
+  readTotal?: number
+  costUsd: number
+}
+
+/** Step 1 of a full report: the written questions and how big the run would be. */
+export interface AiQuestions {
   prompts: string[]
-  engines: { engine: string; cited: boolean; citedBusinesses: string[]; answerExcerpt: string }[]
+  source: 'llm' | 'llm+templates' | 'templates'
+  engines: string[]
+  runs: number
+  maxQuestions: number
+  maxCalls: number
+}
+
+/** One saved answer of a full report. */
+export interface AiRunAnswer {
+  prompt: number
+  engine: string
+  run: number
+  ok: boolean
+  text: string
+  sources: string[]
+  error: string | null
+}
+
+export interface AiRunAnswers {
+  prompts: string[]
+  items: AiRunAnswer[]
+}
+
+/**
+ * `competitors` and `usage` arrive when the run ends. While it runs, only `log` is live.
+ * `log` is folded by the server: one entry per step id, already the latest state.
+ */
+export interface AiVisibility {
+  version: number
+  /** Set on a full report (many questions, repeats, a score). Absent on the quick check. */
+  kind?: 'full'
+  runId?: string
+  scoringVersion?: number
+  progress?: AiReportProgress
+  report?: AiReportMetrics
+  quality?: AiReportQuality
+  brand: string
+  prompts: string[]
+  engines: AiEngineResult[]
+  competitors?: { source: 'local_competitors' | 'llm' | 'none'; names: string[] }
+  /**
+   * Run totals, judge call included. The input/output split is absent on checks saved before it
+   * was kept. The per-engine breakdown lives in the `usage` log step.
+   */
+  usage?: {
+    calls: number
+    failed: number
+    tokens: number
+    promptTokens?: number
+    completionTokens?: number
+    costUsd: number
+    ms: number
+  }
+  log: TraceEvent[]
 }
 
 export interface ResearchSection {

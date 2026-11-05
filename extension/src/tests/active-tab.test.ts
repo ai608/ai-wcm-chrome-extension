@@ -24,11 +24,19 @@ describe('classifyTab', () => {
     expect(k('https://bücher.example/').domain).toBe('xn--bcher-kva.example')
   })
 
+  it('classifies an open audit report', () => {
+    expect(k('chrome-extension://abc/report.html?audit=aud_1')).toMatchObject({
+      kind: 'report',
+      auditId: 'aud_1',
+    })
+  })
+
   it.each([
     'chrome://extensions',
     'about:blank',
     'file:///tmp/a.html',
     'chrome-extension://abc/page.html',
+    'chrome-extension://abc/report.html',
     'https://chromewebstore.google.com/detail/x',
     'https://chrome.google.com/webstore/detail/x',
     'https://example.com/menu.PDF',

@@ -1,7 +1,15 @@
 import { defineExtensionMessaging } from '@webext-core/messaging'
 import { ApiError } from '@/lib/api/errors'
-import type { Audit, ContactResearch, Report, SendReportResult } from '@/lib/api/research-types'
 import type {
+  AiQuestions,
+  AiRunAnswers,
+  Audit,
+  ContactResearch,
+  Report,
+  SendReportResult,
+} from '@/lib/api/research-types'
+import type {
+  AiUsage,
   Config,
   ContactContext,
   ContactHistory,
@@ -37,9 +45,18 @@ export interface ProtocolMap {
   runDomainOverview(data: { auditId: string }): Audit
   runLocalCompetitors(data: { auditId: string; query?: string; location?: string }): Audit
   runAiVisibility(data: { auditId: string; prompts: string[] }): Audit
+  getAiQuestions(data: { auditId: string }): AiQuestions
+  runAiReport(data: { auditId: string; prompts?: string[] }): Audit
+  getAiRunAnswers(data: {
+    runId: string
+    engine?: string
+    prompt?: number
+    offset?: number
+  }): AiRunAnswers
   getReport(data: { auditId: string }): Report
   sendReport(data: { auditId: string; email: string; note?: string }): SendReportResult
   getContactResearch(data: { contactId: string }): ContactResearch
+  getAiUsage(data: { refresh?: boolean }): AiUsage
   startContactResearch(data: { contactId: string; force?: boolean }): ContactResearch
   openReport(data: { auditId: string }): void
 }

@@ -1,6 +1,7 @@
 import { ArrowUpRightIcon, CheckIcon, CopyIcon, ImageIcon, SearchIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Pages, Summary } from '@/components/research/OnPageChecks'
+import { ImageExtras, LinkCheck, SpeedExtras } from '@/components/research/OnPageMore'
 import { Block, FilterChips, Row, SectionTitle, SubTabs } from '@/components/research/shared'
 import { Button, buttonVariants } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -23,8 +24,6 @@ const SUBS: { value: Sub; label: string }[] = [
 
 type Heading = OnPageSection['headings']['outline'][number]
 
-// Level labels are plain coloured text: the H1 stands out in red, the rest share the brand blue.
-const LEVEL_LABEL: Record<number, string> = { 1: 'text-destructive' }
 const LEVEL_TEXT: Record<number, string> = {
   1: 'text-[15px] font-semibold text-foreground',
   2: 'text-[14px] font-medium text-foreground',
@@ -90,28 +89,31 @@ function Headings({ h }: { h: OnPageSection['headings'] }) {
         </Button>
       </div>
       {h.outline.length ? (
-        <ol aria-label="Heading outline" className="flex flex-col gap-0.5">
+        <ol
+          aria-label="Heading outline"
+          className="overflow-hidden rounded-lg border border-border"
+        >
           {h.outline.map((o, i) => (
             <li
               // biome-ignore lint/suspicious/noArrayIndexKey: static outline, order is identity
               key={i}
-              style={{ marginLeft: (o.level - 1) * 14 }}
+              style={{ paddingLeft: 10 + (o.level - 1) * 16 }}
               className={cn(
-                'flex min-w-0 items-baseline gap-2 rounded-md py-1 pr-1.5 pl-2 hover:bg-muted/60',
-                o.level > 1 && 'border-l-2 border-border',
+                'flex min-w-0 items-start gap-2 border-b border-border/70 px-2.5 py-1.5 last:border-b-0',
+                o.level === 1 && 'bg-muted/50',
               )}
             >
               <span
                 className={cn(
-                  'w-6 shrink-0 text-[11px] font-bold tabular-nums',
-                  LEVEL_LABEL[o.level] ?? 'text-primary',
+                  'mt-0.5 shrink-0 rounded px-1 text-[10px] font-semibold tabular-nums leading-4',
+                  o.level === 1 ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground',
                 )}
               >
                 H{o.level}
               </span>
               <span
                 className={cn(
-                  'min-w-0 break-words',
+                  'min-w-0 flex-1 break-words',
                   LEVEL_TEXT[o.level] ?? 'text-[13px] text-muted-foreground',
                 )}
               >
@@ -780,9 +782,24 @@ export function OnPageTab({ audit, onPage }: { audit: Audit; onPage: OnPageSecti
         </Block>
       ) : null}
       {sub === 'headings' ? <Headings h={onPage.headings} /> : null}
-      {sub === 'links' ? <Links audit={audit} l={onPage.links} /> : null}
-      {sub === 'images' ? <Images audit={audit} im={onPage.images} /> : null}
-      {sub === 'speed' ? <Speed audit={audit} p={onPage.pagespeed} /> : null}
+      {sub === 'links' ? (
+        <>
+          <Links audit={audit} l={onPage.links} />
+          <LinkCheck onPage={onPage} />
+        </>
+      ) : null}
+      {sub === 'images' ? (
+        <>
+          <Images audit={audit} im={onPage.images} />
+          <ImageExtras im={onPage.images} />
+        </>
+      ) : null}
+      {sub === 'speed' ? (
+        <>
+          <Speed audit={audit} p={onPage.pagespeed} />
+          <SpeedExtras p={onPage.pagespeed} />
+        </>
+      ) : null}
     </div>
   )
 }

@@ -5,6 +5,7 @@ import { LoginScreen } from '@/components/panel/LoginScreen'
 import { NoAccessScreen } from '@/components/panel/NoAccessScreen'
 import { NoContactScreen } from '@/components/panel/NoContactScreen'
 import { PanelHeader } from '@/components/panel/PanelHeader'
+import { ReportOpenScreen } from '@/components/panel/ReportOpenScreen'
 import { SettingsScreen } from '@/components/panel/SettingsScreen'
 import { UnsupportedScreen } from '@/components/panel/UnsupportedScreen'
 import { WrongAccountScreen } from '@/components/panel/WrongAccountScreen'
@@ -45,6 +46,7 @@ function Panel() {
   if (view === 'settings') return <SettingsScreen user={user} />
   if (!user.hasExtensionAccess) return <NoAccessScreen />
   if (tab === undefined) return <LoadingScreen onSettings={() => setView('settings')} />
+  if (tab?.kind === 'report') return <ReportOpenScreen tab={tab} />
   if (tab === null || tab.kind === 'unsupported') return <UnsupportedScreen />
   if (tab.kind === 'ghl_other') return <NoContactScreen />
   if (tab.kind === 'website') {
