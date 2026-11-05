@@ -41,6 +41,9 @@ JUDGE_CHARS = (
 )
 JUDGE_CONCURRENCY = 6
 DISCOVERY_CHUNK = 15
+SECOND_PASS_DELAY_S = (
+    20.0  # pause before asking again the cells that hit a temporary error
+)
 ASK_WAVE = (
     8  # answer calls in flight at once (also how far a run can overshoot its cap)
 )
@@ -524,6 +527,9 @@ class Job:
         # One log step per (engine, question), summed over the repeats: the same shape the
         # quick check logged, so the panel draws it the same way.
         self.cells: dict[tuple[str, int], dict[str, Any]] = {}
+        # Cells that failed with a temporary error (rate limit, server error, timeout). They are
+        # not recorded as failed yet: they get a second pass after a pause.
+        self.deferred: list[tuple[int, ai_visibility.Engine, int]] = []
         self._last = 0.0
         self._lock = asyncio.Lock()
 
@@ -666,6 +672,17 @@ class Job:
         self, prompts: list[str], engines: list[ai_visibility.Engine]
     ) -> None:
         saved = await self.repo.ai_answers_for_log(self.run_id)
+        # A failure that was only a rate limit or a timeout is asked again, not kept as final.
+        again = {
+            (int(a["prompt_idx"]), a["engine"], int(a["run_no"]))
+            for a in saved
+            if a["status"] != "ok" and ai_visibility.is_transient(a["error"])
+        }
+        saved = [
+            a
+            for a in saved
+            if (int(a["prompt_idx"]), a["engine"], int(a["run_no"])) not in again
+        ]
         have = {(int(a["prompt_idx"]), a["engine"], int(a["run_no"])) for a in saved}
         self.asked = len(have)
         # After a restart this process knows nothing of what earlier ones spent. Count it, or the
@@ -700,11 +717,13 @@ class Job:
         # in flight past it. (A gate here, not only the global limiter inside `ask`.)
         gate = asyncio.Semaphore(ASK_WAVE)
 
-        async def one(p: int, e: ai_visibility.Engine, r: int) -> None:
+        async def one(
+            p: int, e: ai_visibility.Engine, r: int, final: bool = False
+        ) -> None:
             async with gate:
-                await call(p, e, r)
+                await call(p, e, r, final)
 
-        async def call(p: int, e: ai_visibility.Engine, r: int) -> None:
+        async def call(p: int, e: ai_visibility.Engine, r: int, final: bool) -> None:
             if self.capped or time.monotonic() > self.deadline:
                 self.skipped += 1
                 return
@@ -728,6 +747,11 @@ class Job:
                     self.tokens += a.tokens
                 self.note(e.label, p, a, None)
             except Exception as exc:  # noqa: BLE001 - one bad call must not stop the others
+                if getattr(exc, "transient", False) and not final:
+                    self.deferred.append(
+                        (p, e, r)
+                    )  # nothing is recorded: asked again below
+                    return
                 self.failed += 1
                 reason = ai_visibility._reason(exc)
                 await self.repo.save_ai_answer(self.run_id, p, e.label, r, error=reason)
@@ -743,6 +767,21 @@ class Job:
         for res in results:
             if isinstance(res, BaseException):
                 logger.error("ai_report run=%s: ask crashed: %r", self.run_id, res)
+        if self.deferred and not self.capped and time.monotonic() < self.deadline:
+            # Second pass: a rate limit usually clears in seconds. Only now is a cell failed.
+            again_cells, self.deferred = self.deferred, []
+            logger.info(
+                "ai_report run=%s: asking %d cells again after a temporary error",
+                self.run_id,
+                len(again_cells),
+            )
+            await asyncio.sleep(SECOND_PASS_DELAY_S)
+            results = await asyncio.gather(
+                *(one(p, e, r, True) for p, e, r in again_cells), return_exceptions=True
+            )
+            for res in results:
+                if isinstance(res, BaseException):
+                    logger.error("ai_report run=%s: ask crashed: %r", self.run_id, res)
         for (
             label,
             p,

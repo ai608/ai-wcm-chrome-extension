@@ -337,13 +337,22 @@ class AuditRepository:
         cost_micro: int = 0,
     ) -> None:
         """One paid answer, saved the moment it arrives. A second write for the same cell is
-        ignored, so a restart can never overwrite (or pay for) an answer it already has."""
+        ignored when the first is a good answer, so a restart can never overwrite (or pay for)
+        one it already has. A failed answer is replaced, so it can be asked again."""
         async with self._pool.acquire() as conn:
             await conn.execute(
                 "INSERT INTO extension.ai_visibility_answers (run_id, prompt_idx, engine, run_no, "
                 "status, text, urls, error, tokens, prompt_tokens, completion_tokens, cost_micro) "
                 "VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb, $8, $9, $10, $11, $12) "
-                "ON CONFLICT DO NOTHING",
+                # A good answer is never overwritten (a restart cannot pay twice). A failed one is
+                # replaced, so asking it again can fix it.
+                "ON CONFLICT (run_id, prompt_idx, engine, run_no) DO UPDATE SET "
+                "status = EXCLUDED.status, text = EXCLUDED.text, urls = EXCLUDED.urls, "
+                "error = EXCLUDED.error, tokens = EXCLUDED.tokens, "
+                "prompt_tokens = EXCLUDED.prompt_tokens, "
+                "completion_tokens = EXCLUDED.completion_tokens, "
+                "cost_micro = EXCLUDED.cost_micro, facts = NULL "
+                "WHERE extension.ai_visibility_answers.status = 'failed'",
                 UUID(run_id),
                 prompt_idx,
                 engine,

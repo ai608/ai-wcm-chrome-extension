@@ -24,6 +24,9 @@ ANSWER_TOKENS = 700
 CALL_TIMEOUT_S = 45.0
 RUN_TIMEOUT_S = 90.0
 RETRY_DELAY_S = 1.5
+MAX_RETRY_AFTER_S = (
+    10  # the longest wait a provider's Retry-After can make one call take
+)
 MAX_ENGINES = 6
 MAX_COMPETITORS = 12
 MAX_BUSINESSES_SHOWN = 6
@@ -150,7 +153,35 @@ def build_target(audit: dict[str, Any]) -> Target:
 
 
 class AnswerError(Exception):
-    """Short, safe failure text. Never carries the URL, headers or key."""
+    """Short, safe failure text. Never carries the URL, headers or key.
+
+    `transient` is True for a failure that may pass by itself (rate limit, server error, timeout,
+    dropped connection): asking again later can work. A refused key or a bad request will not."""
+
+    def __init__(self, message: str, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
+
+
+def _subclass_names(cls: type[BaseException]) -> set[str]:
+    names = {cls.__name__}
+    for sub in cls.__subclasses__():
+        names |= _subclass_names(sub)
+    return names
+
+
+# What `_reason` writes for a dropped connection or a timeout.
+_TRANSPORT_NAMES = frozenset({"Timed out"} | _subclass_names(httpx.TransportError))
+
+
+def is_transient(reason: str | None) -> bool:
+    """Whether a saved failure text (`HTTP 429`, `Timed out`, `ReadError`...) is worth asking again."""
+    if not reason:
+        return False
+    if reason.startswith("HTTP "):
+        code = reason[5:]
+        return code == "429" or (code.isdigit() and int(code) >= 500)
+    return reason in _TRANSPORT_NAMES
 
 
 @dataclass
@@ -200,10 +231,18 @@ async def ask(http: httpx.AsyncClient, engine: Engine, prompt: str) -> Answer:
                     OPENROUTER_URL, headers=headers, json=body, timeout=CALL_TIMEOUT_S
                 )
                 if (r.status_code == 429 or r.status_code >= 500) and attempt == 1:
-                    await asyncio.sleep(RETRY_DELAY_S)
+                    wait = r.headers.get("retry-after", "")
+                    await asyncio.sleep(
+                        min(int(wait), MAX_RETRY_AFTER_S)
+                        if wait.isdigit()
+                        else RETRY_DELAY_S
+                    )
                     continue
                 if r.status_code >= 400:
-                    raise AnswerError(f"HTTP {r.status_code}")
+                    raise AnswerError(
+                        f"HTTP {r.status_code}",
+                        transient=r.status_code == 429 or r.status_code >= 500,
+                    )
                 data = r.json()
                 message = data["choices"][0]["message"]
                 text = message.get("content")
@@ -219,7 +258,7 @@ async def ask(http: httpx.AsyncClient, engine: Engine, prompt: str) -> Answer:
                 )
             except (httpx.TransportError, TimeoutError) as exc:
                 if attempt == 2:
-                    raise AnswerError(_reason(exc)) from exc
+                    raise AnswerError(_reason(exc), transient=True) from exc
                 await asyncio.sleep(RETRY_DELAY_S)
             except (KeyError, IndexError, ValueError, TypeError) as exc:
                 raise AnswerError("Unexpected reply") from exc
