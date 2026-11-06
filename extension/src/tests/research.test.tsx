@@ -340,7 +340,7 @@ describe('Call Mode Research tab', () => {
 
   it('run research for c_peak', async () => {
     await renderTab('c_peak')
-    fireEvent.click(await screen.findByRole('button', { name: 'Run research' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Run audit' }))
     await waitFor(() => expect(screen.getByText('Refresh research')).toBeDefined())
   })
 })

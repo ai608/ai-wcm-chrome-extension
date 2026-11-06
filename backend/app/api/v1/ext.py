@@ -4,6 +4,7 @@ import re
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, Request
@@ -14,7 +15,7 @@ from app.core.dependencies import get_http_client, require_extension_access
 from app.core.exceptions import AppError
 from app.models.user import UserProfile
 from app.repositories.audit_repository import AuditRepository
-from app.services import ghl, openrouter_usage, site_audit
+from app.services import apollo, ghl, openrouter_usage, site_audit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_extension_access)], tags=["ext"])
@@ -123,10 +124,11 @@ def _wire_contact(c: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-async def _gbp_values(
+async def _research_values(
     request: Request, http: Http, contact: dict[str, Any]
 ) -> dict[str, Any]:
-    """Google rating and review count from the latest research audit, if it matched a GBP."""
+    """Script fields the latest research audit can fill: Google rating and review count (when the
+    audit matched a GBP) and the Apollo revenue estimate."""
     pool = getattr(request.app.state, "pool", None)
     website = await ghl.contact_website(http, contact)
     if pool is None or not website:
@@ -138,13 +140,31 @@ async def _gbp_values(
     business = (row["business"] if row else None) or {}
     if isinstance(business, str):
         business = json.loads(business)
+    values: dict[str, Any] = {}
     gbp = business.get("gbp") or {}
-    if not gbp.get("matched"):
-        return {}
-    return {
-        "contact.google_rating": gbp.get("rating"),
-        "contact.google_review_count": gbp.get("review_count"),
-    }
+    if gbp.get("matched"):
+        values["contact.google_rating"] = gbp.get("rating")
+        values["contact.google_review_count"] = gbp.get("review_count")
+    company = business.get("company") or {}
+    # Audits saved before Apollo's number was stored only have the printed text ("500K").
+    revenue = company.get("annual_revenue") or apollo.money(
+        company.get("estimated_revenue")
+    )
+    if revenue:
+        values["contact.annual_revenue_"] = revenue
+    return values
+
+
+def _site_origin(value: Any) -> str | None:
+    """The site's root ("https://clinic.com") from the contact's Website value. GHL often holds
+    a page or junk path ("https://clinic.com/.wf_auth"); the script wants the site itself."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    value = value.strip()
+    parts = urlsplit(value if "://" in value else f"https://{value}")
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return None
+    return f"{parts.scheme}://{parts.hostname.lower()}"
 
 
 @router.get("/contacts/{contact_id}/context")
@@ -152,22 +172,28 @@ async def get_context(
     contact_id: str, request: Request, http: Http = Depends(get_http_client)
 ) -> dict[str, Any]:
     contact = await ghl.get_contact(http, contact_id)
-    by_key = _by_key(await ghl.get_catalog(http))
+    catalog = await ghl.get_catalog(http)
+    by_key = _by_key(catalog)
     values = _values(contact, by_key)
-    # GHL wins. Only a field empty in GHL takes the research number, and is saved back to GHL.
+    # GHL wins. Only a field empty in GHL takes the research number (or the contact's own Website),
+    # and is saved back to GHL.
+    own = {"contact.your_website_url": _site_origin(contact.get("website"))}
     fill = {
         k: v
-        for k, v in (await _gbp_values(request, http, contact)).items()
+        for k, v in {**(await _research_values(request, http, contact)), **own}.items()
         if k in by_key and values.get(k) in (None, "", []) and v is not None
     }
     saved: list[str] = []
     if fill:
         try:
-            await ghl.update_custom_fields(
-                http,
-                contact_id,
-                [{"id": by_key[k]["id"], "field_value": v} for k, v in fill.items()],
-            )
+            writes = [
+                {"id": by_key[k]["id"], "field_value": v} for k, v in fill.items()
+            ]
+            if (
+                "contact.annual_revenue_" in fill
+            ):  # keep the range field in step, as typing does
+                writes += _range_write(catalog, fill["contact.annual_revenue_"])
+            await ghl.update_custom_fields(http, contact_id, writes)
             saved = list(fill)
         except AppError:
             logger.warning("Could not save research values to GHL for %s", contact_id)
@@ -237,6 +263,15 @@ def _revenue_range(options: list[str], amount: Any) -> str | None:
     return options[sum(amount >= b for b in REVENUE_BOUNDS)]
 
 
+def _range_write(catalog: list[dict[str, Any]], amount: Any) -> list[dict[str, Any]]:
+    """The GHL write that sets the "Annual Revenue (selection)" range for a dollar amount."""
+    rng = next(
+        (f for f in catalog if f.get("fieldKey") == "contact.annual_revenue"), None
+    )
+    bucket = _revenue_range(rng.get("picklistOptions") or [], amount) if rng else None
+    return [{"id": rng["id"], "field_value": bucket}] if rng and bucket else []
+
+
 class PatchFields(BaseModel):
     fields: dict[str, Any]
 
@@ -258,18 +293,7 @@ async def patch_fields(
     # Typing the dollar amount also sets the matching range field in GHL.
     amount = values.get("contact.annual_revenue_")
     if amount not in (None, ""):
-        rng = next(
-            (
-                f
-                for f in await ghl.get_catalog(http)
-                if f.get("fieldKey") == "contact.annual_revenue"
-            ),
-            None,
-        )
-        if rng:
-            bucket = _revenue_range(rng.get("picklistOptions") or [], amount)
-            if bucket:
-                writes.append({"id": rng["id"], "field_value": bucket})
+        writes += _range_write(await ghl.get_catalog(http), amount)
     await ghl.update_custom_fields(http, contact_id, writes)
     return {
         "field_values": {k: (v if v != "" else None) for k, v in values.items()},

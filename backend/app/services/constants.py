@@ -94,6 +94,21 @@ BOOKING = {
     "glossgenius.com": "GlossGenius",
 }
 
+# Post categories (lower case, matched as a substring) that mean "not a blog post". WordPress keeps
+# staff bios, locations and the like as posts, so they show up in the post sitemap.
+NON_BLOG_SECTIONS = (
+    "provider",
+    "team",
+    "staff",
+    "doctor",
+    "physician",
+    "practitioner",
+    "location",
+    "testimonial",
+    "review",
+    "service",
+)
+
 # Chat widget: marker (lower case, matched anywhere in the page HTML) -> name. Add a vendor here;
 # no code change needed. Prefer the vendor's script/CDN domain: it appears only when the widget does.
 CHAT = {

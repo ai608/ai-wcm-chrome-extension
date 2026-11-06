@@ -501,7 +501,11 @@ async def test_blog_posts_uses_index_then_sitemap(monkeypatch):
         {"https://glow.example/blog/": BLOG_INDEX_HTML},
         HOME,
     )
-    assert calls == ["https://glow.example/post-sitemap.xml"]
+    # the sitemap's lastmod is not a publish date, so the undated old post's page is read
+    assert calls == [
+        "https://glow.example/post-sitemap.xml",
+        "https://glow.example/old-post/",
+    ]
     # index entries come first, so their titles and dates win over the sitemap's
     assert posts[0]["title"] == "Best Skin Tightening"
     assert {p["url"] for p in posts} == {
@@ -596,8 +600,10 @@ async def test_sitemap_posts_reads_a_general_sitemap_for_blog_posts(monkeypatch)
         "https://glow.example/blog/psa-levels-by-age",
         "https://glow.example/blog/older-post",
     ]
-    assert posts[0]["published_at"].startswith("2026-09-21")
-    assert posts[1]["published_at"] is None
+    # <lastmod> is the last-changed date, never the publish date
+    assert posts[0]["published_at"] is None
+    assert posts[0]["modified_at"].startswith("2026-09-21")
+    assert posts[1]["published_at"] is None and posts[1]["modified_at"] is None
 
 
 @pytest.mark.anyio
@@ -1069,3 +1075,47 @@ def test_without_a_readable_menu_a_short_top_level_page_can_still_be_a_service()
     assert [
         (c["service"], c["pages"]) for c in sections["site"]["services"]["clusters"]
     ] == [("Neurotoxins", [f"{G}/botox"])]
+
+
+@pytest.mark.anyio
+async def test_publish_date_comes_from_the_page_not_the_sitemap_lastmod(monkeypatch):
+    """msintegrative.com: a post last edited 18 Dec 2025 was published 26 Sep 2025, and two staff
+    bios kept as WordPress posts (category 'Our Providers') were edited 8 Oct 2025."""
+    sitemap = """<urlset>
+<url><loc>https://glow.example/numbers-matter/</loc><lastmod>2025-12-18T14:37:40+00:00</lastmod></url>
+<url><loc>https://glow.example/jane-doe-fnp-c/</loc><lastmod>2025-10-08T21:06:13+00:00</lastmod></url>
+</urlset>"""
+    pages = {
+        "https://glow.example/numbers-matter/": _post_page(
+            head='<meta property="article:published_time" content="2025-09-26T21:04:54+00:00">'
+            '<meta property="article:section" content="Blog">'
+        ),
+        "https://glow.example/jane-doe-fnp-c/": _post_page(
+            head='<meta property="article:published_time" content="2025-03-26T16:23:20+00:00">'
+            '<script type="application/ld+json">{"articleSection":["Our Providers"]}</script>'
+        ),
+    }
+
+    async def fake_fetch(url, accept=("text/html",)):
+        if url.endswith("/post-sitemap.xml"):
+            return sitemap, url
+        if url in pages:
+            return pages[url], url
+        raise AppError(422, "site_unreachable", "missing")
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fake_fetch)
+    posts = await site_crawl.blog_posts(None, [HOME], {}, HOME)
+    assert [p["url"] for p in posts] == ["https://glow.example/numbers-matter/"]
+    assert posts[0]["published_at"].startswith("2025-09-26")
+
+
+def test_json_ld_is_parsed_not_pattern_matched() -> None:
+    nested = (
+        '<script type="application/ld+json">{"@graph":[{"@type":"WebSite"},'
+        '{"@type":"Article","datePublished":"2026-01-02","articleSection":'
+        '["Our Team & Providers","Blog [news]"]}]}</script>'
+    )
+    assert site_crawl._section(nested) == "our team & providers blog [news]"
+    assert site_crawl._published(nested) == "2026-01-02"
+    broken = '<script type="application/ld+json">{"articleSection":"Blog",}</script>'
+    assert site_crawl._section(broken) == "blog"

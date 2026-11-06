@@ -71,12 +71,12 @@ class Settings(BaseSettings):
     # Seconds to wait before the one retry of a failed read (a Retry-After header wins, up to 5).
     CRAWL_RETRY_DELAY_S: float = Field(default=1.0, ge=0)
     # Pages sent to the AI, and the characters of page text across all of them. Measured on
-    # clinic pages: about 2.8 characters per token, so 160k characters is about 57k tokens
-    # (roughly $0.12 input on Sonnet 5.5). Pages are never cut one by one; when the total runs
+    # clinic pages: about 2.8 characters per token, so 200k characters is about 71k tokens
+    # (roughly $0.15 input on Sonnet 5.5). Pages are never cut one by one; when the total runs
     # out, the last pages in reading order are cut, and those are the least important ones.
     AI_MAX_PAGES: int = Field(default=60, gt=0)
     AI_MAX_OUTPUT_TOKENS: int = Field(default=16000, gt=0)
-    AI_TOTAL_CHARS: int = Field(default=160_000, gt=0)
+    AI_TOTAL_CHARS: int = Field(default=200_000, gt=0)
 
     model_config = SettingsConfigDict(
         env_file=".env", env_ignore_empty=True, extra="ignore"

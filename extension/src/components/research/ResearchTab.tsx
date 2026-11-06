@@ -117,10 +117,10 @@ export default function ResearchTab({ contactId }: { contactId: string }) {
     return (
       <div className="flex flex-col items-center gap-3 py-8 text-center">
         <p className="text-[14px] text-muted-foreground">
-          Run research on this contact’s website and Google Business Profile.
+          Run an audit on this contact’s website and Google Business Profile.
         </p>
         <Button onClick={() => start.mutate(undefined)} disabled={start.isPending}>
-          {start.isPending ? 'Starting…' : 'Run research'}
+          {start.isPending ? 'Starting…' : 'Run audit'}
         </Button>
         {start.isError ? (
           <Alert variant="destructive">

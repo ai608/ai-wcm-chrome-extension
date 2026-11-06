@@ -23,6 +23,7 @@ from app.services.constants import (
     CHAT_DOM_MARKERS,
     CHAT_IFRAME_WORDS,
     CHAT_SCRIPT_WORDS,
+    NON_BLOG_SECTIONS,
     PLACEHOLDER_TEXT,
     SERVICES,
     TRUST,
@@ -797,10 +798,9 @@ def _published(html: str) -> str | None:
             value = node.attributes.get("content") or node.attributes.get("datetime")
             if value and _age_days(value, datetime.now(UTC)) is not None:
                 return str(value)[:25]
-    for node in doc.css('script[type="application/ld+json"]'):
-        found = re.search(r'"datePublished"\s*:\s*"([^"]+)"', node.text())
-        if found and _age_days(found.group(1), datetime.now(UTC)) is not None:
-            return found.group(1)[:25]
+    for value in _ld_values(doc, "datePublished"):
+        if _age_days(value, datetime.now(UTC)) is not None:
+            return value[:25]
     for tag in doc.css("script, style, noscript, svg, nav, footer"):
         tag.decompose()
     body = doc.css_first("article") or doc.css_first("main") or doc.css_first("body")
@@ -809,6 +809,51 @@ def _published(html: str) -> str | None:
         if body
         else None
     )
+
+
+def _ld_values(doc: LexborHTMLParser, key: str) -> list[str]:
+    """Every string under `key` in the page's JSON-LD, wherever it nests (@graph, lists)."""
+    out: list[str] = []
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            for k, v in node.items():
+                if k == key:
+                    out.extend(
+                        x.strip()
+                        for x in (
+                            [v]
+                            if isinstance(v, str)
+                            else v
+                            if isinstance(v, list)
+                            else []
+                        )
+                        if isinstance(x, str) and x.strip()
+                    )
+                else:
+                    walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    for script in doc.css('script[type="application/ld+json"]'):
+        try:
+            walk(json.loads(script.text()))
+        except ValueError:
+            # broken JSON (stray comma, comment): still take the plain "key": "value" pairs
+            out += re.findall(rf'"{key}"\s*:\s*"([^"]+)"', script.text())
+    return out
+
+
+def _section(html: str) -> str:
+    """The post's category names, lower case ("Our Providers"), from article:section or JSON-LD."""
+    doc = LexborHTMLParser(html)
+    names = [
+        n.attributes.get("content") or ""
+        for n in doc.css('meta[property="article:section"]')
+    ]
+    names += _ld_values(doc, "articleSection")
+    return " ".join(names).lower()
 
 
 def _is_post(url: str, home: str) -> bool:
@@ -846,8 +891,10 @@ def index_posts(html: str, page_url: str) -> list[dict[str, Any]]:
 
 
 def _posts_in_sitemap(xml: str, home: str, trusted: bool) -> list[dict[str, Any]]:
-    """Posts listed in one sitemap, dated by <lastmod>. A post sitemap is trusted as it is; in a
-    general sitemap only URLs under a blog-like path (/blog/<slug>) count."""
+    """Posts listed in one sitemap. <lastmod> is when the page last CHANGED, not when it was
+    published, so it goes in `modified_at` only; the publish date comes from the post page (see
+    date_posts). A post sitemap is trusted as it is; in a general sitemap only URLs under a
+    blog-like path (/blog/<slug>) count."""
     posts = []
     for entry in re.findall(r"<url>(.*?)</url>", xml, re.DOTALL)[:MAX_POSTS]:
         loc = re.search(r"<loc>\s*(.*?)\s*</loc>", entry, re.DOTALL)
@@ -863,7 +910,8 @@ def _posts_in_sitemap(xml: str, home: str, trusted: bool) -> list[dict[str, Any]
             {
                 "url": url,
                 "title": url.rstrip("/").rsplit("/", 1)[-1].replace("-", " ").title(),
-                "published_at": changed.group(1)[:25] if changed else None,
+                "published_at": None,
+                "modified_at": changed.group(1)[:25] if changed else None,
             }
         )
     return posts
@@ -940,7 +988,11 @@ async def date_posts(posts: list[dict[str, Any]]) -> None:
     The blog list and sitemap often carry no dates, but each post page does. At most
     DATE_FETCHES pages are read, DATE_CONCURRENCY at a time, within DATE_BUDGET_S seconds;
     whatever finishes in time is kept. Never raises."""
-    todo = [p for p in posts if not p.get("published_at")][:DATE_FETCHES]
+    todo = sorted(
+        (p for p in posts if not p.get("published_at")),
+        key=lambda p: p.get("modified_at") or "",
+        reverse=True,
+    )[:DATE_FETCHES]
     sem = asyncio.Semaphore(DATE_CONCURRENCY)
 
     async def one(p: dict[str, Any]) -> None:
@@ -950,6 +1002,8 @@ async def date_posts(posts: list[dict[str, Any]]) -> None:
             except AppError:
                 return
             p["published_at"] = _published(html)
+            if any(w in _section(html) for w in NON_BLOG_SECTIONS):
+                p["not_post"] = True  # a staff bio or similar kept as a WordPress post
 
     tasks = [asyncio.create_task(one(p)) for p in todo]
     if tasks:
@@ -986,9 +1040,11 @@ async def blog_posts(
         have = merged.setdefault(_key(p["url"]), dict(p))
         if not have.get("published_at") and p.get("published_at"):
             have["published_at"] = p["published_at"]
+        if not have.get("modified_at") and p.get("modified_at"):
+            have["modified_at"] = p["modified_at"]
     posts = list(merged.values())
     await date_posts(posts)
-    return posts
+    return [p for p in posts if not p.get("not_post")]
 
 
 def _age_days(published_at: str | None, now: datetime) -> int | None:
