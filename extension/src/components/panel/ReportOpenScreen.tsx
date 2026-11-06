@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import emptyState from '@/assets/empty-state.png'
+import emptyState from '@/assets/empty-state.webp'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toast'

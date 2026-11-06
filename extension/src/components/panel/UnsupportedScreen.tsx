@@ -1,4 +1,4 @@
-import emptyState from '@/assets/empty-state.png'
+import emptyState from '@/assets/empty-state.webp'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { usePanelStore } from '@/stores/panel-store'
 
