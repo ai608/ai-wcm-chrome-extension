@@ -20,6 +20,9 @@ from app.services import page_patterns, usage
 from app.services.constants import (
     BOOKING,
     CHAT,
+    CHAT_DOM_MARKERS,
+    CHAT_IFRAME_WORDS,
+    CHAT_SCRIPT_WORDS,
     PLACEHOLDER_TEXT,
     SERVICES,
     TRUST,
@@ -54,6 +57,34 @@ PROOF = {
     "reviews": re.compile(r"/reviews?(/|$)", re.IGNORECASE),
     "case_study": re.compile(r"case-stud", re.IGNORECASE),
 }
+
+
+_CHAT_SCRIPT = re.compile(
+    r"[\w./-]*(?:" + "|".join(map(re.escape, CHAT_SCRIPT_WORDS)) + r")[\w./-]*\.js"
+)
+# Chat markup that only exists after the page's JavaScript ran.
+_CHAT_DOM = re.compile(
+    r"<iframe[^>]+(?:" + "|".join(map(re.escape, CHAT_IFRAME_WORDS)) + r")[^>]*>"
+    r"|(?:id|class)=[\"'][^\"']*(?:"
+    + "|".join(map(re.escape, CHAT_DOM_MARKERS))
+    + r")[^\"']*[\"']"
+)
+
+
+def detect_chat_rendered(html: str) -> str | None:
+    """Like detect_chat, but for JavaScript-rendered HTML: also looks at the injected markup."""
+    low = html.lower()
+    if known := detect_chat(low):
+        return known
+    return "Chat widget (unidentified)" if _CHAT_DOM.search(low) else None
+
+
+def detect_chat(html_lower: str) -> str | None:
+    """Vendor name from the known list, else a generic label when a chat-like script is loaded."""
+    known = next((n for m, n in CHAT.items() if m in html_lower), None)
+    if known:
+        return known
+    return "Chat widget (unidentified)" if _CHAT_SCRIPT.search(html_lower) else None
 
 
 def _host(url: str) -> str:
@@ -92,15 +123,23 @@ async def map_site(http: httpx.AsyncClient, url: str) -> list[str]:
     )
 
 
-async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
-    """Page HTML through Firecrawl; None when it has none. One retry after a timeout, a
+async def _firecrawl_html(
+    http: httpx.AsyncClient, url: str, rendered: bool
+) -> str | None:
+    """Page HTML through Firecrawl; None when it has none. `rendered` returns the DOM after the
+    page's JavaScript ran (a few seconds' wait), which is where injected chat widgets live. One retry after a timeout, a
     connection error, 429 or 5xx; a 402 (out of credits) or 4xx is final."""
     for attempt in (1, 2):
         try:
             r = await http.post(
                 f"{FIRECRAWL}/scrape",
                 headers={"Authorization": f"Bearer {settings.FIRECRAWL_API_KEY}"},
-                json={"url": url, "formats": ["rawHtml"], "onlyMainContent": False},
+                json={
+                    "url": url,
+                    "formats": ["html" if rendered else "rawHtml"],
+                    "onlyMainContent": False,
+                    **({"waitFor": 4000} if rendered else {}),
+                },
                 timeout=60,
             )
         except httpx.HTTPError:
@@ -117,8 +156,20 @@ async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
         return None
     usage.record_firecrawl("scrape")
     data = r.json().get("data") or {}
-    html = data.get("rawHtml") or data.get("html")
+    html = (
+        data.get("html" if rendered else "rawHtml")
+        or data.get("rawHtml")
+        or data.get("html")
+    )
     return html if isinstance(html, str) and html.strip() else None
+
+
+async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
+    return await _firecrawl_html(http, url, False)
+
+
+async def scrape_rendered(http: httpx.AsyncClient, url: str) -> str | None:
+    return await _firecrawl_html(http, url, True)
 
 
 # Called as report(step_id, status, **detail); used to show the crawl live in the panel.
@@ -1090,9 +1141,7 @@ def enrich(
     convert["online_booking"] = (
         bool(convert["booking_platform"]) or convert["online_booking"]
     )
-    convert["chat_widget"] = convert.get("chat_widget") or next(
-        (n for m, n in CHAT.items() if m in html_all), None
-    )
+    convert["chat_widget"] = convert.get("chat_widget") or detect_chat(html_all)
     convert["financing_mentioned"] = (
         convert["financing_mentioned"] or "financing" in html_all
     )

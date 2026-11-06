@@ -166,6 +166,23 @@ async def _home(
     return sections, final_url, html, via
 
 
+async def _rendered_chat(
+    http: httpx.AsyncClient, sections: dict[str, Any], url: str
+) -> None:
+    """The HTML we crawl is what the server sent, so a widget a script builds later (a tag
+    manager, a loader) is missing from it. When nothing was found, look at the rendered page."""
+    convert = sections["convert"]
+    if convert.get("chat_widget") or not settings.FIRECRAWL_API_KEY:
+        return
+    try:
+        html = await site_crawl.scrape_rendered(http, url)
+    except httpx.HTTPError:
+        logger.warning("rendered chat check failed for %s", url, exc_info=True)
+        return
+    if html:
+        convert["chat_widget"] = site_crawl.detect_chat_rendered(html)
+
+
 async def _enrich(
     repo: AuditRepository,
     http: httpx.AsyncClient,
@@ -190,6 +207,7 @@ async def _enrich(
         await trace.report("enrich", "running")
         posts = await site_crawl.blog_posts(http, urls, crawled, final_url, sitemap)
         site_crawl.enrich(sections, urls, crawled, posts, menu)
+        await _rendered_chat(http, sections, final_url)
         await trace.report(
             "enrich",
             "done",

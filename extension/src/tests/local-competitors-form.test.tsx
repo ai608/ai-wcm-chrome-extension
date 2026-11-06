@@ -52,9 +52,11 @@ afterEach(() => {
 })
 
 describe('Local competitors form', () => {
-  it('clinic coordinates known: location starts blank and the hint explains it', async () => {
+  it('clinic coordinates known: location is prefilled with the clinic address and still searches around the clinic', async () => {
     await form(auditWithGbp(30.27, -97.74))
-    expect((screen.getByLabelText('Location') as HTMLInputElement).value).toBe('')
+    expect((screen.getByLabelText('Location') as HTMLInputElement).value).toBe(
+      '12 Main St, Austin, TX 78701',
+    )
     expect(screen.getByText(/within 8 km of the clinic/)).toBeTruthy()
     fireEvent.click(screen.getByRole('button', { name: 'Find competitors' }))
     await waitFor(() => expect(calls).toHaveLength(1))

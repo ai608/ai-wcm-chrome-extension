@@ -94,15 +94,90 @@ BOOKING = {
     "glossgenius.com": "GlossGenius",
 }
 
-# Chat widget: marker (lower case) -> name.
+# Chat widget: marker (lower case, matched anywhere in the page HTML) -> name. Add a vendor here;
+# no code change needed. Prefer the vendor's script/CDN domain: it appears only when the widget does.
 CHAT = {
+    # Reputation / local-business messaging
     "podium.com": "Podium",
     "birdeye.com": "Birdeye",
-    "intercom": "Intercom",
-    "tidio": "Tidio",
+    "apexchat": "ApexChat",
+    "smith.ai": "Smith.ai",
+    # Healthcare / EHR
+    "chatbot.ecwcloud.com": "eClinicalWorks chat",
+    # CRM / marketing suites
     "widgets.leadconnectorhq.com": "GHL chat",
+    "usemessages.com": "HubSpot chat",
+    "salesiq.zoho": "Zoho SalesIQ",
+    "getgist.com": "Gist",
+    # Live chat and support desks
+    "intercom": "Intercom",
+    "driftt.com": "Drift",
+    "tidio": "Tidio",
+    "tawk.to": "Tawk.to",
+    "crisp.chat": "Crisp",
+    "zopim": "Zendesk chat",
+    "zdassets.com": "Zendesk chat",
     "livechatinc": "LiveChat",
+    "livechat.com": "LiveChat",
+    "freshchat.com": "Freshchat",
+    "olark.com": "Olark",
+    "snapengage": "SnapEngage",
+    "chatra.io": "Chatra",
+    "gorgias.chat": "Gorgias",
+    "reamaze.com": "Re:amaze",
+    "helpscout.net": "Help Scout Beacon",
+    "purechat.com": "Pure Chat",
+    "providesupport.com": "Provide Support",
+    "liveperson.net": "LivePerson",
+    "lpsnmedia.net": "LivePerson",
+    "smartsuppchat.com": "Smartsupp",
+    "jivosite.com": "JivoChat",
+    "userlike.com": "Userlike",
+    # Chatbots / AI assistants
+    "manychat.com": "ManyChat",
+    "botpress": "Botpress",
+    "voiceflow.com": "Voiceflow",
+    "chatbase.co": "Chatbase",
+    "landbot.io": "Landbot",
+    "kommunicate.io": "Kommunicate",
+    "ada.support": "Ada",
+    # Social
+    "customerchat": "Facebook Messenger",
 }
+
+# Script file names that mean "a chat widget" when the vendor isn't in CHAT.
+CHAT_SCRIPT_WORDS = (
+    "chat-bot",
+    "chatbot",
+    "chat-widget",
+    "chatwidget",
+    "web-chat",
+    "webchat",
+    "live-chat",
+    "livechat",
+)
+# Words in an <iframe> tag (src/id/title/class) that mean a chat or messenger frame.
+CHAT_IFRAME_WORDS = ("chat", "messenger")
+# id/class values that chat vendors inject into the rendered page.
+CHAT_DOM_MARKERS = (
+    "chat-widget",
+    "chatwidget",
+    "chat-bot",
+    "chatbot",
+    "chat-launcher",
+    "chat-bubble",
+    "chat-window",
+    "livechat",
+    "messenger-widget",
+    "messenger-frame",
+    "launcher-frame",
+    "intercom-",
+    "drift-",
+    "tidio",
+    "crisp-client",
+    "hs-chat",
+    "zopim",
+)
 
 # Structured data type -> (required, recommended) properties, from Google's LocalBusiness and
 # Organization guides. Keys are lower case; local business types share one row.

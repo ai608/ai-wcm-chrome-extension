@@ -74,16 +74,21 @@ export function LocalCompetitorsForm({
 }) {
   const run = useRunOnDemand(audit.id, audit.domain)
   const [query, setQuery] = useState(defaultService(audit))
-  // With the clinic's coordinates, a blank location means "around the clinic" (what a nearby
-  // patient sees). A typed place always wins.
+  // With the clinic's coordinates, the clinic address (shown prefilled) searches around the clinic,
+  // what a nearby patient sees. Any other typed place wins.
   const near = audit.business?.gbp?.lat != null && audit.business?.gbp?.lng != null
-  const [location, setLocation] = useState(near ? '' : defaultLocation(audit))
+  const clinicAddress = audit.business?.gbp?.address ?? ''
+  const [location, setLocation] = useState(near ? clinicAddress : defaultLocation(audit))
   return (
     <form
       className="flex flex-col gap-2"
       onSubmit={(e) => {
         e.preventDefault()
-        run.mutate({ kind: 'local', query, location })
+        run.mutate({
+          kind: 'local',
+          query,
+          location: near && location === clinicAddress ? '' : location,
+        })
       }}
     >
       {compactForm ? null : (
@@ -102,7 +107,7 @@ export function LocalCompetitorsForm({
       />
       {near ? (
         <p className="text-[12px] text-muted-foreground">
-          Blank searches within 8 km of the clinic. Type a city to search somewhere else.
+          Searches within 8 km of the clinic. Type a city to search somewhere else.
         </p>
       ) : null}
       <Button type="submit" disabled={run.isPending}>
@@ -154,8 +159,7 @@ export function CompetitorList({
                 links
                   ? 'grid-cols-[1.25rem_minmax(0,1fr)_4.75rem_1.5rem]'
                   : 'grid-cols-[1.25rem_minmax(0,1fr)_4.75rem]',
-                item.isThisBusiness &&
-                  'bg-primary/5 shadow-[inset_2px_0_0_0_var(--primary)]',
+                item.isThisBusiness && 'bg-primary/5 shadow-[inset_2px_0_0_0_var(--primary)]',
               )}
             >
               <span
