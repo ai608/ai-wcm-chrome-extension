@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { fakeBrowser } from 'wxt/testing/fake-browser'
 import { usePanelStore } from '@/stores/panel-store'
@@ -161,8 +161,16 @@ describe('App view switch', () => {
       kind: 'report',
       auditId: 'aud_9',
     }
-    const sendMessage = vi.spyOn(fakeBrowser.runtime, 'sendMessage').mockImplementation((() =>
-      Promise.resolve({ ok: true })) as typeof fakeBrowser.runtime.sendMessage)
+    const sendMessage = vi
+      .spyOn(fakeBrowser.runtime, 'sendMessage')
+      .mockImplementation(((m: { type: string }) =>
+        Promise.resolve(
+          m.type === 'wcm-report-snapshot' ? { ok: true, html: '<p>r</p>' } : { ok: true },
+        )) as typeof fakeBrowser.runtime.sendMessage)
+    const o4 = await import('@/lib/api/o4')
+    const share = vi
+      .spyOn(o4, 'shareReport')
+      .mockResolvedValue({ url: 'https://api.test/r/tok', expiresAt: '2026-11-13T00:00:00Z' })
     const remove = vi.spyOn(fakeBrowser.tabs, 'remove').mockResolvedValue(undefined)
     const writeText = vi.fn(async () => {})
     Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
@@ -173,7 +181,8 @@ describe('App view switch', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Download as PDF' }))
     expect(sendMessage).toHaveBeenCalledWith({ type: 'wcm-report-print', auditId: 'aud_9' })
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
-    expect(writeText).toHaveBeenCalledWith('aud_9')
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://api.test/r/tok'))
+    expect(share).toHaveBeenCalledWith('aud_9', '<p>r</p>')
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
     expect(remove).toHaveBeenCalledWith(9)
   })

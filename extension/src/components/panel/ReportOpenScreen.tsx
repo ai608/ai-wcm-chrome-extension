@@ -3,7 +3,8 @@ import emptyState from '@/assets/empty-state.webp'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { Button } from '@/components/ui/button'
 import { toast } from '@/components/ui/toast'
-import { type ActiveTab, REPORT_PRINT_TYPE } from '@/lib/active-tab'
+import { type ActiveTab, REPORT_PRINT_TYPE, REPORT_SNAPSHOT_TYPE } from '@/lib/active-tab'
+import { shareReport } from '@/lib/api/o4'
 import { cn } from '@/lib/utils'
 import { usePanelStore } from '@/stores/panel-store'
 
@@ -11,6 +12,7 @@ export function ReportOpenScreen({ tab }: { tab: ActiveTab }) {
   const setView = usePanelStore((s) => s.setView)
   const auditId = tab.auditId ?? ''
   const [downloading, setDownloading] = useState(false)
+  const [sharing, setSharing] = useState(false)
   const [phase, setPhase] = useState<'idle' | 'run' | 'done'>('idle')
 
   useEffect(() => {
@@ -55,13 +57,22 @@ export function ReportOpenScreen({ tab }: { tab: ActiveTab }) {
     }
   }
 
-  async function copyAudit() {
+  async function copyLink() {
+    setSharing(true)
     try {
-      await navigator.clipboard.writeText(auditId)
-      toast('Copied')
+      const res = (await browser.runtime.sendMessage({
+        type: REPORT_SNAPSHOT_TYPE,
+        auditId,
+      })) as { ok?: boolean; html?: string } | undefined
+      if (!res?.ok || !res.html) throw new Error('snapshot failed')
+      const { url } = await shareReport(auditId, res.html)
+      await navigator.clipboard.writeText(url)
+      toast('Link copied. It works for 7 days')
     } catch (err) {
-      console.error('[report-panel] copy failed', { auditId, err })
-      toast('Couldn’t copy')
+      console.error('[report-panel] share failed', { auditId, err })
+      toast('Couldn’t copy the link')
+    } finally {
+      setSharing(false)
     }
   }
 
@@ -110,8 +121,13 @@ export function ReportOpenScreen({ tab }: { tab: ActiveTab }) {
               </span>
             </button>
             <div className="grid grid-cols-2 gap-2">
-              <Button variant="outline" className="w-full" onClick={() => void copyAudit()}>
-                Copy link
+              <Button
+                variant="outline"
+                className="w-full"
+                disabled={sharing}
+                onClick={() => void copyLink()}
+              >
+                {sharing ? 'Copying…' : 'Copy link'}
               </Button>
               <Button variant="outline" className="w-full" onClick={() => void closeReport()}>
                 Cancel

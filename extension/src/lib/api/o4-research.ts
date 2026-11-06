@@ -123,6 +123,17 @@ export async function getReport(auditId: string): Promise<Report> {
   return c as Report
 }
 
+/** Public link to the report, valid for 7 days. */
+export async function shareReport(
+  auditId: string,
+  html: string,
+): Promise<{ url: string; expiresAt: string }> {
+  return camelize(await request<unknown>('POST', `${base(auditId)}/share`, { body: { html } })) as {
+    url: string
+    expiresAt: string
+  }
+}
+
 export async function sendReport(
   auditId: string,
   email: string,

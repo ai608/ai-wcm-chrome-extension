@@ -5,7 +5,7 @@ import { gradeClass } from '@/components/research/shared'
 import { Progress } from '@/components/ui/progress'
 import { useReport } from '@/hooks/research-queries'
 import { useAuth } from '@/hooks/use-auth'
-import { REPORT_PRINT_TYPE } from '@/lib/active-tab'
+import { REPORT_PRINT_TYPE, REPORT_SNAPSHOT_TYPE } from '@/lib/active-tab'
 import {
   type BusinessSection,
   type CategoryKey,
@@ -593,6 +593,16 @@ export function ReportPage() {
     const onMessage = (message: unknown, _sender: unknown, sendResponse: (r: unknown) => void) => {
       if (!message || typeof message !== 'object') return
       const data = message as { type?: string; auditId?: string }
+      if (data.type === REPORT_SNAPSHOT_TYPE && data.auditId === auditId) {
+        void import('@/lib/report-share')
+          .then(({ reportSnapshot }) => reportSnapshot())
+          .then((html) => sendResponse({ ok: true, html }))
+          .catch((err: unknown) => {
+            console.error('[report] snapshot failed', { auditId, err })
+            sendResponse({ ok: false })
+          })
+        return true
+      }
       if (data.type !== REPORT_PRINT_TYPE || !data.auditId || data.auditId !== auditId) return
       console.info('[report] pdf start', { auditId })
       const root = document.querySelector('.report-pages')
