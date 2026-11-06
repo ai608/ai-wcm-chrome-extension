@@ -16,6 +16,15 @@ export function relativeTime(iso: string | null, now = Date.now()): string {
   return rtf.format(Math.round(diffMs / (365 * day)), 'year')
 }
 
+/** A date the page gave us (a post's published stamp), shown as written, not shifted into the
+ * viewer's time zone: 2026-10-27T20:24:40+00:00 is Oct 27 for everyone, as on the site itself. */
+export function formatPostDate(iso: string): string {
+  return new Date(`${iso.slice(0, 10)}T00:00:00Z`).toLocaleDateString(undefined, {
+    dateStyle: 'medium',
+    timeZone: 'UTC',
+  })
+}
+
 export function formatDateTime(iso: string): string {
   return new Intl.DateTimeFormat('en-US', {
     month: 'short',

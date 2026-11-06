@@ -1688,3 +1688,75 @@ async def test_more_questions_than_the_env_allows_is_refused_not_cut(
     )
     assert r.status_code == 422 and r.json()["error"]["code"] == "too_many_questions"
     assert "Remove 1" in r.json()["error"]["message"] and client_repo(client).runs == {}
+
+
+async def test_whole_audit_grades_the_areas_a_clinic_claims(client, monkeypatch):
+    """A Solene-like site through the real pipeline (only the network is faked): city pages in
+    root folders, a state hub, a thin page, a mention, and a city with nothing."""
+    from app.services import site_ai, site_crawl
+
+    for key in ("FIRECRAWL_API_KEY", "OPENROUTER_API_KEY"):
+        monkeypatch.setattr(research.settings, key, "fake")
+    home = "https://glowmedspa.com"
+
+    def words(prefix: str, n: int = 400) -> str:
+        return " ".join(f"{prefix}{i}" for i in range(n))
+
+    def page(title: str, h1: str, body: str = "", links: str = "") -> str:
+        return (
+            f'<html lang="en"><head><title>{title}</title>'
+            '<meta name="viewport" content="width=device-width"></head><body>'
+            f'<nav><a href="/tampa/">Tampa</a><a href="/ocala/">Ocala</a></nav>'
+            f"<h1>{h1}</h1><main>{body} {links}</main>"
+            "<footer>Serving Tampa, Ocala and Naples</footer></body></html>"
+        )
+
+    site = {
+        f"{home}/": page("Glow Med Spa", "Glow", words("h", 50)),
+        f"{home}/tampa/": page("Med spa in Tampa", "Tampa med spa", words("t")),
+        f"{home}/ocala/": page("Ocala", "Ocala", "tiny page"),
+        f"{home}/florida/": page(
+            "Florida care",
+            "Care across Florida",
+            words("f", 350),
+            '<a href="/tampa/">T</a> <a href="/ocala/">O</a>',
+        ),
+    }
+
+    async def fake_map(_http, _url):
+        return list(site)
+
+    async def fake_scrape(_http, url):
+        return site.get(url)
+
+    async def fake_ai(_http, _pages, _names):
+        return {"areas_served": ["Tampa", "Ocala", "Naples", "Miami", "Florida"]}
+
+    monkeypatch.setattr(site_crawl, "map_site", fake_map)
+    monkeypatch.setattr(site_crawl, "scrape", fake_scrape)
+    monkeypatch.setattr(site_ai, "analyze", fake_ai)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "ready"
+    cities = done["site"]["cities"]
+    by = {a["name"]: a for a in cities["areas"]}
+    assert {n: a["status"] for n, a in by.items()} == {
+        "Tampa": "covered",
+        "Ocala": "needs_work",
+        "Naples": "mentioned",  # only in the footer of every page
+        "Miami": "missing",
+        "Florida": "covered",
+    }
+    assert by["Ocala"]["issues"] == ["thin"]
+    assert cities["claimed_not_built"] == ["Naples", "Miami"]
+    assert (
+        cities["hub_page"] is True
+    )  # /florida/ links Tampa and Ocala from its own content
+    assert cities["pages_found"] == len(cities["city_pages"]) == 3
+    assert done["overview"]["score"] is not None  # scoring ran with the new area data
+    # the report endpoint carries the same data, as plain JSON
+    rep = (
+        await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}/report")
+    ).json()
+    assert rep["audit"]["site"]["cities"]["areas"] == cities["areas"]

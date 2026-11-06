@@ -3,12 +3,13 @@ import logging
 import re
 from datetime import date
 from typing import Any
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
-from app.services import llm
+from app.services import area_pages, llm
 
 # What a patient expects a good service page to answer. Fixed list, so results are comparable.
 CHROME_CHARS = 3000  # the site header or footer, sent once
@@ -138,8 +139,65 @@ def _strings(value: Any, limit: int = 20) -> list[str]:
     )
 
 
-def apply(sections: dict[str, Any], ai: dict[str, Any], pages: dict[str, str]) -> None:
-    """Merge the AI result into `site`. Anything malformed is dropped, never trusted."""
+def _path(url: str) -> str:
+    return urlsplit(url).path.rstrip("/").lower()
+
+
+def _city_links(url: str, html: str, cities: set[str]) -> tuple[set[str], bool]:
+    """City pages (as `norm` keys) this page links to from its own content: on the same site,
+    from <main> when the page has one, else from everything outside the menu, header and footer.
+    Also whether the page has a <main>."""
+    doc = LexborHTMLParser(html)
+    for chrome in doc.css("nav, header, footer, aside"):
+        chrome.decompose()
+    root = doc.css_first("main, [role=main]")
+    anchors = (root or doc).css("a[href]")
+    host = urlsplit(url).netloc.lower().removeprefix("www.")
+    found = set()
+    for a in anchors:
+        target = urljoin(url, a.attributes.get("href") or "")
+        if urlsplit(target).netloc.lower().removeprefix("www.") == host:
+            key = area_pages.norm(target)
+            if key in cities:
+                found.add(key)
+    return found, root is not None
+
+
+def _is_area_hub(pages: dict[str, str], city_pages: list[str]) -> bool:
+    """A page that gathers the areas: outside the home page, its own content links to two or
+    more city pages. /florida/ listing Tampa, Clearwater, Sarasota and St. Petersburg is one,
+    wherever the site keeps it."""
+    cities = {area_pages.norm(u) for u in city_pages}
+    links = {
+        url: _city_links(url, html, cities)
+        for url, html in pages.items()
+        if _path(url)  # the home page is no hub
+    }
+    # ponytail: a menu built from plain <div>s on a page with no <main> is told apart only by
+    # being on most pages; a real hub that links only cities the menu also links is missed there.
+    sitewide: set[str] = set()
+    if len(pages) >= 4:
+        counts: dict[str, int] = {}
+        for found, _ in links.values():
+            for key in found:
+                counts[key] = counts.get(key, 0) + 1
+        sitewide = {k for k, n in counts.items() if n > len(pages) / 2}
+    for url, (found, has_main) in links.items():
+        own = found if has_main else found - sitewide
+        if len(own - {area_pages.norm(url)}) >= 2:
+            return True
+    return False
+
+
+def apply(
+    sections: dict[str, Any],
+    ai: dict[str, Any],
+    pages: dict[str, str],
+    urls: list[str] | None = None,
+) -> None:
+    """Merge the AI result into `site`. Anything malformed is dropped, never trusted.
+    `urls` are every address mapped on the site, crawled or not: a city page exists whether or
+    not the page budget reached it."""
     site = sections["site"]
     clusters = {c["service"]: c for c in site["services"]["clusters"]}
     for item in ai.get("services") or []:
@@ -180,10 +238,32 @@ def apply(sections: dict[str, Any], ai: dict[str, Any], pages: dict[str, str]) -
         c["expected"] for c in site["services"]["clusters"]
     )
 
-    city_text = " ".join(site["cities"]["city_pages"]).lower().replace("-", " ")
     areas = _strings(ai.get("areas_served"))
-    site["cities"]["claimed_not_built"] = [
-        a for a in areas if a.lower() not in city_text
+    known = list(dict.fromkeys([*(urls or []), *pages, *site["cities"]["city_pages"]]))
+    graded = area_pages.grade(areas, known, pages)
+    cities = site["cities"]
+    # City pages to count are the ones whose address names the area. A page that only has the
+    # city in its title (every page of a clinic in that city) covers the area but is no city
+    # page, and the home page never is. One entry per page whatever its spelling.
+    merged = {
+        area_pages.norm(u): u
+        for u in [
+            *cities["city_pages"],
+            *(
+                u
+                for g in graded
+                for u in area_pages.pages_named(g["name"], known)
+                if _path(u)
+            ),
+        ]
+    }
+    cities["city_pages"] = list(merged.values())[:50]
+    cities["pages_found"] = len(cities["city_pages"])
+    cities["hub_page"] = cities["hub_page"] or _is_area_hub(pages, cities["city_pages"])
+    cities["areas"] = graded
+    # No page of its own: the old list, still what the score, report and gap list read.
+    cities["claimed_not_built"] = [
+        g["name"] for g in graded if g["status"] in ("mentioned", "missing")
     ][:20]
 
     providers = [

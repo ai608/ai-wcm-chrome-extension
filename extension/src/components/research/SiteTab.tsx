@@ -7,8 +7,9 @@ import {
 } from '@/components/ui/accordion'
 import { Button } from '@/components/ui/button'
 import type { Audit, SiteSection } from '@/lib/api/research-types'
+import { areaProblems } from '@/lib/areas'
 import { downloadCsv, toCsv } from '@/lib/csv'
-import { relativeTime } from '@/lib/time'
+import { formatPostDate, relativeTime } from '@/lib/time'
 import { usePanelStore } from '@/stores/panel-store'
 
 type Sub = 'services' | 'cities' | 'proof' | 'blog' | 'trust'
@@ -31,8 +32,19 @@ export function gapInventory(audit: Audit): Gap[] {
     }
     if (site.cities.pagesFound === 0) gaps.push({ area: 'Cities', item: 'No service-area pages' })
     if (!site.cities.hubPage) gaps.push({ area: 'Cities', item: 'No hub page' })
-    for (const c of site.cities.claimedNotBuilt)
-      gaps.push({ area: 'Cities', item: `${c} (claimed, no page)` })
+    if (site.cities.areas?.length) {
+      for (const a of site.cities.areas) {
+        if (a.status === 'missing')
+          gaps.push({ area: 'Cities', item: `${a.name} (claimed, no page)` })
+        if (a.status === 'mentioned')
+          gaps.push({ area: 'Cities', item: `${a.name} (mentioned, no page of its own)` })
+        if (a.status === 'needs_work')
+          gaps.push({ area: 'Cities', item: `${a.name} page: ${areaProblems(a).join(', ')}` })
+      }
+    } else {
+      for (const c of site.cities.claimedNotBuilt)
+        gaps.push({ area: 'Cities', item: `${c} (claimed, no page)` })
+    }
     if (!site.proof.beforeAfterGallery) gaps.push({ area: 'Proof', item: 'Before/after gallery' })
     if (!site.proof.testimonialPages) gaps.push({ area: 'Proof', item: 'Testimonial pages' })
     if (!site.proof.reviewsPage) gaps.push({ area: 'Proof', item: 'Reviews page' })
@@ -116,7 +128,7 @@ function Cities({ c }: { c: SiteSection['cities'] }) {
           </p>
         ) : null}
         <Row label="Hub page" status={c.hubPage ? 'ok' : 'warn'}>
-          {c.hubPage ? '/locations/ or /service-areas/ detected' : 'Not detected'}
+          {c.hubPage ? 'A page that gathers the areas was found' : 'Not detected'}
         </Row>
       </Block>
       {c.cityPages.length ? (
@@ -128,7 +140,25 @@ function Cities({ c }: { c: SiteSection['cities'] }) {
           ))}
         </div>
       ) : null}
-      {c.claimedNotBuilt.length ? (
+      {c.areas?.length ? (
+        <Block title="Areas the site says it serves">
+          {c.areas.map((a) => (
+            <Row
+              key={a.name}
+              label={a.name}
+              status={a.status === 'covered' ? 'ok' : a.status === 'missing' ? 'fail' : 'warn'}
+            >
+              {a.status === 'covered'
+                ? 'Has its own page'
+                : a.status === 'needs_work'
+                  ? `Page needs work: ${areaProblems(a).join(', ')}`
+                  : a.status === 'mentioned'
+                    ? 'Named in the text, no page of its own'
+                    : 'No page, not mentioned elsewhere'}
+            </Row>
+          ))}
+        </Block>
+      ) : c.claimedNotBuilt.length ? (
         <Block title="Claimed but no page">
           <div className="flex flex-wrap gap-1.5">
             {c.claimedNotBuilt.map((p) => (
@@ -189,7 +219,7 @@ function Blog({ audit, b }: { audit: Audit; b: SiteSection['blog'] }) {
           status={!dateKnown ? 'info' : b.postsLast6Months ? 'ok' : partial ? 'info' : 'warn'}
         >
           {b.lastPostAt
-            ? `${new Date(b.lastPostAt).toLocaleDateString(undefined, { dateStyle: 'medium' })} (${relativeTime(b.lastPostAt)})`
+            ? `${formatPostDate(b.lastPostAt)} (${relativeTime(b.lastPostAt)})`
             : 'Date not found'}
         </Row>
         <Row label="Frequency">

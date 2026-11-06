@@ -73,6 +73,11 @@ export interface BusinessSection {
   } | null
   company: {
     name: string | null
+    description?: string | null
+    keywords?: string[]
+    estimatedRevenue?: string | null
+    phone?: string | null
+    address?: string | null
     industry: string | null
     employeeCount: number | null
     linkedinUrl: string | null
@@ -289,6 +294,14 @@ export interface SiteSection {
     hubPage: boolean
     cityPages: string[]
     claimedNotBuilt: string[]
+    /** Each area the site claims: its page, if any, and what is wrong with it. Older audits lack it. */
+    areas?: {
+      name: string
+      status: 'covered' | 'needs_work' | 'mentioned' | 'missing'
+      pages: string[]
+      issues: ('noindex' | 'thin' | 'title_h1' | 'duplicate')[]
+      duplicateOf: string | null
+    }[]
   }
   proof: {
     beforeAfterGallery: boolean

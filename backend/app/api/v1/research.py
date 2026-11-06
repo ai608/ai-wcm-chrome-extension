@@ -21,6 +21,7 @@ from app.repositories.audit_repository import AuditRepository, to_wire
 from app.services import (
     ai_report,
     ai_visibility,
+    apollo,
     crawl_access,
     fetchlog,
     ghl,
@@ -255,7 +256,9 @@ async def _enrich(
         await trace.report("ai", "running")
         try:
             names = [c["service"] for c in sections["site"]["services"]["clusters"]]
-            site_ai.apply(sections, await site_ai.analyze(http, pages, names), pages)
+            site_ai.apply(
+                sections, await site_ai.analyze(http, pages, names), pages, urls
+            )
             await trace.report("ai", "done", pages=len(pages))
         except (AppError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
             logger.warning("audit %s: AI page analysis failed", audit_id, exc_info=True)
@@ -317,6 +320,24 @@ async def _enrich(
         )
     else:
         await trace.skip("Apify token not set", "gbp")
+    if settings.APOLLO_API_KEY:
+        await trace.report("company", "running")
+        try:
+            domain = _domain(urlsplit(final_url).hostname or "")
+            found = await apollo.company(http, domain)
+            sections["business"]["company"] = found
+            await repo.update(
+                audit_id,
+                sections={"business": sections["business"]},
+                state={"business": "ready"},
+            )
+            await trace.report("company", "done", matched=bool(found))
+        except (httpx.HTTPError, ValueError, KeyError) as exc:
+            logger.warning("audit %s: Apollo lookup failed", audit_id, exc_info=True)
+            await trace.report("company", "failed", error=_why(exc))
+            ok = False
+    else:
+        await trace.skip("Apollo key not set", "company")
     return ok
 
 

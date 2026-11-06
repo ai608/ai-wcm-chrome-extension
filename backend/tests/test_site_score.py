@@ -187,6 +187,20 @@ def test_service_area_pages_hub_and_penalty() -> None:
     assert cat(run(s), "service_area")["score"] == 0  # floor, penalty capped at 30
 
 
+def test_weak_city_pages_are_an_issue_not_a_penalty() -> None:
+    s = good()
+    cities = s["site"]["cities"]
+    cities.update(pages_found=5, hub_page=True, claimed_not_built=[])
+    before = cat(run(s), "service_area")["score"]
+    cities["areas"] = [
+        {"name": "Tampa", "status": "needs_work", "issues": ["thin"]},
+        {"name": "Ocala", "status": "covered", "issues": []},
+    ]
+    out = run(s)
+    assert cat(out, "service_area")["score"] == before
+    assert "City pages need work: Tampa" in [i["title"] for i in out["top_issues"]]
+
+
 def test_getting_the_call_prefers_check_status() -> None:
     s = good()
     s["convert"]["checks"][0]["status"] = "warn"  # online booking: 0.5 despite True

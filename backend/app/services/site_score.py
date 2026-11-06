@@ -347,6 +347,15 @@ def _service_area(sections: dict[str, Any]) -> Scored:
                 "detail": "The site says it serves these areas, yet nobody searching there will find it.",
             },
         )
+    weak = [a for a in cities.get("areas") or [] if a.get("status") == "needs_work"]
+    if weak:
+        # ponytail: shown as an issue only; the score counts pages, not how good they are.
+        issues.append(
+            {
+                "title": f"City pages need work: {', '.join(a['name'] for a in weak[:3])}",
+                "detail": "Thin, hidden or copied city pages rank poorly, so those towns still do not find the clinic.",
+            }
+        )
     return max(score, 0.0), issues
 
 

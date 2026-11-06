@@ -139,6 +139,7 @@ interface WireEnrichment {
 interface WireContext {
   contact: WireContact
   field_values: Record<string, FieldValue>
+  auto_saved?: string[]
   enrichment: WireEnrichment
 }
 
@@ -174,6 +175,7 @@ export async function getContactContext(contactId: string): Promise<ContactConte
   return {
     contact: mapContact(data.contact),
     fieldValues: data.field_values,
+    autoSaved: data.auto_saved ?? [],
     enrichment: mapEnrichment(data.enrichment),
   }
 }

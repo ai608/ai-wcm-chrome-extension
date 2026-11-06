@@ -12,7 +12,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
 from app.core.exceptions import AppError
-from app.services import fetchlog
+from app.services import fetchlog, page_patterns
 from app.services.constants import (
     BOOKING,
     LOCAL_BUSINESS_TYPES,
@@ -528,13 +528,7 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
                     "topics_missing": [],
                 }
             )
-    city_pages = [
-        i["href"]
-        for i in internal
-        if re.search(
-            r"/(locations?|service-areas?|areas-we-serve)/", i["href"], re.IGNORECASE
-        )
-    ]
+    city_pages = [i["href"] for i in internal if page_patterns.is_area_path(i["href"])]
     city_pages = list(dict.fromkeys(city_pages))
     socials = []
     for network, host in SOCIAL_HOSTS:

@@ -36,6 +36,7 @@ const questionBlockSchema = z.object({
   ]),
   options: z.optional(z.array(blockOptionSchema)),
   requiredForBooking: z.boolean(),
+  half: z.optional(z.boolean()),
 })
 
 const recapRowSchema = z.discriminatedUnion('source', [

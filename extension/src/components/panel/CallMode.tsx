@@ -1,5 +1,4 @@
 import { Suspense, useEffect } from 'react'
-import { HistoryTab } from '@/components/history/HistoryTab'
 import { ContactHeader } from '@/components/panel/ContactHeader'
 import { PanelHeader } from '@/components/panel/PanelHeader'
 import { StatusBanner } from '@/components/panel/StatusBanner'
@@ -131,7 +130,12 @@ export function CallMode({
               />
             </TabsContent>
             <TabsContent value="history">
-              <HistoryTab contactId={contactId} />
+              <div className="flex flex-col items-center gap-3 py-10">
+                <p className="text-sm text-muted-foreground">Coming soon</p>
+                <Button onClick={() => changeTab('script')}>
+                  Go to Script
+                </Button>
+              </div>
             </TabsContent>
             <TabsContent value="research">
               <Suspense fallback={<Skeleton className="h-32 w-full" />}>

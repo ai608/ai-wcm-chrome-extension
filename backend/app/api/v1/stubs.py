@@ -14,7 +14,6 @@ for method, path in (
     ("POST", "/contacts/{id}/script/regenerate"),
     ("POST", "/contacts/{id}/outcome"),
     ("POST", "/contacts/{id}/enrich"),
-    ("GET", "/contacts/{id}/history"),
     ("POST", "/research/audits/{id}/domain-overview"),
     ("POST", "/research/audits/{id}/send"),
 ):

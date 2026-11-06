@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { buildPdf, headingBlock, pageCuts, paginate } from '@/lib/report-pdf'
 
 describe('pageCuts', () => {
@@ -55,5 +55,29 @@ describe('buildPdf', () => {
     expect(text.startsWith('%PDF-1.4')).toBe(true)
     expect(text).toContain('/Count 2')
     expect(text).toContain('%%EOF')
+  })
+})
+
+describe('downloadReportPdf', () => {
+  it('rasterizes the clone inside .report-root so the report styles still apply', async () => {
+    let scoped: boolean | null = null
+    vi.resetModules()
+    vi.doMock('html-to-image', () => ({
+      getFontEmbedCSS: async () => '',
+      toCanvas: async (el: HTMLElement) => {
+        scoped = el.closest('.report-root') !== null
+        throw new Error('stop after the check')
+      },
+    }))
+    Object.defineProperty(document, 'fonts', {
+      value: { ready: Promise.resolve() },
+      configurable: true,
+    })
+    const { downloadReportPdf } = await import('@/lib/report-pdf')
+    const source = document.createElement('div')
+    document.body.appendChild(source)
+    await expect(downloadReportPdf(source)).rejects.toThrow('stop after the check')
+    expect(scoped).toBe(true)
+    vi.doUnmock('html-to-image')
   })
 })

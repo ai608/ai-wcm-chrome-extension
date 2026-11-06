@@ -14,6 +14,7 @@ import {
   type OverviewCategory,
   type Report,
 } from '@/lib/api/research-types'
+import { areaProblems } from '@/lib/areas'
 import { formatDateTime } from '@/lib/time'
 import { cn } from '@/lib/utils'
 
@@ -396,6 +397,16 @@ export function Body({ report }: { report: Report }) {
                           {site.cities.pagesFound} service-area pages ·{' '}
                           {site.cities.hubPage ? 'locations hub present' : 'no locations hub'}
                         </p>
+                        {site.cities.areas?.some((a) => a.status === 'needs_work') ? (
+                          <p className="report-muted">
+                            City pages that need work:{' '}
+                            {site.cities.areas
+                              .filter((a) => a.status === 'needs_work')
+                              .map((a) => `${a.name} (${areaProblems(a).join(', ')})`)
+                              .join('; ')}
+                            .
+                          </p>
+                        ) : null}
                         {site.cities.claimedNotBuilt.length ? (
                           <>
                             <p className="report-muted">

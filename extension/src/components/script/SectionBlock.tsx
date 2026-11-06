@@ -13,12 +13,27 @@ import type { Block, Contact, FieldValue, FlowNode, Section } from '@/lib/api/ty
 import type { RecapRowValue } from '@/lib/script/readiness'
 import type { TemplateCtx } from '@/lib/script/template'
 
+const isHalf = (b: Block) => b.type === 'question' && b.half === true
+
+/** Consecutive half-width questions form one group; every other block stands alone. */
+type Group = [Block, ...Block[]]
+function groupHalves(blocks: Block[]): Group[] {
+  const out: Group[] = []
+  for (const b of blocks) {
+    const last = out[out.length - 1]
+    if (isHalf(b) && last && isHalf(last[0])) last.push(b)
+    else out.push([b])
+  }
+  return out
+}
+
 interface SectionBlockProps {
   section: Section
   contactId: string
   contact: Contact
   ctx: TemplateCtx
   fieldValues: Record<string, FieldValue>
+  autoSaved: string[]
   recapRows: RecapRowValue[]
   missing: { fieldKey: string; label: string }[]
   bookingWidgetUrl: string
@@ -34,6 +49,7 @@ export function SectionBlock({
   contact,
   ctx,
   fieldValues,
+  autoSaved,
   recapRows,
   missing,
   bookingWidgetUrl,
@@ -52,23 +68,33 @@ export function SectionBlock({
       </AccordionTrigger>
       <AccordionContent>
         <div className="flex flex-col gap-2.5 pb-1">
-          {section.blocks.map((block) => (
-            <BlockView
-              key={block.id}
-              block={block}
-              contactId={contactId}
-              contact={contact}
-              ctx={ctx}
-              fieldValues={fieldValues}
-              recapRows={recapRows}
-              missing={missing}
-              bookingWidgetUrl={bookingWidgetUrl}
-              ticked={ticked}
-              flows={flows}
-              onToggleResponse={onToggleResponse}
-              onJumpToField={onJumpToField}
-            />
-          ))}
+          {groupHalves(section.blocks).map((group) => {
+            const view = (block: Block) => (
+              <BlockView
+                key={block.id}
+                block={block}
+                contactId={contactId}
+                contact={contact}
+                ctx={ctx}
+                fieldValues={fieldValues}
+                autoSaved={autoSaved}
+                recapRows={recapRows}
+                missing={missing}
+                bookingWidgetUrl={bookingWidgetUrl}
+                ticked={ticked}
+                flows={flows}
+                onToggleResponse={onToggleResponse}
+                onJumpToField={onJumpToField}
+              />
+            )
+            return group.length === 1 && !isHalf(group[0]) ? (
+              view(group[0])
+            ) : (
+              <div key={group[0].id} className="grid grid-cols-2 gap-2.5">
+                {group.map(view)}
+              </div>
+            )
+          })}
         </div>
       </AccordionContent>
     </AccordionItem>
@@ -83,6 +109,7 @@ function BlockView({
   contact,
   ctx,
   fieldValues,
+  autoSaved,
   recapRows,
   missing,
   bookingWidgetUrl,
@@ -128,6 +155,7 @@ function BlockView({
           contactId={contactId}
           block={block}
           initialValue={fieldValues[block.fieldKey]}
+          autoSaved={autoSaved.includes(block.fieldKey)}
         />
       )
     case 'faq':

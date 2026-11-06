@@ -9,7 +9,7 @@ import httpx
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1 import auth, ext, research, stubs, web_handoff
+from app.api.v1 import auth, ext, history, research, stubs, web_handoff
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.json import OrjsonResponse
@@ -114,5 +114,6 @@ app.include_router(auth.router, prefix="/api/v1/ext")
 app.include_router(web_handoff.router, prefix="/api/v1/ext")
 app.include_router(ext.router, prefix="/api/v1/ext")
 app.include_router(research.router, prefix="/api/v1/ext")
+app.include_router(history.router, prefix="/api/v1/ext")
 app.include_router(stubs.router, prefix="/api/v1/ext")
 app.include_router(stubs.webhook_router)

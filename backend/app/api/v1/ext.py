@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -12,8 +13,10 @@ from app.core.config import settings
 from app.core.dependencies import get_http_client, require_extension_access
 from app.core.exceptions import AppError
 from app.models.user import UserProfile
-from app.services import ghl, openrouter_usage
+from app.repositories.audit_repository import AuditRepository
+from app.services import ghl, openrouter_usage, site_audit
 
+logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_extension_access)], tags=["ext"])
 
 _SCRIPTS = Path(__file__).resolve().parents[3] / "scripts"
@@ -120,15 +123,59 @@ def _wire_contact(c: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _gbp_values(
+    request: Request, http: Http, contact: dict[str, Any]
+) -> dict[str, Any]:
+    """Google rating and review count from the latest research audit, if it matched a GBP."""
+    pool = getattr(request.app.state, "pool", None)
+    website = await ghl.contact_website(http, contact)
+    if pool is None or not website:
+        return {}
+    _, host = site_audit.normalize_url(website)
+    row = await AuditRepository(pool).latest(
+        host.lower().rstrip(".").removeprefix("www.")
+    )
+    business = (row["business"] if row else None) or {}
+    if isinstance(business, str):
+        business = json.loads(business)
+    gbp = business.get("gbp") or {}
+    if not gbp.get("matched"):
+        return {}
+    return {
+        "contact.google_rating": gbp.get("rating"),
+        "contact.google_review_count": gbp.get("review_count"),
+    }
+
+
 @router.get("/contacts/{contact_id}/context")
 async def get_context(
-    contact_id: str, http: Http = Depends(get_http_client)
+    contact_id: str, request: Request, http: Http = Depends(get_http_client)
 ) -> dict[str, Any]:
     contact = await ghl.get_contact(http, contact_id)
     by_key = _by_key(await ghl.get_catalog(http))
+    values = _values(contact, by_key)
+    # GHL wins. Only a field empty in GHL takes the research number, and is saved back to GHL.
+    fill = {
+        k: v
+        for k, v in (await _gbp_values(request, http, contact)).items()
+        if k in by_key and values.get(k) in (None, "", []) and v is not None
+    }
+    saved: list[str] = []
+    if fill:
+        try:
+            await ghl.update_custom_fields(
+                http,
+                contact_id,
+                [{"id": by_key[k]["id"], "field_value": v} for k, v in fill.items()],
+            )
+            saved = list(fill)
+        except AppError:
+            logger.warning("Could not save research values to GHL for %s", contact_id)
+        values.update(fill)
     return {
+        "auto_saved": saved,
         "contact": _wire_contact(contact),
-        "field_values": _values(contact, by_key),
+        "field_values": values,
         # ponytail: O1 enrichment lookup not wired, always not_enriched
         "enrichment": {
             "status": "not_enriched",
@@ -179,6 +226,17 @@ def _coerce(field: dict[str, Any], key: str, value: Any) -> Any:
     return str(value)
 
 
+# Upper bounds of the first three "Annual Revenue (selection)" options, in GHL order:
+# Under $450k, $450k-$1M, $1M-$1.5M, then $1.5M +. A bound belongs to the higher range.
+REVENUE_BOUNDS = (450_000, 1_000_000, 1_500_000)
+
+
+def _revenue_range(options: list[str], amount: Any) -> str | None:
+    if len(options) != len(REVENUE_BOUNDS) + 1 or not isinstance(amount, int | float):
+        return None  # options were edited in GHL; don't guess
+    return options[sum(amount >= b for b in REVENUE_BOUNDS)]
+
+
 class PatchFields(BaseModel):
     fields: dict[str, Any]
 
@@ -196,11 +254,23 @@ async def patch_fields(
     if missing:
         raise AppError(422, "validation_error", f"No GHL field for {min(missing)}")
     values = {k: _coerce(by_key[k], k, v) for k, v in body.fields.items()}
-    await ghl.update_custom_fields(
-        http,
-        contact_id,
-        [{"id": by_key[k]["id"], "field_value": v} for k, v in values.items()],
-    )
+    writes = [{"id": by_key[k]["id"], "field_value": v} for k, v in values.items()]
+    # Typing the dollar amount also sets the matching range field in GHL.
+    amount = values.get("contact.annual_revenue_")
+    if amount not in (None, ""):
+        rng = next(
+            (
+                f
+                for f in await ghl.get_catalog(http)
+                if f.get("fieldKey") == "contact.annual_revenue"
+            ),
+            None,
+        )
+        if rng:
+            bucket = _revenue_range(rng.get("picklistOptions") or [], amount)
+            if bucket:
+                writes.append({"id": rng["id"], "field_value": bucket})
+    await ghl.update_custom_fields(http, contact_id, writes)
     return {
         "field_values": {k: (v if v != "" else None) for k, v in values.items()},
         "updated_at": datetime.now(UTC).isoformat(),

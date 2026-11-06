@@ -1,7 +1,7 @@
 import { BadgeCheck, Copy, ExternalLink, Globe, MapPin, Phone, Star } from 'lucide-react'
 import { SocialIcon } from '@/components/research/SocialIcon'
 import { StaticMap } from '@/components/research/StaticMap'
-import { Block, Chip, ExtLink } from '@/components/research/shared'
+import { Block, ChipRow, ExtLink, Row } from '@/components/research/shared'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -59,10 +59,12 @@ export function GbpCard({
   gbp,
   socials = [],
   website,
+  bordered = false,
 }: {
   gbp: BusinessSection['gbp']
   socials?: BusinessSection['socials']
   website?: string | null
+  bordered?: boolean
 }) {
   if (!gbp?.matched) {
     return (
@@ -89,7 +91,9 @@ export function GbpCard({
   const matched = matchedOn(gbp)
   return (
     <Block title="Google Business Profile">
-      <div className="flex flex-col gap-3 rounded-xl bg-muted/60 p-4">
+      <div
+        className={`flex flex-col gap-3 rounded-xl bg-muted/60 p-4 ${bordered ? 'border border-border' : ''}`}
+      >
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
           <h4 className="min-w-0 break-words text-lg font-semibold leading-snug text-foreground">
             {gbp.name}
@@ -242,27 +246,28 @@ export function ProfileSignals({ business }: { business: BusinessSection }) {
 
 export function CompanyCard({ company }: { company: BusinessSection['company'] }) {
   if (!company) return null
-  const tech = company.technologies.slice(0, 12)
-  const more = company.technologies.length - tech.length
+  const { employeeCount, estimatedRevenue, linkedinUrl, foundedYear } = company
   return (
     <Block title="Company (Apollo)">
-      <div className="flex flex-wrap gap-1.5">
-        {company.industry ? <Chip>{company.industry}</Chip> : null}
-        {company.employeeCount != null ? <Chip>{company.employeeCount} employees</Chip> : null}
-        {company.foundedYear ? <Chip>Founded {company.foundedYear}</Chip> : null}
-      </div>
-      {company.linkedinUrl ? (
-        <p className="mt-2 text-[13px]">
-          <ExtLink href={company.linkedinUrl}>LinkedIn</ExtLink>
-        </p>
+      {company.description ? <Row label="Description">{company.description}</Row> : null}
+      {company.industry ? <Row label="Industry">{company.industry}</Row> : null}
+      {employeeCount != null ? <Row label="Employees">{employeeCount}</Row> : null}
+      {foundedYear ? <Row label="Founded">{foundedYear}</Row> : null}
+      {company.phone ? <Row label="Phone">{company.phone}</Row> : null}
+      {company.address ? <Row label="Address">{company.address}</Row> : null}
+      {estimatedRevenue ? (
+        <Row label="Est. revenue">${estimatedRevenue} (Apollo estimate)</Row>
       ) : null}
-      {tech.length ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {tech.map((t) => (
-            <Chip key={t}>{t}</Chip>
-          ))}
-          {more > 0 ? <Chip>+{more} more</Chip> : null}
-        </div>
+      {linkedinUrl ? (
+        <Row label="LinkedIn">
+          <ExtLink href={linkedinUrl}>Company page</ExtLink>
+        </Row>
+      ) : null}
+      {company.keywords?.length ? (
+        <ChipRow label="Focus areas" items={company.keywords.slice(0, 8)} />
+      ) : null}
+      {company.technologies.length ? (
+        <ChipRow label="Technologies" items={company.technologies.slice(0, 12)} />
       ) : null}
     </Block>
   )

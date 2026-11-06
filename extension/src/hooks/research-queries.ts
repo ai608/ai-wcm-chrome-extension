@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ApiError } from '@/lib/api/errors'
 import { type Audit, auditBusy } from '@/lib/api/research-types'
 import { call } from '@/lib/messaging'
+import { qk } from '@/hooks/queries'
 
 export const POLL_MS = 2000
 export const POLL_CAP_MS = 3 * 60_000
@@ -125,6 +126,14 @@ export function useContactResearch(contactId: string) {
   const audit = query.data?.audit ?? null
   const busy = auditBusy(audit)
   const [interval, timedOut] = usePollWindow(busy, pollCapFor(audit))
+  // Research finished: the call form pre-fills Google rating and reviews from it.
+  const wasBusy = useRef(false)
+  useEffect(() => {
+    if (wasBusy.current && !busy) {
+      client.invalidateQueries({ queryKey: qk.contactContext(contactId) })
+    }
+    wasBusy.current = busy
+  }, [busy, client, contactId])
   useQuery({
     queryKey: rk.audit(audit?.id ?? ''),
     queryFn: async () => {

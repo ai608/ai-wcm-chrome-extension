@@ -169,7 +169,10 @@ class AuditRepository:
                 " FROM extension.audits WHERE ai_cost_micro > 0 "
                 " UNION ALL "
                 " SELECT 'ai_visibility', requested_by, created_at, cost_micro "
-                " FROM extension.ai_visibility_runs WHERE cost_micro > 0) "
+                " FROM extension.ai_visibility_runs WHERE cost_micro > 0 "
+                " UNION ALL "
+                " SELECT 'history_briefs', requested_by, created_at, cost_micro "
+                " FROM extension.history_briefs WHERE cost_micro > 0) "
                 "SELECT src, COALESCE(SUM(c), 0)::bigint AS total, "
                 " COALESCE(SUM(c) FILTER (WHERE created_at >= now() - interval '1 day'), 0)::bigint AS day, "
                 " COALESCE(SUM(c) FILTER (WHERE created_at >= now() - interval '7 days'), 0)::bigint AS week, "
@@ -179,7 +182,8 @@ class AuditRepository:
             users = await conn.fetchval(
                 "SELECT count(DISTINCT requested_by) FROM ("
                 " SELECT requested_by FROM extension.audits WHERE ai_cost_micro > 0 "
-                " UNION SELECT requested_by FROM extension.ai_visibility_runs WHERE cost_micro > 0) u"
+                " UNION SELECT requested_by FROM extension.ai_visibility_runs WHERE cost_micro > 0"
+                " UNION SELECT requested_by FROM extension.history_briefs WHERE cost_micro > 0) u"
             )
         by = {r["src"]: int(r["total"]) for r in rows}
         return {
@@ -189,6 +193,7 @@ class AuditRepository:
             "month": sum(int(r["month"]) for r in rows),
             "audits": by.get("audits", 0),
             "ai_visibility": by.get("ai_visibility", 0),
+            "history_briefs": by.get("history_briefs", 0),
             "users": int(users or 0),
         }
 

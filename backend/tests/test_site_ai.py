@@ -203,3 +203,49 @@ def test_analyze_tells_the_model_which_services_the_url_rules_found(monkeypatch)
     monkeypatch.setattr(site_ai.llm, "chat_json", chat)
     asyncio.run(site_ai.analyze(None, {HOME: PAGE}, ["Peptide Therapy"]))
     assert '["Peptide Therapy"]' in seen["system"] and "{names}" not in seen["system"]
+
+
+def test_city_pages_found_by_name_not_by_folder():
+    """solenewellnessstudio.com: /tampa/, /weight-loss-medication/florida/st-petersburg/ and a
+    blog post about Tampa. None is under /locations/, yet the first two are city pages."""
+    home = "https://x.com"
+    urls = [
+        f"{home}/tampa/",
+        f"{home}/weight-loss-medication/florida/st-petersburg/",
+        f"{home}/florida/",
+        f"{home}/blog/best-tampa-spas/",
+        f"{home}/iv-therapy/",
+    ]
+    s = sections()
+    s["site"]["cities"]["city_pages"] = []
+    ai = {"areas_served": ["Tampa", "St. Petersburg", "Florida", "Sarasota"]}
+    site_ai.apply(s, ai, {}, urls)
+    cities = s["site"]["cities"]
+    assert cities["claimed_not_built"] == ["Sarasota"]
+    assert (
+        cities["city_pages"] == urls[:3]
+    )  # the blog post and the service page are not
+    assert cities["pages_found"] == 3
+
+
+def test_hub_page_is_a_page_that_links_the_cities():
+    """/florida/ links Tampa, Clearwater and Sarasota in its text; the home page only has them in
+    its menu, which every page carries, so it is no hub."""
+    home = "https://x.com"
+    menu = '<nav><a href="/tampa/">Tampa</a><a href="/sarasota">Sarasota</a></nav>'
+    cities = [f"{home}/tampa/", f"{home}/clearwater/", f"{home}/sarasota/"]
+    florida = (
+        f"<html><body>{menu}<main>"
+        '<a href="/tampa/">T</a> <a href="/clearwater/">C</a> <a href="/sarasota">S</a>'
+        "</main></body></html>"
+    )
+    for pages, expected in (
+        ({home + "/": f"<html><body>{menu}<main>hi</main></body></html>"}, False),
+        ({home + "/": "<html></html>", home + "/florida/": florida}, True),
+    ):
+        s = sections()
+        s["site"]["cities"].update(city_pages=[], hub_page=False)
+        site_ai.apply(
+            s, {"areas_served": ["Tampa", "Clearwater", "Sarasota"]}, pages, cities
+        )
+        assert s["site"]["cities"]["hub_page"] is expected

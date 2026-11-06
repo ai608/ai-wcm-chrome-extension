@@ -258,3 +258,17 @@ export function host(url: string): string {
     return url
   }
 }
+
+/** A labeled chip list that lines up with Row: same indent and divider. */
+export function ChipRow({ label, items }: { label: string; items: (string | undefined)[] }) {
+  return (
+    <div className="border-b border-border/70 py-2.5 pl-4.5 text-[14px] last:border-b-0">
+      <p className="font-semibold text-foreground">{label}</p>
+      <div className="mt-1.5 flex flex-wrap gap-1.5">
+        {items.map((i) => (
+          <Chip key={i}>{i}</Chip>
+        ))}
+      </div>
+    </div>
+  )
+}

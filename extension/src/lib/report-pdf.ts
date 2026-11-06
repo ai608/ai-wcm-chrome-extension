@@ -5,6 +5,8 @@ const PAGE_H = Math.round(PAGE_W * (11 / 8.5))
 /** Quiet folio sits in this band so it never covers the last line. */
 const PAGE_FOOTER = 36
 const PAGE_INSET = 28
+/** Air above the content on every page but the first (the cover has its own masthead). */
+const PAGE_TOP = 36
 /** Rasterize the vector layout at 2× so type and rules stay sharp in the file. */
 const RASTER = 2
 
@@ -200,7 +202,7 @@ function slicePage(
   sy: number,
   sh: number,
   pagePx: number,
-  chrome: { label: string },
+  chrome: { label: string; top: number },
 ): Promise<Uint8Array> {
   const page = document.createElement('canvas')
   page.width = source.width
@@ -209,8 +211,9 @@ function slicePage(
   if (!ctx) throw new Error('canvas unavailable')
   ctx.fillStyle = '#ffffff'
   ctx.fillRect(0, 0, page.width, page.height)
-  const drawH = Math.min(sh, pagePx)
-  ctx.drawImage(source, 0, sy, source.width, drawH, 0, 0, source.width, drawH)
+  const top = chrome.top * RASTER
+  const drawH = Math.min(sh, pagePx - top)
+  ctx.drawImage(source, 0, sy, source.width, drawH, 0, top, source.width, drawH)
   const inset = PAGE_INSET * RASTER
   ctx.fillStyle = '#1a1a1a'
   ctx.font = `${12 * RASTER}px Poppins, sans-serif`
@@ -269,7 +272,7 @@ async function rasterPage(
   frame: HTMLElement,
   sliceH: number,
   fontEmbedCSS: string,
-  chrome: { label: string },
+  chrome: { label: string; top: number },
 ): Promise<Uint8Array> {
   const canvas = await toCanvas(frame, {
     pixelRatio: RASTER,
@@ -287,6 +290,9 @@ async function rasterPage(
 export async function downloadReportPdf(source: HTMLElement): Promise<void> {
   const started = performance.now()
   const host = document.createElement('div')
+  // The report's colors, tick/cross fills and score bars are styled as `.report-root ...`. The
+  // clone sits outside the page's own .report-root, so without this class they all drop out.
+  host.className = 'report-root'
   host.style.cssText = `position:fixed;left:-10000px;top:0;width:${PAGE_W}px;background:#fff;`
   const frame = document.createElement('div')
   frame.style.cssText = `width:${PAGE_W}px;overflow:hidden;background:#fff;`
@@ -310,7 +316,7 @@ export async function downloadReportPdf(source: HTMLElement): Promise<void> {
     }
     const { height, blocks } = measure(node)
     const pageH = PAGE_H - PAGE_FOOTER
-    const cuts = paginate(height, pageH, pageH, blocks)
+    const cuts = paginate(height, pageH, pageH - PAGE_TOP, blocks)
     console.info('[report] pdf paginate', { height, pageH, pages: cuts.length, cuts })
     const fontEmbedCSS = await getFontEmbedCSS(node)
     const pages: { jpeg: Uint8Array; width: number; height: number }[] = []
@@ -322,6 +328,7 @@ export async function downloadReportPdf(source: HTMLElement): Promise<void> {
       frame.style.height = `${sliceH}px`
       const jpeg = await rasterPage(frame, sliceH, fontEmbedCSS, {
         label: `${i + 1} of ${cuts.length}`,
+        top: i === 0 ? 0 : PAGE_TOP,
       })
       pages.push({ jpeg, width: PAGE_W * RASTER, height: Math.round(PAGE_H * RASTER) })
     }

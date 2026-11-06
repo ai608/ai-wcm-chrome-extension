@@ -1,3 +1,5 @@
+import json
+
 import httpx
 import pytest
 
@@ -10,19 +12,36 @@ from app.services import ghl
 pytestmark = pytest.mark.anyio
 LOC = "loc1"
 CATALOG = [
-    {"id": "f1", "fieldKey": "contact.monthly_new_patients", "dataType": "NUMERICAL"},
+    {
+        "id": "f1",
+        "fieldKey": "contact.how_many_locations_do_you_have",
+        "dataType": "NUMERICAL",
+    },
     {
         "id": "f2",
         "fieldKey": "contact.procedures_offer",
         "dataType": "MULTIPLE_OPTIONS",
     },
+    {"id": "r1", "fieldKey": "contact.annual_revenue_", "dataType": "MONETORY"},
+    {
+        "id": "r2",
+        "fieldKey": "contact.annual_revenue",
+        "dataType": "SINGLE_OPTIONS",
+        "picklistOptions": ["Under $450k", "$450k–$1M", "$1M–$1.5M", "$1.5M +"],
+    },
+    {"id": "g1", "fieldKey": "contact.google_rating", "dataType": "NUMERICAL"},
+    {"id": "g2", "fieldKey": "contact.google_review_count", "dataType": "NUMERICAL"},
     {"id": "site_field", "fieldKey": "contact.your_website_url", "dataType": "TEXT"},
 ]
 CONTACT = {
     "id": "c1",
     "locationId": LOC,
     "firstName": "Maze",
-    "customFields": [{"id": "f1", "value": 40}, {"id": "other", "value": "x"}],
+    "customFields": [
+        {"id": "f1", "value": 40},
+        {"id": "g2", "value": 99},
+        {"id": "other", "value": "x"},
+    ],
 }
 
 
@@ -65,11 +84,27 @@ async def test_context_and_script(client):
     assert r.status_code == 200
     body = r.json()
     assert body["contact"]["first_name"] == "Maze"
-    assert body["field_values"]["contact.monthly_new_patients"] == 40
+    assert body["field_values"]["contact.how_many_locations_do_you_have"] == 40
     assert (await client.get("/api/v1/ext/script")).json()["version"] == ext.SCRIPT[
         "version"
     ]
     assert (await client.get("/api/v1/ext/config")).json()["ghl_location_id"] == LOC
+
+
+async def test_context_prefills_google_from_research(client, monkeypatch):
+    async def fake(*_a):
+        return {"contact.google_rating": 4.8, "contact.google_review_count": 191}
+
+    monkeypatch.setattr(ext, "_gbp_values", fake)
+    values = (await client.get("/api/v1/ext/contacts/c1/context")).json()[
+        "field_values"
+    ]
+    assert values["contact.google_rating"] == 4.8  # empty in GHL, filled from research
+    assert values["contact.google_review_count"] == 99  # GHL value wins
+    body = (await client.get("/api/v1/ext/contacts/c1/context")).json()
+    assert body["auto_saved"] == ["contact.google_rating"]
+    put = fake_ghl.put.replace(b" ", b"")
+    assert b'"field_value":4.8' in put and b"191" not in put
 
 
 async def test_wrong_location(client):
@@ -109,14 +144,14 @@ async def test_patch_coerces_and_writes(client):
         "/api/v1/ext/contacts/c1/fields",
         json={
             "fields": {
-                "contact.monthly_new_patients": "55",
+                "contact.how_many_locations_do_you_have": "55",
                 "contact.procedures_offer": "Botox",
             }
         },
     )
     assert r.status_code == 200
     assert r.json()["field_values"] == {
-        "contact.monthly_new_patients": 55,
+        "contact.how_many_locations_do_you_have": 55,
         "contact.procedures_offer": ["Botox"],
     }
     assert b'"field_value":55' in fake_ghl.put.replace(b" ", b"")
@@ -125,10 +160,26 @@ async def test_patch_coerces_and_writes(client):
 async def test_patch_rejects_bad(client):
     r = await client.patch(
         "/api/v1/ext/contacts/c1/fields",
-        json={"fields": {"contact.monthly_new_patients": "abc"}},
+        json={"fields": {"contact.how_many_locations_do_you_have": "abc"}},
     )
     assert r.status_code == 422
     r = await client.patch(
         "/api/v1/ext/contacts/c1/fields", json={"fields": {"nope": 1}}
     )
     assert r.status_code == 422
+
+
+async def test_revenue_amount_sets_range(client):
+    for amount, bucket in [
+        (449_999, "Under $450k"),
+        (450_000, "$450k–$1M"),
+        (1_000_000, "$1M–$1.5M"),
+        (2_000_000, "$1.5M +"),
+    ]:
+        r = await client.patch(
+            "/api/v1/ext/contacts/c1/fields",
+            json={"fields": {"contact.annual_revenue_": amount}},
+        )
+        assert r.status_code == 200
+        put = json.loads(fake_ghl.put)["customFields"]
+        assert {"id": "r2", "field_value": bucket} in put

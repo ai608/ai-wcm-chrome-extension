@@ -16,7 +16,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
 from app.core.exceptions import AppError
-from app.services import usage
+from app.services import page_patterns, usage
 from app.services.constants import (
     BOOKING,
     CHAT,
@@ -36,11 +36,6 @@ MAX_URLS = 500
 TIER_CAPS = {"A": 20, "B": 12, "C": 6}
 MIN_TEXT_CHARS = 500  # less visible text than this: the page likely needs JavaScript
 
-CITY = re.compile(
-    r"/(locations?|service-areas?|areas-we-serve|near-me)(/|$)|-near-me", re.IGNORECASE
-)
-BLOG = re.compile(r"/(blog|blogs|news|articles|resources)/", re.IGNORECASE)
-BLOG_INDEX = re.compile(r"/(blog|blogs|news|articles|resources)/?$", re.IGNORECASE)
 # Archive and listing links on a blog page that are not posts.
 NOT_POST = re.compile(
     r"/(category|tag|author|page|feed|wp-content|wp-json)/", re.IGNORECASE
@@ -67,6 +62,9 @@ def _host(url: str) -> str:
 
 def _slug(url: str) -> str:
     return urlsplit(url).path.lower().replace("-", " ").replace("_", " ")
+
+
+_SERVICE_TERMS = tuple(t for terms in SERVICES.values() for t in terms)
 
 
 def _service_of(url: str) -> str | None:
@@ -308,10 +306,14 @@ def classify(url: str, menu: Menu = NO_MENU) -> str:
     """One class per URL; the first rule that matches wins."""
     path = urlsplit(url).path.rstrip("/").lower()
     deep = path.strip("/").count("/") >= 1
-    if BLOG.search(url) and deep:
+    if page_patterns.in_blog(url) and deep:
         return "blog_post"
-    if BLOG_INDEX.search(url):
+    if page_patterns.is_blog_index(url):
         return "blog_index"
+    if page_patterns.in_area_folder(url):
+        return (
+            "city"  # a service-and-city page in a location folder is still a city page
+        )
     if HUB.match(path) or (
         url in menu.parents and not NOT_SERVICE_MENU.search(menu.parents[url])
     ):
@@ -322,7 +324,7 @@ def classify(url: str, menu: Menu = NO_MENU) -> str:
         return "hub_child"
     trust, city, proof = (
         _trust_key(url, menu),
-        CITY.search(url),
+        page_patterns.is_area_path(url),
         any(p.search(url) for p in PROOF.values()),
     )
     if (
@@ -366,7 +368,11 @@ def tiers(
     rest: list[str] = []
     blog_index = None
     for u in urls:
-        if _key(u) in posts or _key(u) == _key(home) or NOT_POST.search(u):
+        if (
+            _key(u) in posts
+            or _key(u) == _key(home)
+            or page_patterns.is_archive(u, _SERVICE_TERMS)
+        ):
             continue  # posts, home, and archives such as /tag/botox are no service
         cls = classify(u, menu)
         if cls == "hub":
@@ -412,7 +418,7 @@ def tiers(
         (
             u
             for u in cities
-            if re.search(r"/(locations?|service-areas?)/?$", u, re.IGNORECASE)
+            if page_patterns.AREA_INDEX.search(page_patterns.clean_path(u))
         ),
         None,
     )
@@ -760,7 +766,7 @@ def _is_post(url: str, home: str) -> bool:
         bool(path)
         and _host(url) == _host(home)
         and not NOT_POST.search(url)
-        and not BLOG_INDEX.search(url)
+        and not page_patterns.is_blog_index(url)
     )
 
 
@@ -799,7 +805,7 @@ def _posts_in_sitemap(xml: str, home: str, trusted: bool) -> list[dict[str, Any]
         if not url or not _is_post(url, home):
             continue
         if not trusted and not (
-            BLOG.search(url) and urlsplit(url).path.strip("/").count("/") >= 1
+            page_patterns.in_blog(url) and urlsplit(url).path.strip("/").count("/") >= 1
         ):
             continue
         posts.append(
@@ -871,7 +877,7 @@ def _url_posts(urls: list[str], pages: dict[str, str]) -> list[dict[str, Any]]:
             "published_at": _published(pages[u]) if u in pages else None,
         }
         for u in dict.fromkeys(urls)
-        if BLOG.search(u)
+        if page_patterns.in_blog(u)
         and urlsplit(u).path.strip("/").count("/") >= 1
         and not NOT_POST.search(u)
     ]
@@ -914,7 +920,7 @@ async def blog_posts(
     /blog/ or print no dates in lists, so no single source is enough. Never raises: on any
     error the list is just shorter."""
     found: list[dict[str, Any]] = []
-    index = next((u for u in [*pages, *urls] if BLOG_INDEX.search(u)), None)
+    index = next((u for u in [*pages, *urls] if page_patterns.is_blog_index(u)), None)
     if index:
         html = pages.get(index)
         if html is None:
@@ -984,11 +990,11 @@ def enrich(
         c["expected"] for c in site["services"]["clusters"]
     )
 
-    city_pages = [u for u in all_urls if CITY.search(u)]
+    city_pages = [u for u in all_urls if page_patterns.is_area_path(u)]
     site["cities"].update(
         pages_found=len(city_pages),
         hub_page=any(
-            re.search(r"/(locations?|service-areas?)/?$", u, re.IGNORECASE)
+            page_patterns.AREA_INDEX.search(page_patterns.clean_path(u))
             for u in all_urls
         ),
         city_pages=city_pages[:50],
@@ -1004,7 +1010,7 @@ def enrich(
                 "published_at": _published(pages[u]) if u in pages else None,
             }
             for u in all_urls
-            if BLOG.search(u)
+            if page_patterns.in_blog(u)
             and urlsplit(u).path.strip("/").count("/") >= 1
             and not NOT_POST.search(u)
         ),
@@ -1017,7 +1023,7 @@ def enrich(
     now = datetime.now(UTC)
     ages = [_age_days(p["published_at"], now) for p in dated]
     blog_index = next(
-        (u for u in all_urls if BLOG_INDEX.search(u)),
+        (u for u in all_urls if page_patterns.is_blog_index(u)),
         None,
     )
     site["blog"].update(

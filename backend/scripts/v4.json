@@ -22,7 +22,7 @@
           "type": "response",
           "id": "r-capacity",
           "label": "At capacity / too busy",
-          "text": "Totally fair. Most of our best clients said the same before they added {{field.contact.goal_new_patients}} new patients a month on autopilot."
+          "text": "Totally fair. Most of our best clients said the same before they added more new patients a month on autopilot."
         },
         {
           "type": "response",
@@ -216,91 +216,10 @@
         },
         {
           "type": "question",
-          "id": "qq-new-patients",
-          "fieldKey": "contact.monthly_new_patients",
-          "label": "How many new patients per month today?",
-          "input": "number",
-          "requiredForBooking": true
-        },
-        {
-          "type": "question",
-          "id": "qq-patient-value",
-          "fieldKey": "contact.avg_patient_value",
-          "label": "Average patient value ($)?",
-          "help": "First-visit revenue plus typical upsell.",
-          "input": "currency",
-          "requiredForBooking": true
-        },
-        {
-          "type": "question",
-          "id": "qq-goal",
-          "fieldKey": "contact.goal_new_patients",
-          "label": "Goal: new patients per month?",
-          "input": "number",
-          "requiredForBooking": true
-        },
-        {
-          "type": "question",
-          "id": "qq-sources",
-          "fieldKey": "contact.patient_sources",
-          "label": "Where do patients come from today?",
-          "input": "checkbox_group",
-          "options": [
-            {
-              "value": "referrals",
-              "label": "Referrals"
-            },
-            {
-              "value": "google_ads",
-              "label": "Google Ads"
-            },
-            {
-              "value": "meta_ads",
-              "label": "Meta Ads"
-            },
-            {
-              "value": "organic_social",
-              "label": "Instagram / TikTok organic"
-            },
-            {
-              "value": "groupon",
-              "label": "Groupon"
-            },
-            {
-              "value": "seo",
-              "label": "SEO"
-            },
-            {
-              "value": "walkins",
-              "label": "Walk-ins"
-            }
-          ],
-          "requiredForBooking": false
-        },
-        {
-          "type": "question",
-          "id": "qq-spend",
-          "fieldKey": "contact.monthly_marketing_spend",
-          "label": "Monthly marketing spend?",
-          "input": "select",
-          "options": [
-            {
-              "value": "0",
-              "label": "$0"
-            },
-            {
-              "value": "1-2k",
-              "label": "$1k – $2k"
-            },
-            {
-              "value": "2-5k",
-              "label": "$2k – $5k"
-            },
-            {
-              "value": "5k-plus",
-              "label": "$5k+"
-            }
-          ],
+          "id": "qq-staff",
+          "fieldKey": "contact.employee_count",
+          "label": "How many staff do you have?",
+          "input": "text",
           "requiredForBooking": false
         },
         {
@@ -335,9 +254,9 @@
         },
         {
           "type": "question",
-          "id": "qq-why",
-          "fieldKey": "contact.their_why",
-          "label": "Their why: why grow now?",
+          "id": "qq-challenge",
+          "fieldKey": "contact.what_is_the_biggest_challenge_in_your_business",
+          "label": "What's the biggest challenge in growing right now?",
           "input": "textarea",
           "requiredForBooking": false
         },
@@ -348,6 +267,26 @@
           "label": "Annual revenue ($)?",
           "input": "currency",
           "requiredForBooking": false
+        },
+        {
+          "type": "question",
+          "id": "qq-google-rating",
+          "fieldKey": "contact.google_rating",
+          "label": "Google rating",
+          "input": "number",
+          "requiredForBooking": false,
+          "help": "Filled from research",
+          "half": true
+        },
+        {
+          "type": "question",
+          "id": "qq-google-reviews",
+          "fieldKey": "contact.google_review_count",
+          "label": "Google reviews",
+          "input": "number",
+          "requiredForBooking": false,
+          "help": "Filled from research",
+          "half": true
         }
       ]
     },
@@ -369,53 +308,14 @@
               "label": "City",
               "source": "contact",
               "key": "city"
-            },
-            {
-              "label": "New patients / mo",
-              "source": "field",
-              "fieldKey": "contact.monthly_new_patients"
-            },
-            {
-              "label": "Avg patient value",
-              "source": "field",
-              "fieldKey": "contact.avg_patient_value"
-            },
-            {
-              "label": "Goal new patients / mo",
-              "source": "field",
-              "fieldKey": "contact.goal_new_patients"
-            },
-            {
-              "label": "Current revenue",
-              "source": "computed",
-              "key": "current_revenue",
-              "formula": {
-                "op": "multiply",
-                "fields": [
-                  "contact.monthly_new_patients",
-                  "contact.avg_patient_value"
-                ]
-              }
-            },
-            {
-              "label": "Target revenue",
-              "source": "computed",
-              "key": "target_revenue",
-              "formula": {
-                "op": "multiply",
-                "fields": [
-                  "contact.goal_new_patients",
-                  "contact.avg_patient_value"
-                ]
-              }
             }
           ],
-          "sayItBack": "So just to confirm, {{contact.company_name}} is doing {{field.contact.monthly_new_patients}} new patients a month at {{field.contact.avg_patient_value}} each, so about {{computed.current_revenue}} a month, and you want to get to {{field.contact.goal_new_patients}} new patients, which is {{computed.target_revenue}}. Did I get that right?"
+          "sayItBack": "So just to confirm, {{contact.company_name}} wants to bring in more new patients and is open to a quick call on how. Did I get that right?"
         },
         {
           "type": "say",
           "id": "confirm-next",
-          "text": "If that sounds right, the next step is a 20-minute Zoom where we map exactly how we would fill that gap for {{contact.company_name}}. {{ai.booking_push}}"
+          "text": "If that sounds right, the next step is a 20-minute Zoom where we map exactly how we would grow new patients for {{contact.company_name}}. {{ai.booking_push}}"
         },
         {
           "type": "tip",

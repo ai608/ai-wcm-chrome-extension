@@ -200,3 +200,22 @@ async def test_no_key_makes_no_call():
     with pytest.raises(AppError, match="not set"):
         await run(s)
     assert s.calls == 0
+
+
+@pytest.mark.parametrize("status", [400, 404, 422])
+async def test_refused_schema_is_asked_again_as_plain_json(status: int) -> None:
+    """OpenRouter answers 404 "No endpoints found" when no provider takes every parameter."""
+    bodies: list[dict[str, Any]] = []
+
+    def answer(req: httpx.Request) -> httpx.Response:
+        bodies.append(__import__("json").loads(req.content))
+        return httpx.Response(status) if len(bodies) == 1 else reply('{"a": 1}')
+
+    schema = {"type": "object", "properties": {"a": {"type": "integer"}}}
+    async with httpx.AsyncClient(transport=httpx.MockTransport(answer)) as http:
+        out = await llm.chat_json(http, "s", "u", schema=schema)
+    assert out == {"a": 1}
+    assert bodies[0]["response_format"]["type"] == "json_schema"
+    assert "provider" in bodies[0]
+    assert bodies[1]["response_format"] == {"type": "json_object"}
+    assert "provider" not in bodies[1]

@@ -70,6 +70,8 @@ export type Block =
       input: BlockInput
       options?: BlockOption[]
       requiredForBooking: boolean
+      /** Render half width; consecutive half questions sit side by side. */
+      half?: boolean
     }
   | { type: 'recap'; id: string; rows: RecapRow[]; sayItBack: string }
   | { type: 'outcome'; id: string; outcomes: Outcome[] }
@@ -150,6 +152,8 @@ export interface Enrichment {
 export interface ContactContext {
   contact: Contact
   fieldValues: Record<string, FieldValue>
+  /** Fields research filled while empty in GHL, already written back to GHL. */
+  autoSaved?: string[]
   enrichment: Enrichment
 }
 

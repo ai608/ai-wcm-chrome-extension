@@ -67,7 +67,8 @@ async def chat_json(
 
     With `schema` (a JSON Schema) the provider is asked to return exactly that shape, so the
     reply is valid JSON in the expected fields. A provider that refuses the schema (HTTP 400 or
-    422) is asked again, once, for plain JSON: the caller must still check what comes back.
+    422; OpenRouter answers 404 "No endpoints found" when no provider accepts every parameter)
+    is asked again, once, for plain JSON: the caller must still check what comes back.
 
     Asked a second time, once, when the provider failed for a moment (timeout, 429, 5xx) or
     the reply was not usable JSON. A reply cut off by `max_tokens` is not asked again: it would
@@ -111,7 +112,7 @@ async def chat_json(
             wait = r.headers.get("retry-after", "")
             await asyncio.sleep(min(int(wait), 5) if wait.isdigit() else RETRY_DELAY_S)
             continue
-        if r.status_code in (400, 422) and schema is not None and attempt == 1:
+        if r.status_code in (400, 404, 422) and schema is not None and attempt == 1:
             logger.warning(
                 "llm %s (%s): schema refused (HTTP %d), asking for plain JSON",
                 purpose,

@@ -7,7 +7,7 @@ from urllib.parse import urljoin, urlsplit
 import orjson
 from selectolax.lexbor import LexborHTMLParser
 
-from app.services import site_crawl
+from app.services import page_patterns, site_crawl
 from app.services.constants import LOCAL_BUSINESS_TYPES
 
 # (core severity, other severity, title, why). A None severity means "do not report".
@@ -635,8 +635,8 @@ def locations(read: dict[str, str], kinds: dict[str, str]) -> list[dict[str, Any
     pages = [
         u
         for u in read
-        if site_crawl.CITY.search(u)
-        and not re.search(r"/(locations?|service-areas?)/?$", u, re.IGNORECASE)
+        if page_patterns.is_area_path(u)
+        and not page_patterns.AREA_INDEX.search(page_patterns.clean_path(u))
     ]
     if len(pages) < 2:
         return []

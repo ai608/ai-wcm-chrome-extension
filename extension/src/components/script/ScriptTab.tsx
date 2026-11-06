@@ -181,6 +181,7 @@ export function ScriptTab({ contactId, callerFirstName, bookingWidgetUrl, state 
             contact={context.contact}
             ctx={ctx}
             fieldValues={context.fieldValues}
+            autoSaved={context.autoSaved ?? []}
             recapRows={recap.rows}
             missing={missing}
             bookingWidgetUrl={bookingWidgetUrl}

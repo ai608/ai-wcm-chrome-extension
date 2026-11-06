@@ -20,6 +20,8 @@ interface QuestionFieldProps {
   contactId: string
   block: Question
   initialValue: FieldValue | undefined
+  /** Filled from research while empty in GHL, and already saved there. */
+  autoSaved?: boolean
 }
 
 function inputClassFor(block: Question): InputClass {
@@ -34,7 +36,7 @@ function toText(value: FieldValue | undefined): string {
   return String(value)
 }
 
-export function QuestionField({ contactId, block, initialValue }: QuestionFieldProps) {
+export function QuestionField({ contactId, block, initialValue, autoSaved }: QuestionFieldProps) {
   const id = `${contactId}-${block.id}`
   const setField = useAutosaveStore((st) => st.setField)
   const retry = useAutosaveStore((st) => st.retry)
@@ -44,6 +46,7 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
   const [draft, setDraft] = useState<FieldValue | undefined>(initialValue)
   const [text, setText] = useState(() => toText(initialValue))
   const [numberError, setNumberError] = useState(false)
+  const [touched, setTouched] = useState(false)
   const lastValue = useRef(initialValue)
 
   useEffect(() => {
@@ -55,6 +58,7 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
   }, [initialValue, status, numberError])
 
   function commit(value: FieldValue) {
+    setTouched(true)
     lastValue.current = value
     setDraft(value)
     setField(contactId, block.fieldKey, value, inputClass)
@@ -167,6 +171,9 @@ export function QuestionField({ contactId, block, initialValue }: QuestionFieldP
         error={saveError}
         onRetry={() => retry(contactId, block.fieldKey)}
       />
+      {autoSaved && !touched && status === 'idle' ? (
+        <p className="text-[12px] text-muted-foreground">✓ Saved to GHL from research</p>
+      ) : null}
     </div>
   )
 }

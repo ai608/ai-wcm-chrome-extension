@@ -1,23 +1,49 @@
+import { CameraIcon, WandSparklesIcon } from 'lucide-react'
 import { CompanyCard, GbpCard } from '@/components/research/BusinessTab'
 import { startErrorMessage } from '@/components/research/ResearchMode'
 import { CompetitorList, LocalCompetitorsForm } from '@/components/research/ResearchSubTabs'
-import { Block, Chip, ExtLink, gradeClass, Row } from '@/components/research/shared'
+import { Block, Chip, ChipRow, ExtLink, Row } from '@/components/research/shared'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useContactResearch } from '@/hooks/research-queries'
-import type { Audit } from '@/lib/api/research-types'
-import { call } from '@/lib/messaging'
+import { type Audit, auditBusy } from '@/lib/api/research-types'
 import { relativeTime } from '@/lib/time'
 
+// ponytail: UI only. No screenshot capture or concept generation exists yet; wire onClick when it does.
+function ActionRows() {
+  const label = 'text-[11px] font-semibold uppercase leading-tight text-muted-foreground'
+  return (
+    <div className="flex flex-col gap-2 rounded-lg border border-dashed border-border p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className={label}>Mobile experience</span>
+        <Button variant="outline" size="xs" disabled title="Coming soon">
+          <CameraIcon /> Capture screenshots
+        </Button>
+      </div>
+      <div className="flex items-center justify-between gap-2">
+        <span className={label}>Redesign concept</span>
+        <Button variant="outline" size="xs" disabled title="Coming soon">
+          <WandSparklesIcon /> Build concept
+        </Button>
+      </div>
+    </div>
+  )
+}
+
 function Cards({ audit }: { audit: Audit }) {
-  const { business, site, overview, research, onPage } = audit
+  const { business, site, research } = audit
   const services =
     site?.services.clusters.filter((c) => c.found > 0).map((c) => c.service.split(' (')[0]) ?? []
+  const description = audit.onPage?.essentials.find((e) => e.key === 'meta_description')?.value
   const gbpWebsiteMatch = business?.gbp?.matched && business.gbp.websiteLinksToGbp
   return (
-    <div className="flex flex-col gap-3">
-      {business ? <GbpCard gbp={business.gbp} /> : <Skeleton className="h-24 w-full" />}
+    <div className="flex flex-col gap-3 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-3">
+      {business && (business.gbp || !auditBusy(audit)) ? (
+        <GbpCard gbp={business.gbp} socials={business.socials} website={audit.url} bordered />
+      ) : (
+        <Skeleton className="h-24 w-full" />
+      )}
       <Block title="Website">
         <Row label="URL">
           <ExtLink href={audit.url}>{audit.domain}</ExtLink>{' '}
@@ -33,23 +59,14 @@ function Cards({ audit }: { audit: Audit }) {
             {audit.onPage.essentials.find((e) => e.key === 'title')?.value ?? '-'}
           </Row>
         ) : null}
-        {services.length ? (
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            {services.map((s) => (
-              <Chip key={s}>{s}</Chip>
-            ))}
-          </div>
-        ) : null}
+        {description ? <Row label="Description">{description}</Row> : null}
+        {services.length ? <ChipRow label="Services" items={services} /> : null}
         {site?.cities.cityPages.length ? (
-          <div className="mt-2">
-            <p className="text-[12px] text-muted-foreground">Areas served (website)</p>
-            <div className="mt-1 flex flex-wrap gap-1.5">
-              {site.cities.cityPages.map((c) => (
-                <Chip key={c}>{c}</Chip>
-              ))}
-            </div>
-          </div>
+          <ChipRow label="Areas served (website)" items={site.cities.cityPages} />
         ) : null}
+        <div className="mt-2">
+          <ActionRows />
+        </div>
       </Block>
       {business?.company ? (
         <CompanyCard company={business.company} />
@@ -78,53 +95,6 @@ function Cards({ audit }: { audit: Audit }) {
           </>
         )}
       </Block>
-      {onPage?.summary ? (
-        <Block title="On-page problems">
-          <p className="text-[13px] text-muted-foreground">
-            On-page score {onPage.summary.score} / 100 across {onPage.pages?.length ?? 1} pages
-          </p>
-          {onPage.summary.topFixes.length ? (
-            <ol className="mt-1 flex list-decimal flex-col gap-1 pl-5 text-[13px]">
-              {onPage.summary.topFixes.slice(0, 3).map((f) => (
-                <li key={f.key}>{f.title}</li>
-              ))}
-            </ol>
-          ) : (
-            <p className="mt-1 text-[13px]">No important problems found.</p>
-          )}
-        </Block>
-      ) : null}
-      {overview?.score != null && overview.grade != null ? (
-        <Block title="Website score">
-          <div className="flex items-center gap-3">
-            <div
-              className={`flex size-12 shrink-0 items-center justify-center rounded-full text-2xl font-bold ${gradeClass(overview.grade)}`}
-            >
-              {overview.grade}
-            </div>
-            <p className="text-lg font-semibold">{overview.score} / 100</p>
-          </div>
-          <ol className="mt-2 flex list-decimal flex-col gap-1 pl-5 text-[13px]">
-            {overview.topIssues.slice(0, 3).map((i) => (
-              <li key={i.title}>{i.title}</li>
-            ))}
-          </ol>
-          <Button
-            variant="outline"
-            size="sm"
-            className="mt-2"
-            onClick={() => call('openReport', { auditId: audit.id })}
-          >
-            Open report
-          </Button>
-        </Block>
-      ) : audit.status === 'queued' || audit.status === 'running' ? (
-        <Block title="Website score">
-          <p className="text-[13px] text-muted-foreground">
-            Score appears when the audit finishes.
-          </p>
-        </Block>
-      ) : null}
     </div>
   )
 }
