@@ -686,6 +686,8 @@ async def test_trace_records_each_step_of_a_full_run(client, monkeypatch):
     assert steps["scrape"]["detail"] == {
         "ok": 2,
         "failed": 0,
+        "duplicates": 0,
+        "skipped": 0,
         "direct": 0,
         "firecrawl": 2,
         "timed_out": 0,

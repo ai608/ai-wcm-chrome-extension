@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import html as html_lib
 import json
 import logging
@@ -594,6 +595,46 @@ def _visible_chars(html: str) -> int:
     return len(" ".join(body.text(separator=" ", strip=True).split())) if body else 0
 
 
+MIN_DEDUPE_CHARS = 200  # shorter pages are not compared: empty shells look alike
+TEMPLATE_SAMPLES = (
+    2  # pages read from a group like /testimonials/{n} before comparing them
+)
+_VARIABLE = re.compile(r"/(?:\d+|[0-9a-f]{8,}(?:-[0-9a-f]{4,})*)(?=/|$)", re.IGNORECASE)
+
+
+def _template(url: str) -> str | None:
+    """/testimonials/90 -> /testimonials/{n}. None when the path has no number or id in it."""
+    path = urlsplit(url).path.rstrip("/").lower()
+    out = _VARIABLE.sub("/{n}", path)
+    return out if out != path else None
+
+
+def _text_key(html: str) -> str | None:
+    """A fingerprint of the visible text, so two URLs that show the same page match. The raw
+    HTML is not compared: it differs by a few bytes (tokens, inline state) between copies."""
+    doc = LexborHTMLParser(html)
+    for tag in doc.css("script, style, noscript, svg"):
+        tag.decompose()
+    body = doc.css_first("body")
+    text = (
+        " ".join(body.text(separator=" ", strip=True).split()).lower() if body else ""
+    )
+    if len(text) < MIN_DEDUPE_CHARS:
+        return None
+    return hashlib.sha1(text.encode()).hexdigest()
+
+
+class _Group:
+    """The pages of one URL template. The first TEMPLATE_SAMPLES are read; if they show the
+    same page, the site answers any number with that page and the rest are not read."""
+
+    def __init__(self) -> None:
+        self.started = 0
+        self.keys: list[str | None] = []
+        self.same = False
+        self.ready = asyncio.Event()
+
+
 def _blocked(html: str) -> bool:
     """True for a bot-protection or empty response that is not the clinic's page. A short REAL
     page is not matched: it has a title or some text and is audited as a thin page. A long page
@@ -727,10 +768,36 @@ async def crawl(
     sem = asyncio.Semaphore(settings.CRAWL_CONCURRENCY)
     started_reads = time.monotonic()
 
+    groups_by_template: dict[str, _Group] = {}
+    skipped: set[str] = set()
+
     async def one(u: str) -> tuple[str, str | None, str]:
+        template = _template(u)
+        group = groups_by_template.setdefault(template, _Group()) if template else None
+        sample = False
+        if group:
+            if group.started < TEMPLATE_SAMPLES:
+                group.started += 1
+                sample = True
+            else:
+                await group.ready.wait()  # before taking a slot: the samples need them
+                if group.same:
+                    skipped.add(u)
+                    await say(
+                        f"page:{u}",
+                        "skipped",
+                        url=u,
+                        error="Same page as the others under " + (template or ""),
+                    )
+                    return u, None, "skipped"
         async with sem:  # FIFO: pages start in tier order, so a cut loses tier D first
             started = time.monotonic()
             html, how = await read(u)
+            if group and sample:
+                group.keys.append(_text_key(html) if html else None)
+                if len(group.keys) == TEMPLATE_SAMPLES:
+                    group.same = None not in group.keys and len(set(group.keys)) == 1
+                    group.ready.set()
             error = None if html else read.reasons.get(u)
             await say(
                 f"page:{u}",
@@ -782,17 +849,35 @@ async def crawl(
             t.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
     results = [t.result() for t in tasks if t not in pending and t.exception() is None]
-    pages = {u: h for u, h, _ in results if h}
+    pages: dict[str, str] = {}
+    duplicates: dict[str, str] = {}  # url -> the page it repeats
+    seen: dict[str, str] = {}
+    if key := _text_key(home_html) if home_html else None:
+        seen[key] = url
+    for u, h, _ in results:
+        if not h:
+            continue
+        key = _text_key(h)
+        if key and key in seen:
+            duplicates[u] = seen[key]
+            continue
+        if key:
+            seen[key] = u
+        pages[u] = h
     await say(
         "scrape",
         "done",
         ok=len(pages),
-        failed=len(chosen) - len(pages),
+        failed=len(chosen) - len(pages) - len(skipped) - len(duplicates),
+        duplicates=len(duplicates),
+        skipped=len(skipped),
         direct=sum(1 for u, h, how in results if h and how == "direct"),
         firecrawl=sum(1 for u, h, how in results if h and how == "firecrawl"),
         timed_out=len(pending),
     )
-    return list(found.values()), pages, ok, sitemap
+    # A repeat is not a page of the site: it is not counted as one (testimonial pages and so on).
+    dropped = skipped | duplicates.keys()
+    return [u for u in found.values() if u not in dropped], pages, ok, sitemap
 
 
 _MONTHS = {

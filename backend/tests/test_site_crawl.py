@@ -40,6 +40,17 @@ RICH = (
     "<html><body><p>" + "Botox results last three months. " * 30 + "</p></body></html>"
 )
 THIN = "<html><body><div id='app'></div></body></html>"
+
+
+def rich(url: str) -> str:
+    """A page with enough text and its own text: two URLs are never the same page."""
+    return (
+        f"<html><body><p>{'Botox results at ' + url + '. ' * 1}"
+        + "Results last three months. " * 30
+        + "</p></body></html>"
+    )
+
+
 MENU = f"""<html><body><header><nav><ul>
 <li><a href="{G}/">Home</a></li>
 <li><a href="{G}/internal-optimization/">Internal Optimization</a><ul>
@@ -304,7 +315,7 @@ async def test_firecrawl_result_that_is_a_bot_wall_is_dropped_too(monkeypatch):
 @pytest.mark.anyio
 async def test_crawl_reports_a_blocked_page_as_failed_and_never_audits_it(monkeypatch):
     async def fetch(url, **_kw):
-        return (WALL if "iv-therapy" in url else RICH), url
+        return (WALL if "iv-therapy" in url else rich(url)), url
 
     monkeypatch.setattr(site_crawl, "fetch_html", fetch)
     events, report = recorder()
@@ -334,7 +345,7 @@ async def test_crawl_without_key_uses_the_menu_and_keeps_pages_finished_in_time(
     async def fetch(url, **_kw):
         if "our-story" in url:
             await asyncio.sleep(5)
-        return RICH, url
+        return rich(url), url
 
     monkeypatch.setattr(site_crawl, "fetch_html", fetch)
     events, report = recorder()
@@ -363,7 +374,7 @@ async def test_crawl_reads_the_menu_first_and_adds_map_pages_only_at_the_end(
         if url.endswith(".xml"):
             raise AppError(422, "site_unreachable", "none")
         order.append(url)
-        return RICH, url
+        return rich(url), url
 
     async def slow_map(_http, _url):
         await asyncio.sleep(0.05)
@@ -391,7 +402,7 @@ async def test_a_slow_map_is_dropped_and_a_broken_map_marks_the_crawl(monkeypatc
     monkeypatch.setattr(site_crawl.settings, "CRAWL_MAP_TIMEOUT_S", 0.05)
 
     async def fetch(url, **_kw):
-        return RICH, url
+        return rich(url), url
 
     async def slow(_http, _url):
         await asyncio.sleep(5)
@@ -1092,6 +1103,68 @@ async def test_a_page_that_could_not_be_read_says_why_in_the_trace(monkeypatch):
 
 
 @pytest.mark.anyio
+async def test_a_site_that_answers_any_number_with_one_page_is_read_twice_not_fifty_times(
+    monkeypatch,
+):
+    """womenblossom.com: /testimonials/90, /139 and /999999 all show the /testimonials page."""
+    same = rich(f"{G}/testimonials")
+    read: list[str] = []
+
+    async def fetch(url, **_kw):
+        read.append(url)
+        return (same if "/testimonials" in url else rich(url)), url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fetch)
+    home = f'<nav><a href="{G}/botox">Botox</a>' + "".join(
+        f'<a href="{G}/testimonials/{n}">Story {n}</a>' for n in range(1, 21)
+    )
+    events: list[tuple[str, str]] = []
+
+    async def report(step, status, **_d):
+        events.append((step, status))
+
+    urls, pages, _, _ = await site_crawl.crawl(
+        None, f"{G}/", home + "</nav>", "direct", report
+    )
+    story = [u for u in read if "/testimonials/" in u]
+    assert (
+        len(story) == site_crawl.TEMPLATE_SAMPLES
+    )  # the samples; the other 18 not read
+    assert sum(1 for _, st in events if st == "skipped") == 18
+    # one copy stays as the page; the repeats are neither pages nor counted as testimonial pages
+    first = [f"{G}/testimonials/1"]
+    assert [u for u in pages if "/testimonials/" in u] == first
+    assert [u for u in urls if "/testimonials/" in u] == first
+    assert f"{G}/botox" in pages
+
+
+@pytest.mark.anyio
+async def test_numbered_pages_with_their_own_text_are_all_read(monkeypatch):
+    read: list[str] = []
+
+    async def fetch(url, **_kw):
+        read.append(url)
+        return rich(url), url
+
+    monkeypatch.setattr(site_crawl, "fetch_html", fetch)
+    home = "<nav>" + "".join(
+        f'<a href="{G}/team/{n}">Provider {n}</a>' for n in range(1, 6)
+    )
+    _, pages, _, _ = await site_crawl.crawl(None, f"{G}/", home + "</nav>", "direct")
+    assert len([u for u in pages if "/team/" in u]) == 5
+
+
+def test_a_template_replaces_numbers_and_ids_only():
+    assert site_crawl._template(f"{G}/testimonials/90") == "/testimonials/{n}"
+    assert (
+        site_crawl._template(f"{G}/a/123e4567-e89b-12d3-a456-426614174000/b")
+        == "/a/{n}/b"
+    )
+    assert site_crawl._template(f"{G}/services/botox") is None
+    assert site_crawl._template(f"{G}/botox-2024") is None  # a year in a slug is no id
+
+
+@pytest.mark.anyio
 async def test_pages_the_map_adds_do_not_go_past_the_firecrawl_cap(monkeypatch):
     monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_API_KEY", "fake")
     monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_MAX_PAGES", 3)
@@ -1099,7 +1172,7 @@ async def test_pages_the_map_adds_do_not_go_past_the_firecrawl_cap(monkeypatch):
 
     async def scrape(_http, url, why=None):
         read.append(url)
-        return RICH
+        return rich(url)
 
     async def big_map(_http, _url):
         return [f"{G}/extra-{i}" for i in range(20)]
@@ -1120,7 +1193,7 @@ async def test_a_site_that_blocks_direct_reads_gets_only_as_many_pages_as_firecr
 
     async def scrape(_http, url, why=None):
         read.append(url)
-        return RICH
+        return rich(url)
 
     async def no_map(_http, _url):
         return []

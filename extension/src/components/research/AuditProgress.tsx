@@ -100,7 +100,13 @@ function summary(step: string, e: TraceEvent, steps: Map<string, TraceEvent>): s
     case 'pick':
       return `${num(d.total) ?? 0} pages chosen`
     case 'scrape':
-      return `${num(d.ok) ?? 0} read, ${num(d.failed) ?? 0} failed`
+      return [
+        `${num(d.ok) ?? 0} read`,
+        `${num(d.failed) ?? 0} failed`,
+        ...((num(d.duplicates) ?? 0) + (num(d.skipped) ?? 0) > 0
+          ? [`${(num(d.duplicates) ?? 0) + (num(d.skipped) ?? 0)} repeats left out`]
+          : []),
+      ].join(', ')
     case 'enrich':
       return `${num(d.pages) ?? 0} pages used`
     case 'ai':
