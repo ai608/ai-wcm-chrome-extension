@@ -7,13 +7,22 @@ from typing import Any, ClassVar
 import httpx
 import pytest
 
-from app.api.v1 import research
+from app.api.v1 import ext, research
 from app.core.config import settings
 from app.core.dependencies import require_extension_access
+from app.core.exceptions import AppError
 from app.main import app
 from app.models.user import UserProfile
 from app.repositories.audit_repository import COLUMNS
-from app.services import ai_visibility, site_audit
+from app.services import (
+    ai_report,
+    ai_runs,
+    ai_visibility,
+    audit_runner,
+    local_competitors,
+    probes,
+    site_audit,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -195,13 +204,12 @@ def anyio_backend() -> str:
 @pytest.fixture
 async def client(monkeypatch):
     repo = FakeRepo()
-    monkeypatch.setattr(research, "_repo", lambda _request: repo)
+    monkeypatch.setattr(research, "get_audit_repo", lambda _request: repo)
+    monkeypatch.setattr(ext, "get_audit_repo", lambda _request: repo)  # Settings usage
 
     async def fake_fetch(url: str, accept=None) -> tuple[str, str]:
         if "down" in url:
-            raise research.AppError(
-                422, "site_unreachable", "Website could not be fetched"
-            )
+            raise AppError(422, "site_unreachable", "Website could not be fetched")
         return HTML, url
 
     monkeypatch.setattr(site_audit, "fetch_html", fake_fetch)
@@ -232,7 +240,7 @@ async def client(monkeypatch):
 
 
 async def settle() -> None:
-    await asyncio.gather(*research._tasks)
+    await asyncio.gather(*audit_runner._tasks)
 
 
 async def test_audit_runs_in_background_and_is_reused(client):
@@ -303,8 +311,8 @@ async def test_competitors_without_key_fail_softly_and_report_builds(client):
 async def test_crawl_and_gbp_fill_in_after_home_page(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
-    monkeypatch.setattr(research.settings, "APIFY_API_TOKEN", "fake")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(settings, "APIFY_API_TOKEN", "fake")
 
     async def fake_crawl(_http, url, *_args):
         return (
@@ -352,7 +360,7 @@ async def test_provider_failure_keeps_home_results_and_marks_partial(
 ):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
 
     async def broken(*_args):
         raise httpx.ConnectError("firecrawl down")
@@ -368,7 +376,7 @@ async def test_provider_failure_keeps_home_results_and_marks_partial(
 async def test_blocked_home_page_falls_back_to_firecrawl(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
 
     async def fake_scrape(_http, _url):
         return HTML
@@ -408,7 +416,7 @@ async def test_home_page_that_is_a_bot_wall_goes_to_firecrawl_not_into_the_audit
         return [url], {}, True, []
 
     monkeypatch.setattr(site_audit, "fetch_html", wall)
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
     monkeypatch.setattr(site_crawl, "scrape", real_page)
     monkeypatch.setattr(site_crawl, "crawl", no_crawl)
     r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
@@ -445,7 +453,7 @@ async def test_home_page_bot_wall_without_a_way_around_fails_the_audit_clearly(
     async def still_wall(_http, _url):
         return WALL
 
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
     monkeypatch.setattr(site_crawl, "scrape", still_wall)
     r = await client.post(
         "/api/v1/ext/research/audits", json={"url": "glowmedspa.com", "force": True}
@@ -460,7 +468,7 @@ async def test_ai_page_analysis_fills_topics_and_failure_marks_partial(
 ):
     from app.services import site_ai
 
-    monkeypatch.setattr(research.settings, "OPENROUTER_API_KEY", "fake")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "fake")
     calls = []
 
     async def fake_ai(_http, pages, _names):
@@ -482,7 +490,7 @@ async def test_ai_page_analysis_fills_topics_and_failure_marks_partial(
     assert done["site"]["cities"]["claimed_not_built"] == ["Austin"]
 
     async def broken_ai(_http, _pages, _names):
-        raise research.AppError(502, "upstream_error", "LLM error 500")
+        raise AppError(502, "upstream_error", "LLM error 500")
 
     monkeypatch.setattr(site_ai, "analyze", broken_ai)
     r = await client.post(
@@ -584,7 +592,7 @@ async def test_pagespeed_mobile_failure_raises(monkeypatch):
 async def test_pagespeed_runs_in_audit_when_key_set(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    monkeypatch.setattr(settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
 
     async def fake_psi(_http, url):
         return {"mobile_performance": 80, "seo": 90}
@@ -600,7 +608,7 @@ async def test_pagespeed_runs_in_audit_when_key_set(client, monkeypatch):
 async def test_pagespeed_skipped_without_key(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "")
+    monkeypatch.setattr(settings, "GOOGLE_PAGESPEED_API_KEY", "")
 
     async def boom(_http, _url):
         raise AssertionError("PageSpeed must not be called without a key")
@@ -617,7 +625,7 @@ async def test_pagespeed_failure_keeps_none_and_marks_partial(
 ):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    monkeypatch.setattr(settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
 
     async def broken(_http, _url):
         raise httpx.ReadTimeout("psi slow key=sekret-key-123")
@@ -640,7 +648,7 @@ async def test_trace_records_each_step_of_a_full_run(client, monkeypatch):
     from app.services import site_crawl
 
     for key in ("FIRECRAWL_API_KEY", "GOOGLE_PAGESPEED_API_KEY"):
-        monkeypatch.setattr(research.settings, key, "fake")
+        monkeypatch.setattr(settings, key, "fake")
     home = "https://glowmedspa.com"
     mapped = [home, f"{home}/services/botox", f"{home}/about", f"{home}/contact"]
 
@@ -694,7 +702,7 @@ async def test_trace_records_each_step_of_a_full_run(client, monkeypatch):
 async def test_trace_marks_the_failed_step_and_final_outcome(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
 
     async def down(_http, _url):
         raise httpx.ConnectError("https://api.firecrawl.dev/v2/map?key=SECRET")
@@ -737,7 +745,7 @@ async def test_trace_write_failure_never_breaks_the_audit(client, monkeypatch):
 async def test_score_is_computed_once_after_the_whole_audit(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    monkeypatch.setattr(settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
 
     async def fake_psi(_http, _url):
         return {"mobile_performance": 95}
@@ -793,8 +801,8 @@ async def test_failed_audit_gets_no_score(client):
 async def test_slow_pagespeed_is_capped_and_score_still_saved(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
-    monkeypatch.setattr(research, "PAGESPEED_WAIT_S", 0.05)
+    monkeypatch.setattr(settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    monkeypatch.setattr(audit_runner, "PAGESPEED_WAIT_S", 0.05)
     cancelled = asyncio.Event()
 
     async def slow_psi(_http, _url):
@@ -826,7 +834,7 @@ async def test_slow_pagespeed_is_capped_and_score_still_saved(client, monkeypatc
 async def test_every_read_page_gets_on_page_checks_and_a_summary(client, monkeypatch):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
     botox = "<html><head><title>Botox</title></head><body><p>hi</p></body></html>"
 
     async def fake_crawl(_http, url, *_args):
@@ -903,13 +911,13 @@ def lc_on(monkeypatch):
             {"title": "Glow Med Spa", "website": None, "placeId": "ChIJ-glow"},
         ]
 
-    monkeypatch.setattr(research, "_apify_places", fake_places)
+    monkeypatch.setattr(local_competitors, "_apify_places", fake_places)
     return seen
 
 
 async def _with_gbp(client, gbp: dict[str, Any]) -> str:
     audit_id = await _finished_audit(client)
-    repo = research._repo(None)
+    repo = research.get_audit_repo(None)
     await repo.update(
         audit_id, sections={"business": {"gbp": gbp, "nap": {}, "socials": {}}}
     )
@@ -958,7 +966,7 @@ async def test_website_still_flags_the_clinic_when_no_place_id_is_known(
             {"title": "Glow", "website": "https://www.glowmedspa.com/", "placeId": "Z"}
         ]
 
-    monkeypatch.setattr(research, "_apify_places", places)
+    monkeypatch.setattr(local_competitors, "_apify_places", places)
     audit_id = await _with_gbp(client, {"name": "Glow", "lat": None, "lng": None})
     r = await client.post(LC.format(audit_id), json={"location": "Austin, TX"})
     assert r.json()["research"]["local_competitors"]["data"]["items"][0][
@@ -974,13 +982,13 @@ async def test_apify_request_body_uses_coordinates_or_text_never_both():
         return httpx.Response(200, json=[])
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
-        await research._apify_places(http, "med spa", "x", (30.27, -97.74))
-        await research._apify_places(http, "med spa", "Austin, TX")
+        await local_competitors._apify_places(http, "med spa", "x", (30.27, -97.74))
+        await local_competitors._apify_places(http, "med spa", "Austin, TX")
     near, text = bodies
     assert near["customGeolocation"] == {
         "type": "Point",
         "coordinates": [-97.74, 30.27],  # longitude first
-        "radiusKm": research.CLINIC_RADIUS_KM,
+        "radiusKm": local_competitors.CLINIC_RADIUS_KM,
     }
     assert "locationQuery" not in near
     assert text["locationQuery"] == "Austin, TX" and "customGeolocation" not in text
@@ -998,10 +1006,8 @@ async def test_audit_log_ends_with_cost_and_tokens_before_the_final_step(
     client, monkeypatch
 ):
     """The real AI call runs through a fake OpenRouter; its tokens and dollars land in the log."""
-    monkeypatch.setattr(research.settings, "OPENROUTER_API_KEY", "fake")
-    monkeypatch.setattr(
-        research.settings, "RESEARCH_MODEL", "anthropic/claude-sonnet-5.5"
-    )
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "fake")
+    monkeypatch.setattr(settings, "RESEARCH_MODEL", "anthropic/claude-sonnet-5.5")
 
     def openrouter(_req: httpx.Request) -> httpx.Response:
         return httpx.Response(
@@ -1037,7 +1043,9 @@ async def test_audit_log_ends_with_cost_and_tokens_before_the_final_step(
         and d["completion_tokens"] == 2_000
     )
     assert d["cost_usd"] == pytest.approx(0.0987) and d["calls"] == 1
-    saved = research._repo(None).rows[r.json()["id"]]  # the Settings total reads this
+    saved = research.get_audit_repo(None).rows[
+        r.json()["id"]
+    ]  # the Settings total reads this
     assert saved["ai_cost_micro"] == 98_700 and saved["ai_tokens"] == 42_000
     assert d["lines"] == [
         {
@@ -1113,7 +1121,7 @@ async def test_ai_usage_for_owner_and_admin_joins_openrouter_and_tracked_spend(
 
     monkeypatch.setattr(openrouter_usage, "fetch", fake_fetch)
     audit_id = await _finished_audit(client)
-    await research._repo(None).set_audit_spend(audit_id, 123_456, 9_000)
+    await research.get_audit_repo(None).set_audit_spend(audit_id, 123_456, 9_000)
     _as(role)
     body = (await client.get("/api/v1/ext/admin/ai-usage")).json()
     assert (
@@ -1140,7 +1148,7 @@ async def test_audit_survives_an_invalid_json_ai_reply_by_asking_again(
     """The reported failure: the AI step used to end the audit 'partial' on one bad reply."""
     from app.services import llm
 
-    monkeypatch.setattr(research.settings, "OPENROUTER_API_KEY", "fake")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "fake")
     monkeypatch.setattr(llm, "RETRY_DELAY_S", 0)
     answers = iter(
         [
@@ -1211,7 +1219,7 @@ async def test_audit_runs_the_link_probes_and_their_findings_reach_the_on_page_d
             ],
         }
 
-    monkeypatch.setattr(research.probes, "run", fake_probes)
+    monkeypatch.setattr(probes, "run", fake_probes)
     r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
     await settle()
     done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
@@ -1244,8 +1252,8 @@ async def test_a_site_that_only_answers_through_firecrawl_gets_no_probes(
     async def no_crawl(_http, url, *_a):
         return [url], {}, True, []
 
-    monkeypatch.setattr(research.probes, "run", never)
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(probes, "run", never)
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
     monkeypatch.setattr(site_crawl, "scrape", scrape)
     monkeypatch.setattr(site_crawl, "crawl", no_crawl)
     r = await client.post(
@@ -1263,9 +1271,9 @@ async def test_a_site_that_only_answers_through_firecrawl_gets_no_probes(
 
 async def test_a_failing_probe_step_never_fails_the_audit(client, monkeypatch):
     async def broken(**_kw):
-        raise research.AppError(502, "upstream_error", "boom")
+        raise AppError(502, "upstream_error", "boom")
 
-    monkeypatch.setattr(research.probes, "run", broken)
+    monkeypatch.setattr(probes, "run", broken)
     r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
     await settle()
     done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
@@ -1282,7 +1290,7 @@ async def test_phone_and_real_visitor_problems_from_pagespeed_join_the_on_page_i
 ):
     from app.services import site_crawl
 
-    monkeypatch.setattr(research.settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
+    monkeypatch.setattr(settings, "GOOGLE_PAGESPEED_API_KEY", "fake")
 
     async def fake_psi(_http, _url):
         return {
@@ -1319,7 +1327,7 @@ async def test_phone_and_real_visitor_problems_from_pagespeed_join_the_on_page_i
 
 
 def test_the_page_cap_is_sixty_and_the_read_time_scales_with_it():
-    fields = type(research.settings).model_fields
+    fields = type(settings).model_fields
     assert (
         fields["CRAWL_MAX_PAGES"].default == 60 and fields["AI_MAX_PAGES"].default == 60
     )
@@ -1342,9 +1350,11 @@ def test_audit_always_starts_at_the_site_root(monkeypatch: pytest.MonkeyPatch):
     async def no_run(*_a: Any, **_k: Any) -> None:
         return None
 
-    monkeypatch.setattr(research, "_run", no_run)
+    monkeypatch.setattr(audit_runner, "_run", no_run)
     asyncio.run(
-        research._start(Repo(), None, "u", "https://Example.com/a/b?x=1#f", False, {})  # type: ignore[arg-type]
+        audit_runner.start(
+            Repo(), None, "u", "https://Example.com/a/b?x=1#f", False, {}
+        )  # type: ignore[arg-type]
     )
     assert seen == ["https://example.com/"]
 
@@ -1375,13 +1385,13 @@ def test_one_site_runs_once_even_with_www_force_and_two_clicks(
     async def no_run(*_a: Any, **_k: Any) -> None:
         return None
 
-    monkeypatch.setattr(research, "_run", no_run)
+    monkeypatch.setattr(audit_runner, "_run", no_run)
 
     async def go():
         return await asyncio.gather(
-            research._start(Repo(), None, "u", "www.Example.com", False, {}),  # type: ignore[arg-type]
-            research._start(Repo(), None, "u", "example.com", True, {}),  # type: ignore[arg-type]
-            research._start(Repo(), None, "u", "https://example.com/x", True, {}),  # type: ignore[arg-type]
+            audit_runner.start(Repo(), None, "u", "www.Example.com", False, {}),  # type: ignore[arg-type]
+            audit_runner.start(Repo(), None, "u", "example.com", True, {}),  # type: ignore[arg-type]
+            audit_runner.start(Repo(), None, "u", "https://example.com/x", True, {}),  # type: ignore[arg-type]
         )
 
     out = asyncio.run(go())
@@ -1410,11 +1420,11 @@ async def test_start_up_fails_a_run_it_cannot_resume_and_keeps_going(
         async def save_ai_run(self, run_id: str, **kw: Any) -> None:
             failed.append(f"{run_id}:{kw['status']}")
 
-    monkeypatch.setattr(research, "to_wire", lambda row: row)
+    monkeypatch.setattr(ai_runs, "to_wire", lambda row: row)
     monkeypatch.setattr(
-        research, "_spawn_full", lambda _r, _h, run_id, _a: spawned.append(run_id)
+        ai_runs, "spawn", lambda _r, _h, run_id, _a: spawned.append(run_id)
     )
-    n = await research.resume_full_runs(Repo(), None)  # type: ignore[arg-type]
+    n = await ai_runs.resume_full_runs(Repo(), None)  # type: ignore[arg-type]
     assert n == 1 and spawned == ["ok"]
     assert failed == [
         "gone:failed"
@@ -1445,7 +1455,7 @@ def full_jobs(monkeypatch):
         await release.wait()
         await repo.save_ai_run(run_id, status="ready", finished=True)
 
-    monkeypatch.setattr(research.ai_report, "run_job", fake_job)
+    monkeypatch.setattr(ai_report, "run_job", fake_job)
     monkeypatch.setattr(settings, "AI_VISIBILITY_FULL_PROMPTS", 12)
     monkeypatch.setattr(settings, "AI_VISIBILITY_FULL_RUNS", 2)
     monkeypatch.setattr(settings, "AI_VISIBILITY_FULL_MAX_CALLS", 400)
@@ -1580,7 +1590,7 @@ async def test_start_up_resumes_full_runs(client, ai_on, full_jobs):
     repo = client_repo(client)
     audit_id = await _finished_audit(client)
     await repo.create_ai_run(audit_id, "u", {"calls": 1})
-    n = await research.resume_full_runs(repo, httpx.AsyncClient())
+    n = await ai_runs.resume_full_runs(repo, httpx.AsyncClient())
     await asyncio.sleep(0.01)
     assert n == 1 and len(started) == 1
     release.set()
@@ -1599,7 +1609,7 @@ def writer(monkeypatch):
         seen.append(n)
         return [f"best med spa in Austin {i}" for i in range(n)], "llm"
 
-    monkeypatch.setattr(research.ai_report, "make_prompts", fake)
+    monkeypatch.setattr(ai_report, "make_prompts", fake)
     return seen
 
 
@@ -1696,7 +1706,7 @@ async def test_whole_audit_grades_the_areas_a_clinic_claims(client, monkeypatch)
     from app.services import site_ai, site_crawl
 
     for key in ("FIRECRAWL_API_KEY", "OPENROUTER_API_KEY"):
-        monkeypatch.setattr(research.settings, key, "fake")
+        monkeypatch.setattr(settings, key, "fake")
     home = "https://glowmedspa.com"
 
     def words(prefix: str, n: int = 400) -> str:

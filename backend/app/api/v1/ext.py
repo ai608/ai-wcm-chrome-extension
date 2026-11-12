@@ -11,7 +11,11 @@ from fastapi import APIRouter, Depends, Request
 from pydantic import BaseModel
 
 from app.core.config import settings
-from app.core.dependencies import get_http_client, require_extension_access
+from app.core.dependencies import (
+    get_audit_repo,
+    get_http_client,
+    require_extension_access,
+)
 from app.core.exceptions import AppError
 from app.models.user import UserProfile
 from app.repositories.audit_repository import AuditRepository
@@ -72,9 +76,7 @@ async def ai_usage(
     """AI spend of all users, for the Settings screen. Owners and admins only."""
     if profile.role not in ("owner", "admin"):
         raise AppError(403, "forbidden", "Only an owner or admin can see AI usage")
-    from app.api.v1 import research  # late: research imports this module's siblings
-
-    repo = research._repo(request)
+    repo = get_audit_repo(request)
     live = await openrouter_usage.fetch(http, force=refresh)
     tracked = await repo.ai_spend_summary()
     return {

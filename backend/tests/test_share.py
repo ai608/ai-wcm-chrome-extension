@@ -60,7 +60,7 @@ async def api(monkeypatch):  # type: ignore[no-untyped-def]
     )
     pool = Pool()
     monkeypatch.setattr(app.state, "pool", pool, raising=False)
-    monkeypatch.setattr(share, "_repo", lambda _request: Repo())
+    monkeypatch.setattr(share, "get_audit_repo", lambda _request: Repo())
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://t"
     ) as c:
@@ -80,7 +80,9 @@ async def test_link_serves_report_for_seven_days_then_expires(api) -> None:  # t
     key = hashlib.sha256(token.encode()).digest()
     html, expires = pool.rows[key]
     assert html == "<p>Report</p>" and token not in html
-    assert timedelta(days=6, hours=23) < expires - datetime.now(UTC) <= timedelta(days=7)
+    assert (
+        timedelta(days=6, hours=23) < expires - datetime.now(UTC) <= timedelta(days=7)
+    )
 
     page = await c.get(f"/r/{token}")
     assert page.status_code == 200 and page.text == "<p>Report</p>"

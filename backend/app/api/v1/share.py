@@ -9,11 +9,11 @@ from fastapi import APIRouter, Depends, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
-from app.api.v1.research import _audit, _repo
-from app.core.dependencies import require_extension_access
+from app.core.dependencies import get_audit_repo, require_extension_access
 from app.core.exceptions import AppError
 from app.core.rate_limit import rate_limit
 from app.models.user import UserProfile
+from app.services.audit_runner import fetch_audit
 
 SHARE_DAYS = 7
 router = APIRouter(tags=["share"])
@@ -36,7 +36,7 @@ async def create_share(
     profile: UserProfile = Depends(require_extension_access),
 ) -> dict[str, Any]:
     rate_limit(f"share:{profile.id}", 20, 3600)
-    await _audit(_repo(request), audit_id)  # 404 for an unknown audit
+    await fetch_audit(get_audit_repo(request), audit_id)  # 404 for an unknown audit
     token = secrets.token_urlsafe(32)
     pool: asyncpg.Pool = request.app.state.pool
     async with pool.acquire() as conn:

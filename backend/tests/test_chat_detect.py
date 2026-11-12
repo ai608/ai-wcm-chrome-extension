@@ -1,5 +1,6 @@
 import pytest
 
+from app.core.config import settings
 from app.services.site_crawl import detect_chat
 
 
@@ -35,8 +36,7 @@ def test_widget_built_by_javascript_is_found_in_rendered_html():
 
 @pytest.mark.anyio
 async def test_rendered_check_fills_a_missing_widget_and_skips_when_found(monkeypatch):
-    from app.api.v1 import research
-    from app.services import site_crawl
+    from app.services import audit_runner, site_crawl
 
     calls = []
 
@@ -45,12 +45,12 @@ async def test_rendered_check_fills_a_missing_widget_and_skips_when_found(monkey
         return '<iframe title="chat" src="https://a.example"></iframe>'
 
     monkeypatch.setattr(site_crawl, "scrape_rendered", fake)
-    monkeypatch.setattr(research.settings, "FIRECRAWL_API_KEY", "k")
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "k")
     missing = {"convert": {"chat_widget": None}}
-    await research._rendered_chat(None, missing, "https://x.example")
+    await audit_runner._rendered_chat(None, missing, "https://x.example")
     assert missing["convert"]["chat_widget"] == "Chat widget (unidentified)"
     found = {"convert": {"chat_widget": "Podium"}}
-    await research._rendered_chat(None, found, "https://x.example")
+    await audit_runner._rendered_chat(None, found, "https://x.example")
     assert found["convert"]["chat_widget"] == "Podium" and calls == [
         "https://x.example"
     ]

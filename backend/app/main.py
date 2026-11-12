@@ -16,6 +16,7 @@ from app.core.json import OrjsonResponse
 from app.core.migrate import run_migrations
 from app.core.rate_limit import prune
 from app.repositories.audit_repository import AuditRepository
+from app.services import ai_runs
 
 
 async def prune_rate_limits() -> None:
@@ -48,7 +49,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state.http_client = client
         if pool is not None:  # carry on full AI reports a restart cut short
             try:
-                await research.resume_full_runs(AuditRepository(pool), client)
+                await ai_runs.resume_full_runs(AuditRepository(pool), client)
             except Exception:
                 logging.getLogger(__name__).exception("could not resume AI reports")
         prune_task = asyncio.create_task(prune_rate_limits())

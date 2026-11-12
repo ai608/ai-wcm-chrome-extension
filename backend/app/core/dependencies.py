@@ -8,6 +8,7 @@ from fastapi import Depends, Request
 from app.core.exceptions import AppError
 from app.core.security import verify_token
 from app.models.user import UserProfile
+from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_session_repository import AuthSessionRepository
 from app.repositories.user_repository import UserRepository
 
@@ -65,3 +66,10 @@ async def require_extension_access(
     if not profile.can_open("chrome_extension"):
         raise AppError(403, "no_extension_access", "Extension access is not enabled")
     return profile
+
+
+def get_audit_repo(request: Request) -> AuditRepository:
+    pool: asyncpg.Pool | None = getattr(request.app.state, "pool", None)
+    if pool is None:
+        raise AppError(503, "upstream_error", "Database is not configured")
+    return AuditRepository(pool)
