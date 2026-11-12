@@ -42,6 +42,9 @@ INITIAL_STATE = {k: "pending" for k in site_audit.SECTION_KEYS}
 # ponytail: in-process jobs, max 3 at once, single instance. Move to a queue if scaled out.
 _sem = asyncio.Semaphore(3)
 _tasks: set[asyncio.Task[None]] = set()
+_start_lock = (
+    asyncio.Lock()
+)  # ponytail: one lock for all domains; per-domain if starts queue up
 # After the other steps finish, wait at most this long for PageSpeed before scoring.
 PAGESPEED_WAIT_S = 60.0
 
@@ -517,10 +520,14 @@ async def _start(
     url, host = site_audit.normalize_url(raw_url)
     parts = urlsplit(url)
     url = f"{parts.scheme}://{parts.netloc}/"  # always audit from the site root
-    domain = _domain(host)
-    if not force and (fresh := await repo.latest(domain, fresh_only=True)):
-        return fresh, False
-    row = await repo.create(user_id, url, domain, INITIAL_STATE)
+    domain = _domain(host)  # www.example.com and example.com are one site
+    async with _start_lock:  # the check and the insert must not interleave
+        newest = await repo.latest(domain)
+        if newest and newest["status"] in ("queued", "running"):
+            return newest, False  # force never starts a second run of the same site
+        if not force and (fresh := await repo.latest(domain, fresh_only=True)):
+            return fresh, False
+        row = await repo.create(user_id, url, domain, INITIAL_STATE)
     task = asyncio.create_task(_run(repo, http, str(row["id"]), url, hints))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)

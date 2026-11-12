@@ -1425,6 +1425,46 @@ def test_audit_always_starts_at_the_site_root(monkeypatch: pytest.MonkeyPatch):
     assert seen == ["https://example.com/"]
 
 
+def test_one_site_runs_once_even_with_www_force_and_two_clicks(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    rows: list[dict[str, str]] = []
+
+    class Repo:
+        async def latest(self, domain: str, fresh_only: bool = False):
+            hit = [r for r in rows if r["domain"] == domain]
+            return hit[-1] if hit else None
+
+        async def create(self, _u: str, url: str, domain: str, *_a: Any):
+            await asyncio.sleep(
+                0
+            )  # a real insert yields; this is where a second click got in
+            row = {
+                "id": str(len(rows)),
+                "url": url,
+                "domain": domain,
+                "status": "running",
+            }
+            rows.append(row)
+            return row
+
+    async def no_run(*_a: Any, **_k: Any) -> None:
+        return None
+
+    monkeypatch.setattr(research, "_run", no_run)
+
+    async def go():
+        return await asyncio.gather(
+            research._start(Repo(), None, "u", "www.Example.com", False, {}),  # type: ignore[arg-type]
+            research._start(Repo(), None, "u", "example.com", True, {}),  # type: ignore[arg-type]
+            research._start(Repo(), None, "u", "https://example.com/x", True, {}),  # type: ignore[arg-type]
+        )
+
+    out = asyncio.run(go())
+    assert [created for _, created in out] == [True, False, False]
+    assert len(rows) == 1 and rows[0]["domain"] == "example.com"
+
+
 # ── full AI visibility report: API ──────────────────────────────────────────────────────────
 
 FULL = "/api/v1/ext/research/audits/{}/ai-visibility/full"
