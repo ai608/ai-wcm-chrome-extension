@@ -320,7 +320,14 @@ export interface SiteSection {
     linksToServices: boolean
     posts: { url: string; title: string; publishedAt: string | null }[]
   }
-  trust: { key: string; label: string; status: 'found' | 'missing'; url: string | null }[]
+  trust: {
+    key: string
+    label: string
+    status: 'found' | 'missing'
+    url: string | null
+    /** `url` is a page that holds an FAQ section, not a page of its own. */
+    section?: boolean
+  }[]
 }
 
 export interface ConvertSection {

@@ -1178,8 +1178,9 @@ def enrich(
     ]
     faq = next((u for u, h in pages.items() if _has_faq(h)), None)
     if faq:
+        # No FAQ page of its own: say the link goes to a page that only holds an FAQ section.
         site["trust"] = [
-            {**t, "status": "found", "url": t["url"] or faq}
+            {**t, "status": "found", "url": t["url"] or faq, "section": not t["url"]}
             if t["key"] == "faq_page"
             else t
             for t in site["trust"]

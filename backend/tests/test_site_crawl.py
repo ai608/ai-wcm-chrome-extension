@@ -967,6 +967,7 @@ def test_faq_sections_on_service_pages_count_as_an_faq_page_and_placeholders_are
     assert (
         trust["faq_page"]["status"] == "found" and trust["faq_page"]["url"] == f"{G}/iv"
     )
+    assert trust["faq_page"]["section"] is True  # the link is a page with an FAQ section
     assert sections["site"]["placeholder_pages"] == [f"{G}/iv"]
 
 

@@ -261,7 +261,7 @@ function Trust({ audit, t }: { audit: Audit; t: SiteSection['trust'] }) {
           <Row key={x.key} label={x.label} status={x.status === 'found' ? 'ok' : 'warn'}>
             {x.status === 'found' ? (
               x.url ? (
-                <ExtLink href={x.url}>Found</ExtLink>
+                <ExtLink href={x.url}>{x.section ? 'Section on a page' : 'Found'}</ExtLink>
               ) : (
                 'Found'
               )
