@@ -70,6 +70,12 @@ class Settings(BaseSettings):
     FIRECRAWL_FALLBACKS: int = Field(default=10, ge=0)
     # Seconds to wait before the one retry of a failed read (a Retry-After header wins, up to 5).
     CRAWL_RETRY_DELAY_S: float = Field(default=1.0, ge=0)
+    # A site that blocks direct reads is read through Firecrawl: at most this many pages, this
+    # many at a time (Firecrawl limits requests per minute), and a Retry-After up to this many
+    # seconds is waited for. A longer one is not: that page is reported as rate limited.
+    FIRECRAWL_MAX_PAGES: int = Field(default=30, gt=0)
+    FIRECRAWL_CONCURRENCY: int = Field(default=2, gt=0)
+    FIRECRAWL_MAX_WAIT_S: float = Field(default=30.0, ge=0)
     # Pages sent to the AI, and the characters of page text across all of them. Measured on
     # clinic pages: about 2.8 characters per token, so 200k characters is about 71k tokens
     # (roughly $0.15 input on Sonnet 5.5). Pages are never cut one by one; when the total runs

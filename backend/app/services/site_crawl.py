@@ -125,13 +125,30 @@ async def map_site(http: httpx.AsyncClient, url: str) -> list[str]:
     )
 
 
+FIRECRAWL_ATTEMPTS = 3
+
+
+def _firecrawl_reason(status: int) -> str:
+    return {
+        402: "Firecrawl is out of credits (HTTP 402)",
+        429: "Firecrawl rate limit (HTTP 429)",
+    }.get(status, f"Firecrawl HTTP {status}")
+
+
 async def _firecrawl_html(
-    http: httpx.AsyncClient, url: str, rendered: bool
+    http: httpx.AsyncClient,
+    url: str,
+    rendered: bool,
+    why: dict[str, str] | None = None,
 ) -> str | None:
-    """Page HTML through Firecrawl; None when it has none. `rendered` returns the DOM after the
-    page's JavaScript ran (a few seconds' wait), which is where injected chat widgets live. One retry after a timeout, a
-    connection error, 429 or 5xx; a 402 (out of credits) or 4xx is final."""
-    for attempt in (1, 2):
+    """Page HTML through Firecrawl; None when it has none, and `why["error"]` says why.
+    `rendered` returns the DOM after the page's JavaScript ran (a few seconds' wait), which is
+    where injected chat widgets live. Up to FIRECRAWL_ATTEMPTS tries after a timeout, a
+    connection error, 429 or 5xx. A Retry-After is waited for up to FIRECRAWL_MAX_WAIT_S; a
+    longer one, a 402 (out of credits) or another 4xx is final."""
+    for attempt in range(1, FIRECRAWL_ATTEMPTS + 1):
+        last = attempt == FIRECRAWL_ATTEMPTS
+        wait = ""
         try:
             r = await http.post(
                 f"{FIRECRAWL}/scrape",
@@ -145,16 +162,23 @@ async def _firecrawl_html(
                 timeout=60,
             )
         except httpx.HTTPError:
-            if attempt == 2:
+            if last:
                 raise
         else:
             wait = r.headers.get("retry-after", "")
-            if r.status_code not in TRANSIENT_STATUS or attempt == 2:
+            if r.status_code not in TRANSIENT_STATUS or last:
                 break
-            if r.status_code == 429 and wait.isdigit() and int(wait) > 5:
+            if wait.isdigit() and int(wait) > settings.FIRECRAWL_MAX_WAIT_S:
                 break
-        await asyncio.sleep(settings.CRAWL_RETRY_DELAY_S)
+        delay = (
+            min(int(wait), settings.FIRECRAWL_MAX_WAIT_S)
+            if wait.isdigit()
+            else settings.CRAWL_RETRY_DELAY_S * attempt
+        )
+        await asyncio.sleep(delay)
     if r.status_code >= 400:
+        if why is not None:
+            why["error"] = _firecrawl_reason(r.status_code)
         return None
     usage.record_firecrawl("scrape")
     data = r.json().get("data") or {}
@@ -163,11 +187,17 @@ async def _firecrawl_html(
         or data.get("rawHtml")
         or data.get("html")
     )
-    return html if isinstance(html, str) and html.strip() else None
+    if isinstance(html, str) and html.strip():
+        return html
+    if why is not None:
+        why["error"] = "Firecrawl returned no content"
+    return None
 
 
-async def scrape(http: httpx.AsyncClient, url: str) -> str | None:
-    return await _firecrawl_html(http, url, False)
+async def scrape(
+    http: httpx.AsyncClient, url: str, why: dict[str, str] | None = None
+) -> str | None:
+    return await _firecrawl_html(http, url, False, why)
 
 
 async def scrape_rendered(http: httpx.AsyncClient, url: str) -> str | None:
@@ -589,6 +619,8 @@ class _Reader:
         self.fallbacks = (
             settings.FIRECRAWL_FALLBACKS if settings.FIRECRAWL_API_KEY else 0
         )
+        self.reasons: dict[str, str] = {}  # url -> why it could not be read
+        self._gate = asyncio.Semaphore(settings.FIRECRAWL_CONCURRENCY)
 
     async def __call__(self, url: str) -> tuple[str | None, str]:
         thin = None
@@ -609,12 +641,18 @@ class _Reader:
             self.fallbacks -= 1
         elif not settings.FIRECRAWL_API_KEY:
             return None, "direct"
+        why: dict[str, str] = {}
         try:
-            got = await scrape(self.http, url)
-        except (httpx.HTTPError, ValueError):
+            async with self._gate:  # Firecrawl limits requests per minute
+                got = await scrape(self.http, url, why)
+        except (httpx.HTTPError, ValueError) as exc:
             got = None
+            why["error"] = f"Firecrawl request failed ({_why(exc)})"
         if got and _blocked(got):
             got = None
+            why["error"] = "Firecrawl got a bot-protection page"
+        if not (got or thin) and why:
+            self.reasons[url] = why["error"]
         return got or thin, "firecrawl"
 
 
@@ -679,8 +717,9 @@ async def crawl(
     found: dict[str, str] = {}
     cleaned([*menu.top, *home_links], found)  # menu first: the clinic's own order
     chosen, groups, mode = plan(list(found.values()), url, menu, posts)
-    if via != "direct":
-        chosen = chosen[: settings.FIRECRAWL_FALLBACKS]
+    through_firecrawl = via != "direct"
+    if through_firecrawl:
+        chosen = chosen[: settings.FIRECRAWL_MAX_PAGES]
     await say("pick", "done", total=len(chosen), mode=mode, groups=groups)
 
     await say("scrape", "running", total=len(chosen))
@@ -692,12 +731,14 @@ async def crawl(
         async with sem:  # FIFO: pages start in tier order, so a cut loses tier D first
             started = time.monotonic()
             html, how = await read(u)
+            error = None if html else read.reasons.get(u)
             await say(
                 f"page:{u}",
                 "done" if html else "failed",
                 url=u,
                 ms=round((time.monotonic() - started) * 1000),
                 via=how,
+                **({"error": error} if error else {}),
             )
             return u, html, how
 
@@ -723,6 +764,8 @@ async def crawl(
     if mapped:
         more, groups, mode = plan(list(found.values()), url, menu, posts, chosen)
         extra = [u for u in more if u not in chosen]
+        if through_firecrawl:  # the cap holds for pages the map adds too
+            extra = extra[: max(settings.FIRECRAWL_MAX_PAGES - len(chosen), 0)]
         chosen += extra
         tasks += [asyncio.create_task(one(u)) for u in extra]
         await say("pick", "done", total=len(chosen), mode=mode, groups=groups)
@@ -730,7 +773,10 @@ async def crawl(
 
     pending: set[asyncio.Task[tuple[str, str | None, str]]] = set()
     if tasks:
-        left = max(settings.CRAWL_BUDGET_S - (time.monotonic() - started_reads), 0.01)
+        budget = settings.CRAWL_BUDGET_S * (
+            2 if through_firecrawl else 1
+        )  # slower reads
+        left = max(budget - (time.monotonic() - started_reads), 0.01)
         _, pending = await asyncio.wait(tasks, timeout=left)
         for t in pending:
             t.cancel()

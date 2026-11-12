@@ -378,7 +378,7 @@ async def test_blocked_home_page_falls_back_to_firecrawl(client, monkeypatch):
 
     monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
 
-    async def fake_scrape(_http, _url):
+    async def fake_scrape(_http, _url, why=None):
         return HTML
 
     async def no_crawl(_http, url, *_args):
@@ -409,7 +409,7 @@ async def test_home_page_that_is_a_bot_wall_goes_to_firecrawl_not_into_the_audit
     async def wall(url: str, accept=None) -> tuple[str, str]:
         return WALL, url
 
-    async def real_page(_http, _url):
+    async def real_page(_http, _url, why=None):
         return HTML
 
     async def no_crawl(_http, url, *_args):
@@ -450,7 +450,7 @@ async def test_home_page_bot_wall_without_a_way_around_fails_the_audit_clearly(
     assert done["on_page"] is None  # no fake "everything is missing" report
 
     # a Firecrawl key whose result is a bot wall too: same clear failure
-    async def still_wall(_http, _url):
+    async def still_wall(_http, _url, why=None):
         return WALL
 
     monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
@@ -655,7 +655,7 @@ async def test_trace_records_each_step_of_a_full_run(client, monkeypatch):
     async def fake_map(_http, _url):
         return mapped
 
-    async def fake_scrape(_http, url):
+    async def fake_scrape(_http, url, why=None):
         return None if url.endswith("/about") else HTML
 
     async def fake_psi(_http, _url):
@@ -1246,7 +1246,7 @@ async def test_a_site_that_only_answers_through_firecrawl_gets_no_probes(
             "probes must not run against a site that blocks direct requests"
         )
 
-    async def scrape(_http, _url):
+    async def scrape(_http, _url, why=None):
         return HTML
 
     async def no_crawl(_http, url, *_a):
@@ -1736,7 +1736,7 @@ async def test_whole_audit_grades_the_areas_a_clinic_claims(client, monkeypatch)
     async def fake_map(_http, _url):
         return list(site)
 
-    async def fake_scrape(_http, url):
+    async def fake_scrape(_http, url, why=None):
         return site.get(url)
 
     async def fake_ai(_http, _pages, _names):

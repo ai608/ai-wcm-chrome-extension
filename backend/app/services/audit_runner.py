@@ -1,6 +1,3 @@
-"""The audit pipeline: start an audit, run its steps in the background, keep its state.
-No HTTP here; the routes in app/api/v1/research.py call this."""
-
 import asyncio
 import logging
 import time

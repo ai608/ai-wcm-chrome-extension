@@ -220,7 +220,7 @@ async def test_reader_falls_back_to_firecrawl_within_its_cap(monkeypatch):
             raise AppError(422, "site_unreachable", "blocked")
         return direct[url], url
 
-    async def scrape(_http, url):
+    async def scrape(_http, url, why=None):
         return RICH
 
     monkeypatch.setattr(site_crawl, "fetch_html", fetch)
@@ -292,7 +292,7 @@ async def test_firecrawl_result_that_is_a_bot_wall_is_dropped_too(monkeypatch):
     async def fetch(url, **_kw):
         return WALL, url
 
-    async def scrape(_http, _url):
+    async def scrape(_http, _url, why=None):
         return CLOUDFLARE
 
     monkeypatch.setattr(site_crawl, "fetch_html", fetch)
@@ -945,8 +945,12 @@ async def test_scrape_retries_once_on_a_passing_error_and_not_on_a_final_one(
     async with run([402, 200]) as http:  # out of credits: final, no second call
         assert await site_crawl.scrape(http, f"{G}/a") is None and len(calls) == 1
     calls.clear()
-    async with run([503, 503, 200]) as http:  # one retry only
-        assert await site_crawl.scrape(http, f"{G}/a") is None and len(calls) == 2
+    calls.clear()
+    async with run([503, 503, 200]) as http:  # three tries in all
+        assert await site_crawl.scrape(http, f"{G}/a") == RICH and len(calls) == 3
+    calls.clear()
+    async with run([503, 503, 503, 200]) as http:
+        assert await site_crawl.scrape(http, f"{G}/a") is None and len(calls) == 3
 
 
 def test_a_page_keeps_the_text_of_its_first_menu_link():
@@ -1032,14 +1036,89 @@ async def test_scrape_does_not_retry_a_rate_limit_that_says_to_wait_a_minute(
 
 
 @pytest.mark.anyio
-async def test_a_site_that_blocks_direct_reads_gets_only_the_pages_the_firecrawl_plan_allows(
+async def test_scrape_waits_for_a_short_retry_after_and_says_why_when_it_gives_up(
+    monkeypatch,
+):
+    slept: list[float] = []
+
+    async def fake_sleep(seconds):
+        slept.append(seconds)
+
+    monkeypatch.setattr(site_crawl.asyncio, "sleep", fake_sleep)
+    seq = iter([429, 200])
+
+    def respond(_request):
+        status = next(seq)
+        body = {"data": {"rawHtml": RICH}} if status == 200 else {}
+        return httpx.Response(status, headers={"retry-after": "7"}, json=body)
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(respond)) as http:
+        assert await site_crawl.scrape(http, f"{G}/a") == RICH
+    assert slept == [7]  # the server's wait, not the default
+
+    why: dict[str, str] = {}
+
+    def limited(_request):
+        return httpx.Response(429, headers={"retry-after": "600"}, json={})
+
+    async with httpx.AsyncClient(transport=httpx.MockTransport(limited)) as http:
+        assert await site_crawl.scrape(http, f"{G}/a", why) is None
+    assert "rate limit" in why["error"] and "429" in why["error"]
+
+
+@pytest.mark.anyio
+async def test_a_page_that_could_not_be_read_says_why_in_the_trace(monkeypatch):
+    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_API_KEY", "fake")
+
+    async def scrape(_http, _url, why=None):
+        why["error"] = "Firecrawl rate limit (HTTP 429)"
+
+    async def no_map(_http, _url):
+        return []
+
+    seen: list[dict] = []
+
+    async def report(step, status, **detail):
+        if step.startswith("page:"):
+            seen.append({"status": status, **detail})
+
+    monkeypatch.setattr(site_crawl, "scrape", scrape)
+    monkeypatch.setattr(site_crawl, "map_site", no_map)
+    await site_crawl.crawl(None, f"{G}/", MENU, "firecrawl", report)
+    assert seen and all(
+        e["status"] == "failed" and e["error"] == "Firecrawl rate limit (HTTP 429)"
+        for e in seen
+    )
+
+
+@pytest.mark.anyio
+async def test_pages_the_map_adds_do_not_go_past_the_firecrawl_cap(monkeypatch):
+    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_API_KEY", "fake")
+    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_MAX_PAGES", 3)
+    read: list[str] = []
+
+    async def scrape(_http, url, why=None):
+        read.append(url)
+        return RICH
+
+    async def big_map(_http, _url):
+        return [f"{G}/extra-{i}" for i in range(20)]
+
+    monkeypatch.setattr(site_crawl, "scrape", scrape)
+    monkeypatch.setattr(site_crawl, "map_site", big_map)
+    await site_crawl.crawl(None, f"{G}/", MENU, "firecrawl", None)
+    assert len(read) <= 3
+
+
+@pytest.mark.anyio
+async def test_a_site_that_blocks_direct_reads_gets_only_as_many_pages_as_firecrawl_may_read(
     monkeypatch,
 ):
     monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_API_KEY", "fake")
-    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_FALLBACKS", 2)
+    monkeypatch.setattr(site_crawl.settings, "FIRECRAWL_MAX_PAGES", 2)
     read = []
 
-    async def scrape(_http, url):
+    async def scrape(_http, url, why=None):
         read.append(url)
         return RICH
 
