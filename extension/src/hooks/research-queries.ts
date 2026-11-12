@@ -87,7 +87,6 @@ export function useStartAudit(domain: string) {
 type OnDemandCall =
   | { kind: 'domain' }
   | { kind: 'local'; query?: string; location?: string }
-  | { kind: 'ai'; prompts: string[] }
 
 export function useRunOnDemand(auditId: string, domain: string) {
   const client = useQueryClient()
@@ -95,9 +94,7 @@ export function useRunOnDemand(auditId: string, domain: string) {
     mutationFn: (c: OnDemandCall) =>
       c.kind === 'domain'
         ? call('runDomainOverview', { auditId })
-        : c.kind === 'local'
-          ? call('runLocalCompetitors', { auditId, query: c.query, location: c.location })
-          : call('runAiVisibility', { auditId, prompts: c.prompts }),
+        : call('runLocalCompetitors', { auditId, query: c.query, location: c.location }),
     onSuccess: (a) => {
       client.setQueryData(rk.latest(domain), a)
       client.setQueryData(rk.audit(auditId), a)

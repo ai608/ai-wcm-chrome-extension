@@ -204,13 +204,6 @@ function registerApiHandlers() {
       serializeError(err)
     }
   })
-  onMessage('runAiVisibility', async ({ data }) => {
-    try {
-      return await api.runAiVisibility(data.auditId, data.prompts)
-    } catch (err) {
-      serializeError(err)
-    }
-  })
   onMessage('getAiQuestions', async ({ data }) => {
     try {
       return await api.getAiQuestions(data.auditId)

@@ -9,7 +9,7 @@ import asyncpg
 import httpx
 from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import Response
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field
 
 from app.core.config import settings
 from app.core.dependencies import get_http_client, require_extension_access
@@ -709,51 +709,6 @@ async def local_competitors(
     return to_wire(await _audit(repo, audit_id))
 
 
-class AiVisibilityRequest(BaseModel):
-    prompts: list[str] = Field(min_length=1, max_length=3)
-
-    @field_validator("prompts")
-    @classmethod
-    def _clean(cls, value: list[str]) -> list[str]:
-        out = list(dict.fromkeys(p.strip()[:200] for p in value if p.strip()))
-        if not out:
-            raise ValueError("at least one question is required")
-        return out
-
-
-async def _ai_job(
-    repo: AuditRepository,
-    http: httpx.AsyncClient,
-    run_id: str,
-    audit: dict[str, Any],
-    prompts: list[str],
-) -> None:
-    async def save(data: dict[str, Any], cost: int, tokens: int) -> None:
-        await repo.save_ai_run(run_id, data=data, cost_micro=cost, tokens=tokens)
-
-    try:
-        res = await ai_visibility.run(
-            http, run_id=run_id, audit=audit, prompts=prompts, save=save
-        )
-        await repo.save_ai_run(
-            run_id,
-            status=res.status,
-            data=res.data,
-            error=res.error,
-            cost_micro=res.cost_micro,
-            tokens=res.tokens,
-            finished=True,
-        )
-    except Exception:  # never leave a run stuck in `running`
-        logger.exception("ai_visibility run %s crashed", run_id)
-        await repo.save_ai_run(
-            run_id,
-            status="failed",
-            error="AI visibility check failed unexpectedly",
-            finished=True,
-        )
-
-
 async def _ai_guard(
     repo: AuditRepository, audit_id: str, profile: UserProfile, *, paid: bool = True
 ) -> dict[str, Any]:
@@ -777,27 +732,6 @@ async def _ai_guard(
             429, "budget_reached", "Daily AI visibility budget reached. Try tomorrow."
         )
     return audit
-
-
-@router.post("/research/audits/{audit_id}/ai-visibility")
-async def start_ai_visibility(
-    audit_id: str,
-    body: AiVisibilityRequest,
-    request: Request,
-    profile: UserProfile = Depends(require_extension_access),
-    http: httpx.AsyncClient = Depends(get_http_client),
-) -> Response:
-    repo = _repo(request)
-    audit = await _ai_guard(repo, audit_id, profile)
-    run_id = await repo.create_ai_run(audit_id, profile.id)
-    if run_id is None:
-        raise AppError(
-            409, "already_running", "An AI visibility check is already running."
-        )
-    task = asyncio.create_task(_ai_job(repo, http, run_id, audit, body.prompts))
-    _tasks.add(task)
-    task.add_done_callback(_tasks.discard)
-    return OrjsonResponse(to_wire(await _audit(repo, audit_id)), status_code=202)
 
 
 class AiFullRequest(BaseModel):
@@ -883,7 +817,7 @@ async def start_ai_report(
             f"This run would make {cfg['calls']} calls; the limit is "
             f"{settings.AI_VISIBILITY_FULL_MAX_CALLS}. Use fewer questions or repeats.",
         )
-    run_id = await repo.create_ai_run(audit_id, profile.id, kind="full", config=cfg)
+    run_id = await repo.create_ai_run(audit_id, profile.id, cfg)
     if run_id is None:
         raise AppError(
             409, "already_running", "An AI visibility check is already running."
@@ -894,17 +828,25 @@ async def start_ai_report(
 
 async def resume_full_runs(repo: AuditRepository, http: httpx.AsyncClient) -> int:
     """At start-up: continue full reports that a restart interrupted (answers already paid for
-    are kept). Lite runs are not resumed; the sweeper fails them."""
+    are kept). A report that cannot be continued is failed, because a run left `running` would
+    block the audit's next report for ever (one running report per audit)."""
     n = 0
     for run_id in await repo.running_full_runs():
-        run = await repo.get_ai_run(run_id)
-        if run is None:
-            continue
-        audit = await repo.get(run["audit_id"])
-        if audit is None:
-            continue
-        _spawn_full(repo, http, run_id, to_wire(audit))
-        n += 1
+        try:
+            run = await repo.get_ai_run(run_id)
+            audit = await repo.get(run["audit_id"]) if run else None
+            if audit is None:
+                await repo.save_ai_run(
+                    run_id,
+                    status="failed",
+                    error="interrupted",
+                    finished=True,
+                )
+                continue
+            _spawn_full(repo, http, run_id, to_wire(audit))
+            n += 1
+        except Exception:  # one bad run must not stop the others
+            logging.getLogger(__name__).exception("could not resume run %s", run_id)
     return n
 
 

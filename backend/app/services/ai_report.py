@@ -36,6 +36,7 @@ MIN_SUCCESS = (
     0.7  # below this share of good answers the score is "partial", not "ready"
 )
 MAX_RESUMES = 3  # a run that keeps crashing is failed, not retried forever
+RUN_MAX_S = 3600  # one run, all its resumes counted separately; a hung call cannot hold it for ever
 JUDGE_CHARS = (
     8000  # the POC sends the whole answer; answers here are about 3000 characters
 )
@@ -1068,7 +1069,16 @@ async def run_job(
         await repo.patch_ai_config(
             run_id, {"resumes": run["config"].get("resumes", 0), "started": True}
         )
-        await Job(repo, http, run, audit).execute()
+        async with asyncio.timeout(RUN_MAX_S):
+            await Job(repo, http, run, audit).execute()
+    except TimeoutError:  # answers already saved stay; the run ends as failed
+        logger.error("ai_report run %s took longer than %ss", run_id, RUN_MAX_S)
+        await repo.save_ai_run(
+            run_id,
+            status="failed",
+            error="The report took too long and was stopped.",
+            finished=True,
+        )
     except Exception:  # never leave a run stuck in `running`
         logger.exception("ai_report run %s crashed", run_id)
         await repo.save_ai_run(

@@ -1,3 +1,5 @@
+import asyncio
+
 """Full AI visibility report: the job, with an in-memory repository and a fake OpenRouter.
 
 The judge (one LLM call per answer, as in the POC) is faked by `reader`, which behaves like a
@@ -698,6 +700,17 @@ async def test_a_run_that_keeps_crashing_is_failed_not_retried_forever():
     prov = Provider()
     await go(repo, prov)
     assert repo.run["status"] == "failed" and prov.asks == []
+
+
+async def test_a_run_that_hangs_is_stopped_and_failed(monkeypatch):
+    async def hang(_self):
+        await asyncio.sleep(10)
+
+    monkeypatch.setattr(ar, "RUN_MAX_S", 0.01)
+    monkeypatch.setattr(ar.Job, "execute", hang)
+    repo = FakeRepo(config())
+    await go(repo, Provider())
+    assert repo.run["status"] == "failed" and "too long" in repo.saved["error"]
 
 
 async def test_cost_cap_stops_the_run_and_marks_it_partial():

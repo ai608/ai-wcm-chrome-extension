@@ -44,7 +44,6 @@ export interface ProtocolMap {
   getLatestAudit(data: { domain: string }): Audit | null
   runDomainOverview(data: { auditId: string }): Audit
   runLocalCompetitors(data: { auditId: string; query?: string; location?: string }): Audit
-  runAiVisibility(data: { auditId: string; prompts: string[] }): Audit
   getAiQuestions(data: { auditId: string }): AiQuestions
   runAiReport(data: { auditId: string; prompts?: string[] }): Audit
   getAiRunAnswers(data: {

@@ -198,23 +198,18 @@ class AuditRepository:
         }
 
     async def create_ai_run(
-        self,
-        audit_id: str,
-        user_id: str,
-        kind: str = "lite",
-        config: dict[str, Any] | None = None,
+        self, audit_id: str, user_id: str, config: dict[str, Any]
     ) -> str | None:
-        """Start a run. None when this audit already has one running (unique index)."""
+        """Start a full report. None when this audit already has one running (unique index)."""
         async with self._pool.acquire() as conn:
             try:
                 row = await conn.fetchrow(
                     "INSERT INTO extension.ai_visibility_runs "
                     "(audit_id, requested_by, status, kind, config, data) "
-                    "VALUES ($1, $2, 'running', $3, $4::jsonb, $5::jsonb) RETURNING id",
+                    "VALUES ($1, $2, 'running', 'full', $3::jsonb, $4::jsonb) RETURNING id",
                     UUID(audit_id),
                     UUID(user_id),
-                    kind,
-                    json.dumps(config) if config is not None else None,
+                    json.dumps(config),
                     # So the panel knows at once that this is a full report, before the job's
                     # first progress write.
                     json.dumps(
@@ -225,9 +220,7 @@ class AuditRepository:
                             "engines": [],
                             "log": [],
                         }
-                    )
-                    if kind == "full"
-                    else None,
+                    ),
                 )
             except asyncpg.UniqueViolationError:
                 return None
@@ -253,7 +246,7 @@ class AuditRepository:
                 "cost_micro = COALESCE($5, cost_micro), "
                 "tokens = COALESCE($6, tokens), "
                 "finished_at = CASE WHEN $7 THEN now() ELSE finished_at END "
-                "WHERE id = $1",
+                "WHERE id = $1 AND status = 'running'",  # ready/partial/failed are final
                 UUID(run_id),
                 status,
                 json.dumps(data) if data is not None else None,
@@ -276,11 +269,7 @@ class AuditRepository:
     async def fail_interrupted(self) -> int:
         """Single-instance sweeper: anything still queued/running at startup was interrupted."""
         async with self._pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE extension.ai_visibility_runs SET status = 'failed', "
-                "error = 'interrupted', finished_at = now() "
-                "WHERE status = 'running' AND kind = 'lite'"  # full runs resume instead
-            )
+            # Running reports are not failed here: start-up resumes them (resume_full_runs).
             res: str = await conn.execute(
                 "UPDATE extension.audits SET status = 'failed', error = 'interrupted', "
                 "finished_at = now() WHERE status IN ('queued', 'running')"

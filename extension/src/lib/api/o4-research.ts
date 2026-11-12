@@ -79,12 +79,6 @@ export async function runLocalCompetitors(
   )
 }
 
-export async function runAiVisibility(auditId: string, prompts: string[]): Promise<Audit> {
-  return parseAudit(
-    await request<unknown>('POST', `${base(auditId)}/ai-visibility`, { body: { prompts } }),
-  )
-}
-
 /** Step 1: write the questions. Nothing is saved and no run starts. */
 export async function getAiQuestions(auditId: string): Promise<AiQuestions> {
   return camelize(

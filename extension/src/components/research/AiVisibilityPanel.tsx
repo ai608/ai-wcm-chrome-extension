@@ -11,16 +11,8 @@ import claudeLogo from '@/assets/engines/claude.svg'
 import geminiLogo from '@/assets/engines/gemini.svg'
 import openaiLogo from '@/assets/engines/openai.svg'
 import perplexityLogo from '@/assets/engines/perplexity.svg'
-import { Chip } from '@/components/research/shared'
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Skeleton } from '@/components/ui/skeleton'
-import { useRunOnDemand } from '@/hooks/research-queries'
-import type { AiEngineResult, AiVisibility, Audit, TraceEvent } from '@/lib/api/research-types'
-import { Markdown } from '@/lib/markdown'
+import type { TraceEvent } from '@/lib/api/research-types'
 import { cn } from '@/lib/utils'
-import { usePanelStore } from '@/stores/panel-store'
 
 // The audit's own step list (AuditProgress) is not exported, and another change is editing that
 // file, so these two small helpers live here. Merge them when that work lands.
@@ -33,7 +25,7 @@ const ENGINE_LOGOS: Record<string, string> = {
 }
 
 /** A light wash of each logo color. ChatGPT's mark is black, so its wash follows the text color. */
-const ENGINE_TINT: Record<string, string> = {
+const _ENGINE_TINT: Record<string, string> = {
   chatgpt: 'border-foreground/20 bg-foreground/[0.08]',
   openai: 'border-foreground/20 bg-foreground/[0.08]',
   gemini: 'border-[#3186FF]/25 bg-[#3186FF]/[0.08]',
@@ -273,9 +265,7 @@ function SmoothDisclosure({
         onClick={() => setOpen((value) => !value)}
         className={cn(
           'flex cursor-pointer items-center gap-1 text-left',
-          prominent
-            ? 'w-full gap-1.5 text-[13px] font-semibold'
-            : 'text-[12px] text-primary',
+          prominent ? 'w-full gap-1.5 text-[13px] font-semibold' : 'text-[12px] text-primary',
           buttonClassName,
         )}
       >
@@ -401,250 +391,4 @@ export function LogDetails({
       </SmoothDisclosure>
     </div>
   )
-}
-
-function Running({ data }: { data: AiVisibility | null }) {
-  const log = data?.log ?? []
-  const calls = log.filter((e) => e.id.startsWith('ask:'))
-  const finished = calls.filter((e) => e.status !== 'running').length
-  return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="rounded-lg border border-border bg-muted/40 px-3 py-2.5"
-    >
-      <p className="mb-1 text-[13px] text-muted-foreground">
-        Asking the AI engines
-        {calls.length > 0 ? ` · ${finished} of ${calls.length} answers` : '…'}
-      </p>
-      {log.length === 0 ? (
-        <Skeleton className="h-16 w-full" />
-      ) : (
-        <RunLog events={log} prompts={data?.prompts ?? []} grouped />
-      )}
-    </div>
-  )
-}
-
-function hasMore(excerpt: string, text: string | undefined): boolean {
-  const full = text?.trim() ?? ''
-  if (!full) return false
-  const core = excerpt.replaceAll('…', '').trim()
-  return full.length > core.length + 8
-}
-
-function AnswerBody({ excerpt, text }: { excerpt: string; text?: string }) {
-  const [open, setOpen] = useState(false)
-  const full = text?.trim() ?? ''
-  const more = hasMore(excerpt, full)
-  return (
-    <div>
-      <Markdown text={open && more ? full : excerpt} />
-      {more ? (
-        <button
-          type="button"
-          className="mt-1 cursor-pointer text-[13px] font-medium text-primary"
-          onClick={() => setOpen((value) => !value)}
-        >
-          {open ? 'Show less' : 'See full answer'}
-        </button>
-      ) : null}
-    </div>
-  )
-}
-
-function EngineCard({ e }: { e: AiEngineResult }) {
-  const allFailed = e.promptsFailed === e.promptsTotal
-  return (
-    <li
-      className={cn(
-        'rounded-md border p-2',
-        ENGINE_TINT[e.engine.trim().toLowerCase()] ?? 'border-border',
-      )}
-    >
-      <div className="flex flex-wrap items-center gap-2">
-        <EngineName name={e.engine} className="flex-1 font-medium" />
-        {allFailed ? (
-          <Chip tone="warn">Did not answer</Chip>
-        ) : (
-          <Chip tone={e.mentioned ? 'good' : 'bad'}>{e.mentioned ? '✓ Named' : '✗ Not named'}</Chip>
-        )}
-        {e.linked ? <Chip tone="good">Linked</Chip> : null}
-      </div>
-      <p className="mt-0.5 text-[12px] text-muted-foreground">
-        {allFailed
-          ? (e.error ?? 'No answer')
-          : `Named in ${e.promptsMentioned} of ${e.promptsTotal - e.promptsFailed} answers${
-              e.promptsFailed > 0 ? ` · ${e.promptsFailed} failed (${e.error ?? 'error'})` : ''
-            }`}
-      </p>
-      {e.citedBusinesses.length ? (
-        <p className="mt-1 text-[14px]">Mentioned instead: {e.citedBusinesses.join(', ')}</p>
-      ) : null}
-      {e.answers.length > 0 ? (
-        <SmoothDisclosure label="Answers" buttonClassName="text-[14px] font-medium text-foreground">
-          <ul className="flex flex-col gap-4">
-            {e.answers.map((a) => (
-              <li key={a.prompt}>
-                <p className="text-[15px] font-semibold">{a.prompt}</p>
-                <div className="mt-2 border-t border-border pt-2">
-                  {a.ok ? (
-                    <AnswerBody excerpt={a.excerpt} text={a.text} />
-                  ) : (
-                    <p className="text-[14px] text-destructive">{a.error ?? 'Failed'}</p>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </SmoothDisclosure>
-      ) : null}
-    </li>
-  )
-}
-
-function Results({
-  data,
-  pending,
-  onRun,
-}: {
-  data: AiVisibility
-  pending: boolean
-  onRun: () => void
-}) {
-  const setSub = usePanelStore((s) => s.setResearchSubTab)
-  const answered = data.engines.reduce((n, e) => n + e.promptsTotal - e.promptsFailed, 0)
-  const named = data.engines.reduce((n, e) => n + e.promptsMentioned, 0)
-  const source = data.competitors?.source
-  const u = data.usage
-  return (
-    <div className="flex flex-col gap-3">
-      <LogDetails events={data.log} prompts={data.prompts} />
-      <div className="flex items-center justify-between gap-3">
-        <p className="min-w-0 flex-1 text-[14px] font-semibold">
-          {data.brand} was named in {named} of {answered} answers.
-        </p>
-        <Button size="lg" className="shrink-0" disabled={pending} onClick={onRun}>
-          Run again
-        </Button>
-      </div>
-      <ul className="flex flex-col gap-2 text-[13px]">
-        {data.engines.map((e) => (
-          <EngineCard key={e.engine} e={e} />
-        ))}
-      </ul>
-      {source === 'local_competitors' ? (
-        <p className="text-[12px] text-muted-foreground">
-          Compared with {data.competitors?.names.length} local competitors from Google Maps.
-        </p>
-      ) : (
-        <div className="flex flex-wrap items-center gap-2 text-[12px] text-muted-foreground">
-          <span className="flex-1">
-            {source === 'llm'
-              ? 'Competitors here were named by AI, so check them.'
-              : 'No competitors were compared.'}{' '}
-            Run Local Competitors for real Google Maps data.
-          </span>
-          <Button size="xs" variant="outline" onClick={() => setSub('research', 'local')}>
-            Find competitors
-          </Button>
-        </div>
-      )}
-      {u && !data.log.some((e) => e.id === 'usage') ? (
-        // Checks saved before the "Cost and tokens" step existed only have these totals.
-        <p className="text-[12px] text-muted-foreground tabular-nums">
-          {`${u.calls} answers${u.failed > 0 ? ` (${u.failed} failed)` : ''} · ${u.tokens} tokens · $${u.costUsd.toFixed(4)} · ${duration(u.ms)}`}
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-export function AiVisibilityPanel({
-  audit,
-  initialPrompts,
-}: {
-  audit: Audit
-  initialPrompts: string[]
-}) {
-  const run = useRunOnDemand(audit.id, audit.domain)
-  const od = audit.research?.aiVisibility
-  const [prompts, setPrompts] = useState(initialPrompts)
-  const start = (list: string[]) =>
-    run.mutate({ kind: 'ai', prompts: list.filter((p) => p.trim()).slice(0, 3) })
-  if (!od) return null
-
-  const failure = run.isError ? (
-    <Alert variant="destructive">
-      <AlertDescription>
-        {run.error instanceof Error ? run.error.message : 'Could not start the check.'}
-      </AlertDescription>
-    </Alert>
-  ) : null
-
-  if (od.state === 'not_run') {
-    return (
-      <form
-        className="flex flex-col gap-2"
-        onSubmit={(e) => {
-          e.preventDefault()
-          start(prompts)
-        }}
-      >
-        <p className="text-[13px] text-muted-foreground">
-          Asks ChatGPT, Gemini, Perplexity and Claude (with web search) and shows whether this
-          clinic is named. It takes about 20 to 40 seconds.
-        </p>
-        {prompts.map((p, i) => (
-          <Input
-            // biome-ignore lint/suspicious/noArrayIndexKey: fixed three slots
-            key={i}
-            aria-label={`Question ${i + 1}`}
-            value={p}
-            maxLength={200}
-            onChange={(e) => setPrompts(prompts.map((x, j) => (j === i ? e.target.value : x)))}
-          />
-        ))}
-        <Button type="submit" disabled={run.isPending}>
-          Check AI visibility
-        </Button>
-        {failure}
-      </form>
-    )
-  }
-
-  if (od.state === 'running') return <Running data={od.data} />
-
-  if (od.state === 'failed') {
-    return (
-      <div className="flex flex-col gap-2">
-        <Alert variant="destructive">
-          <AlertDescription className="flex items-center gap-2">
-            <span className="flex-1">{od.error ?? 'The check failed.'}</span>
-            <Button
-              size="xs"
-              variant="outline"
-              disabled={run.isPending}
-              onClick={() => start(od.data?.prompts ?? prompts)}
-            >
-              Retry
-            </Button>
-          </AlertDescription>
-        </Alert>
-        {failure}
-        <LogDetails events={od.data?.log ?? []} prompts={od.data?.prompts ?? []} open />
-      </div>
-    )
-  }
-
-  return od.data ? (
-    <div className="flex flex-col gap-2">
-      <Results
-        data={od.data}
-        pending={run.isPending}
-        onRun={() => start(od.data?.prompts ?? prompts)}
-      />
-      {failure}
-    </div>
-  ) : null
 }

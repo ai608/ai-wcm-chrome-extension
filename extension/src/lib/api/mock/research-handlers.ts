@@ -5,7 +5,6 @@ import {
   aiRunAnswersFixture,
 } from '@/lib/api/mock/ai-report-fixture'
 import {
-  aiVisibilityFixture,
   buildAudit,
   competitorsFixture,
   domainOverviewFixture,
@@ -182,15 +181,6 @@ export async function runLocalCompetitors(
 ): Promise<Audit> {
   await latency()
   return startRun(auditId, 'local', competitorsFixture(query, location))
-}
-
-export async function runAiVisibility(auditId: string, prompts: string[]): Promise<Audit> {
-  await latency()
-  return startRun(
-    auditId,
-    'ai',
-    aiVisibilityFixture(get(auditId).full.domain === STRONG_DOMAIN, prompts),
-  )
 }
 
 export async function getAiQuestions(auditId: string): Promise<AiQuestions> {

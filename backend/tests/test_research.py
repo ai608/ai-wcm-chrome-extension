@@ -89,11 +89,7 @@ class FakeRepo:
     spent = 0
 
     async def create_ai_run(
-        self,
-        audit_id: str,
-        user_id: str,
-        kind: str = "lite",
-        config: dict[str, Any] | None = None,
+        self, audit_id: str, user_id: str, config: dict[str, Any]
     ) -> str | None:
         if any(
             r["audit_id"] == audit_id and r["state"] == "running"
@@ -106,8 +102,8 @@ class FakeRepo:
             "state": "running",
             "data": None,
             "error": None,
-            "kind": kind,
-            "config": config or {},
+            "kind": "full",
+            "config": config,
         }
         self._sync(run_id)
         return run_id
@@ -874,78 +870,6 @@ def ai_on(monkeypatch):
     monkeypatch.setattr(settings, "OPENROUTER_API_KEY", "k")
     monkeypatch.setattr(settings, "AI_VISIBILITY_MODELS", "ChatGPT=openai/x")
 
-    async def fake_run(_http, *, run_id, audit, prompts, save):
-        await save({"version": 1, "prompts": prompts, "engines": [], "log": []}, 5, 1)
-        data = {"version": 1, "prompts": prompts, "engines": [], "log": []}
-        return ai_visibility.Result("ready", None, data, 5, 1)
-
-    monkeypatch.setattr(ai_visibility, "run", fake_run)
-
-
-async def test_ai_visibility_not_set_up_is_a_clear_503(client):
-    audit_id = await _finished_audit(client)
-    r = await client.post(AI.format(audit_id), json={"prompts": ["best med spa"]})
-    assert (
-        r.status_code == 503 and "AI_VISIBILITY_MODELS" in r.json()["error"]["message"]
-    )
-
-
-async def test_ai_visibility_starts_in_background_and_lands_in_the_audit(client, ai_on):
-    audit_id = await _finished_audit(client)
-    r = await client.post(
-        AI.format(audit_id), json={"prompts": ["  best med spa  ", "best med spa", ""]}
-    )
-    assert r.status_code == 202
-    assert r.json()["research"]["ai_visibility"]["state"] == "running"
-    await settle()
-    done = (await client.get(f"/api/v1/ext/research/audits/{audit_id}")).json()
-    ai = done["research"]["ai_visibility"]
-    assert ai["state"] == "ready" and ai["data"]["prompts"] == ["best med spa"]
-    assert done["research"]["local_competitors"]["state"] == "not_run"  # untouched
-
-
-async def test_second_click_while_running_is_refused(client, ai_on, monkeypatch):
-    release = asyncio.Event()
-
-    async def slow_run(_http, *, run_id, audit, prompts, save):
-        await release.wait()
-        return ai_visibility.Result("ready", None, {"engines": [], "log": []}, 0, 0)
-
-    monkeypatch.setattr(ai_visibility, "run", slow_run)
-    audit_id = await _finished_audit(client)
-    first = await client.post(AI.format(audit_id), json={"prompts": ["a"]})
-    assert first.status_code == 202
-    again = await client.post(AI.format(audit_id), json={"prompts": ["a"]})
-    assert (
-        again.status_code == 409 and again.json()["error"]["code"] == "already_running"
-    )
-    release.set()
-    await settle()
-    # once finished, a new run is allowed
-    assert (
-        await client.post(AI.format(audit_id), json={"prompts": ["a"]})
-    ).status_code == 202
-    await settle()
-
-
-async def test_ai_visibility_budget_and_input_rules(client, ai_on, monkeypatch):
-    audit_id = await _finished_audit(client)
-    assert (
-        await client.post(AI.format(audit_id), json={"prompts": []})
-    ).status_code == 422
-    assert (
-        await client.post(AI.format(audit_id), json={"prompts": ["a"] * 4})
-    ).status_code == 422
-    assert (
-        await client.post(AI.format(audit_id), json={"prompts": [" "]})
-    ).status_code == 422
-    FakeRepo.spent = 10_000_000_000
-    try:
-        r = await client.post(AI.format(audit_id), json={"prompts": ["a"]})
-    finally:
-        FakeRepo.spent = 0
-    assert r.status_code == 429 and r.json()["error"]["code"] == "budget_reached"
-
 
 # ── Local competitors: where the search happens, and who "this clinic" is ─────────────────
 
@@ -1465,6 +1389,38 @@ def test_one_site_runs_once_even_with_www_force_and_two_clicks(
     assert len(rows) == 1 and rows[0]["domain"] == "example.com"
 
 
+async def test_start_up_fails_a_run_it_cannot_resume_and_keeps_going(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    failed: list[str] = []
+    spawned: list[str] = []
+
+    class Repo:
+        async def running_full_runs(self) -> list[str]:
+            return ["gone", "boom", "ok"]
+
+        async def get_ai_run(self, run_id: str) -> dict[str, str] | None:
+            if run_id == "boom":
+                raise RuntimeError("db down")
+            return {"audit_id": run_id}
+
+        async def get(self, audit_id: str) -> dict[str, str] | None:
+            return None if audit_id == "gone" else {"id": audit_id}
+
+        async def save_ai_run(self, run_id: str, **kw: Any) -> None:
+            failed.append(f"{run_id}:{kw['status']}")
+
+    monkeypatch.setattr(research, "to_wire", lambda row: row)
+    monkeypatch.setattr(
+        research, "_spawn_full", lambda _r, _h, run_id, _a: spawned.append(run_id)
+    )
+    n = await research.resume_full_runs(Repo(), None)  # type: ignore[arg-type]
+    assert n == 1 and spawned == ["ok"]
+    assert failed == [
+        "gone:failed"
+    ]  # a run with no audit would block its audit for ever
+
+
 # ── full AI visibility report: API ──────────────────────────────────────────────────────────
 
 FULL = "/api/v1/ext/research/audits/{}/ai-visibility/full"
@@ -1515,9 +1471,7 @@ async def test_full_report_returns_202_at_once_and_freezes_its_shape(
     release.set()
 
 
-async def test_full_report_double_click_is_refused_even_after_a_lite_run_started(
-    client, ai_on, full_jobs
-):
+async def test_full_report_double_click_is_refused(client, ai_on, full_jobs):
     _, release = full_jobs
     audit_id = await _finished_audit(client)
     assert (await client.post(FULL.format(audit_id), json={})).status_code == 202
@@ -1525,8 +1479,6 @@ async def test_full_report_double_click_is_refused_even_after_a_lite_run_started
     assert (
         again.status_code == 409 and again.json()["error"]["code"] == "already_running"
     )
-    lite = await client.post(AI.format(audit_id), json={"prompts": ["a"]})
-    assert lite.status_code == 409
     release.set()
 
 
@@ -1552,7 +1504,7 @@ async def test_full_report_uses_the_callers_own_questions(client, ai_on, full_jo
     assert cfg["prompts_source"] == "user"
 
 
-async def test_full_report_needs_the_same_setup_and_budget_as_lite(client, full_jobs):
+async def test_full_report_needs_the_models_set_up(client, full_jobs):
     audit_id = await _finished_audit(client)
     r = await client.post(FULL.format(audit_id), json={})
     assert (
@@ -1609,17 +1561,25 @@ async def test_answers_endpoint_pages_through_one_full_report(client, ai_on, ful
 async def test_answers_endpoint_hides_lite_runs_and_unknown_ids(client, ai_on):
     repo = client_repo(client)
     audit_id = await _finished_audit(client)
-    lite_id = await repo.create_ai_run(audit_id, "u")
+    lite_id = str(uuid.uuid4())  # an old row from before the quick check was removed
+    repo.runs[lite_id] = {
+        "audit_id": audit_id,
+        "state": "ready",
+        "data": None,
+        "error": None,
+        "kind": "lite",
+        "config": {},
+    }
     for rid in (lite_id, str(uuid.uuid4())):
         r = await client.get(f"/api/v1/ext/research/ai-visibility/runs/{rid}/answers")
         assert r.status_code == 404 and r.json()["error"]["code"] == "run_not_found"
 
 
-async def test_start_up_resumes_full_runs_but_not_lite_ones(client, ai_on, full_jobs):
+async def test_start_up_resumes_full_runs(client, ai_on, full_jobs):
     started, release = full_jobs
     repo = client_repo(client)
     audit_id = await _finished_audit(client)
-    await repo.create_ai_run(audit_id, "u", kind="full", config={"calls": 1})
+    await repo.create_ai_run(audit_id, "u", {"calls": 1})
     n = await research.resume_full_runs(repo, httpx.AsyncClient())
     await asyncio.sleep(0.01)
     assert n == 1 and len(started) == 1

@@ -19,7 +19,6 @@ vi.mock('@/lib/messaging', async () => {
         runDomainOverview: () => api.runDomainOverview(a),
         runLocalCompetitors: () =>
           api.runLocalCompetitors(a, d.query as string, d.location as string),
-        runAiVisibility: () => api.runAiVisibility(a, d.prompts as string[]),
         getReport: () => api.getReport(a),
         sendReport: () => api.sendReport(a, d.email as string, d.note as string),
         getContactResearch: () => api.getContactResearch(d.contactId as string),
