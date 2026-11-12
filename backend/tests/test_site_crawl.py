@@ -967,8 +967,42 @@ def test_faq_sections_on_service_pages_count_as_an_faq_page_and_placeholders_are
     assert (
         trust["faq_page"]["status"] == "found" and trust["faq_page"]["url"] == f"{G}/iv"
     )
-    assert trust["faq_page"]["section"] is True  # the link is a page with an FAQ section
+    assert (
+        trust["faq_page"]["section"] is True
+    )  # the link is a page with an FAQ section
     assert sections["site"]["placeholder_pages"] == [f"{G}/iv"]
+
+
+def test_a_mega_menu_card_lists_every_service_not_only_the_known_ones():
+    def card(slug: str, title: str, note: str) -> str:
+        return (
+            f'<a href="/category/{slug}"><div><div>{title}</div><p>{note}</p></div></a>'
+        )
+
+    cards = [
+        ("facials", "Facials", "Restore your skin's natural glow."),
+        ("peels", "Peels", "Get a customized plan."),
+        ("lasers", "Lasers", "Advanced technology."),
+        ("morpheus8", "Morpheus8", "Cosmetic microneedling."),
+        ("botox", "Botox", "Learn more about our treatments."),
+        ("liquid-bbl", "Liquid BBL", "The booty of your dreams."),
+    ]
+    html = (
+        "<html><body><header><a href='/about'>About Us</a><a href='/contact'>Contact</a>"
+        + "".join(card(*c) for c in cards)
+        + "</header></body></html>"
+    )
+    menu = site_crawl.nav_links(html, f"{G}/")
+    assert menu.top[f"{G}/category/peels"] == "peels"  # the description is not the name
+    sections = base_sections()
+    urls = [f"{G}/category/{c[0]}" for c in cards]
+    site_crawl.enrich(sections, urls, {}, menu=menu)
+    names = {c["service"] for c in sections["site"]["services"]["clusters"]}
+    assert {"Peels", "Lasers", "Morpheus8", "Liquid Bbl"} <= names
+    assert {
+        "Neurotoxins",
+        "Chemical Peels & Facials",
+    } & names  # "about"/"restore" in a note is no veto
 
 
 def test_a_menu_outside_nav_and_header_is_found_when_those_hold_too_few_links():

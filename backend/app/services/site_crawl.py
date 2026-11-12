@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import time
+from collections import Counter
 from collections.abc import Awaitable, Callable
 from datetime import UTC, date, datetime
 from itertools import zip_longest
@@ -190,7 +191,10 @@ JUNK = re.compile(
 )
 # Menu dropdowns that hold no services, by their label.
 NOT_SERVICE_MENU = re.compile(
-    r"about|news|blog|contact|resource|patient|career|shop|store", re.IGNORECASE
+    r"\b(?:about|news|blog|contact|resource|patient|career|shop|store)", re.IGNORECASE
+)  # a word start: "restore your skin" is not "store"
+MENU_FOLDER_MIN = (
+    4  # menu pages in one folder before the folder counts as a service list
 )
 TIER_NAMES = {
     "A": "Services",
@@ -285,6 +289,17 @@ def _cards(doc: LexborHTMLParser, home: str, menu: Menu) -> None:
             menu.children[url] = section
 
 
+def _link_title(a: Any) -> str:
+    """A menu link's own words. A mega-menu card also holds a description line ("Facials" +
+    "Restore your skin's glow"), which is not part of the name and can hold words like "about"."""
+    text = a.text(strip=True)
+    for p in a.css("p"):
+        note = p.text(strip=True)
+        if note and text.endswith(note):
+            text = text[: -len(note)]
+    return " ".join(text.split()).lower()
+
+
 def nav_links(html: str, home: str) -> Menu:
     """The site menu. The clinic's own menu is the best list of its services, whatever its
     URLs are called: every page in a dropdown is a candidate, unless the dropdown is About,
@@ -307,7 +322,7 @@ def nav_links(html: str, home: str) -> Menu:
             url = clean_url(urljoin(home, a.attributes.get("href") or ""), home)
             if url is None:
                 continue
-            text = " ".join(a.text(strip=True).split()).lower()
+            text = _link_title(a)
             if not menu.top.get(url):
                 menu.top[url] = text
             dropdown = _dropdown_of(a)
@@ -1067,16 +1082,28 @@ def enrich(
     site, convert = sections["site"], sections["convert"]
     all_urls = list(dict.fromkeys([*urls, *pages]))
 
+    # A menu that lists many pages under one folder (/category/peels, /category/lasers) is a
+    # list of services even when the page does not read as a dropdown.
+    folders = Counter(
+        urlsplit(u).path.strip("/").split("/")[0]
+        for u in menu.top
+        if urlsplit(u).path.strip("/").count("/") >= 1
+    )
     clusters: dict[str, list[str]] = {}
     for u in all_urls:
         if not _backed(u, menu):
             continue
         cls = classify(u, menu)
+        listed = (
+            cls == "other"
+            and menu.has(u)
+            and folders[urlsplit(u).path.strip("/").split("/")[0]] >= MENU_FOLDER_MIN
+        )
         name = (
             _service_of(u)
             if cls == "service"
             else capwords(menu.top.get(u) or "")
-            if cls == "menu_child" or (cls == "hub_child" and menu.has(u))
+            if cls == "menu_child" or listed or (cls == "hub_child" and menu.has(u))
             else None
         )
         if name:
