@@ -1,0 +1,28 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/iv-therapy-treatment-pricing-in-st-louis-and-ofallon-missouri",
+    "/weight-loss",
+    "/weight-loss/semaglutide",
+    "/weight-loss/tirzepatide"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/our-services"
+  ],
+  "trust": {
+    "about_page": "/about",
+    "team_page": [
+      "/about/meet-dr-thomas-wright-m-d-f-a-v-l-s",
+      null
+    ],
+    "faq_page": "/faqs",
+    "pricing_page": [
+      "/pricing-for-glp-1-weight-loss-treatments",
+      "/iv-therapy-treatment-pricing-in-st-louis-and-ofallon-missouri"
+    ],
+    "financing_page": null,
+    "privacy_policy": "/privacy-policy"
+  }
+}

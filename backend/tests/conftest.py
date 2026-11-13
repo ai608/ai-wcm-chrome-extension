@@ -37,3 +37,10 @@ def _no_live_services(monkeypatch: pytest.MonkeyPatch) -> None:
         raise AppError(422, "site_unreachable", "offline in tests")
 
     monkeypatch.setattr(probes, "_once", no_network)
+
+    # Firecrawl reads the home page first; by default it has nothing, so the direct fetch (which
+    # most tests fake) is used. Tests of the Firecrawl-first path patch this themselves.
+    async def no_home(*_args: object, **_kwargs: object) -> None:
+        return None
+
+    monkeypatch.setattr(site_crawl, "scrape_home", no_home)

@@ -1,0 +1,58 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://truhealthclinicutah.com/medspa-services/laser-hair-removal": {
+      "label": "service",
+      "service": "Laser Hair Removal"
+    },
+    "https://truhealthclinicutah.com/medspa-services/ted-hair-restoration": {
+      "label": "service",
+      "service": "TED Hair Restoration"
+    },
+    "https://truhealthclinicutah.com/medspa-services/tox-fillers": {
+      "label": "service",
+      "service": "Tox & Filler"
+    },
+    "https://truhealthclinicutah.com/medspa-services/ipl": {
+      "label": "service",
+      "service": "Lumecca IPL"
+    },
+    "https://truhealthclinicutah.com/medspa-services/opus-plasma": {
+      "label": "service",
+      "service": "Opus Skin Resurfacing"
+    },
+    "https://truhealthclinicutah.com/clinic-services/weight-loss": {
+      "label": "service",
+      "service": "Weight Loss"
+    },
+    "https://truhealthclinicutah.com/clinic-services/anti-aging": {
+      "label": "service",
+      "service": "Anti-Aging & Holistic Medicine"
+    },
+    "https://truhealthclinicutah.com/clinic-services/green-consultations": {
+      "label": "service",
+      "service": "Green Consultations"
+    },
+    "https://truhealthclinicutah.com/clinic-services/mens-hormones": {
+      "label": "service",
+      "service": "Men's Hormones"
+    },
+    "https://truhealthclinicutah.com/clinic-services/primary-care": {
+      "label": "service",
+      "service": "Holistic Primary Care"
+    },
+    "https://truhealthclinicutah.com/medspa-services/morpheus8": {
+      "label": "service",
+      "service": "Morpheus8 & RF Microneedling"
+    },
+    "https://truhealthclinicutah.com/clinic-services/womens-hormones": {
+      "label": "service",
+      "service": "Women's Hormones"
+    },
+    "https://truhealthclinicutah.com/post/hormone-replacement-therapy-for-women-what-you-need-to-know": {
+      "label": "blog_post",
+      "service": ""
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.paramounthealthdirections.com/conditions": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

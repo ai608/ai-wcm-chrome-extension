@@ -1,0 +1,42 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://gracefulaestheticshealth.com/anti-wrinkle-injections": {
+      "label": "service",
+      "service": "Anti-Wrinkle Injections"
+    },
+    "https://gracefulaestheticshealth.com/neurotoxin-injections": {
+      "label": "service",
+      "service": "Neurotoxin Injections"
+    },
+    "https://gracefulaestheticshealth.com/procell-microchanneling": {
+      "label": "service",
+      "service": "Procell Microchanneling"
+    },
+    "https://gracefulaestheticshealth.com/weight-loss-clinic-in-corpus-christi-tx": {
+      "label": "service",
+      "service": "Medical Weight Loss"
+    },
+    "https://gracefulaestheticshealth.com/semaglutide-corpus-christi": {
+      "label": "service",
+      "service": "Semaglutide"
+    },
+    "https://gracefulaestheticshealth.com/pages/services": {
+      "label": "service",
+      "service": ""
+    },
+    "https://gracefulaestheticshealth.com/users/christina-perez": {
+      "label": "person",
+      "service": ""
+    },
+    "https://gracefulaestheticshealth.com/users/christina-perez--11": {
+      "label": "person",
+      "service": ""
+    },
+    "https://gracefulaestheticshealth.com/password/new": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

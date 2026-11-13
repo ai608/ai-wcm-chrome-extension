@@ -1,0 +1,18 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.parkswellness.com/glp-1s-in-midlife": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.parkswellness.com/glp-1s-in-midlife/glp-1-in-midlife-what-you-should-know-before-starting": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://www.parkswellness.com/menopause-care": {
+      "label": "service",
+      "service": "Menopause Care"
+    }
+  }
+}

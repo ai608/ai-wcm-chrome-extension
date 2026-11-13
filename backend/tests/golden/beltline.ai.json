@@ -1,0 +1,46 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://beltlinehealth.com/polycystic-ovary-syndrome-learn-more-beltline-health": {
+      "label": "other",
+      "service": ""
+    },
+    "https://beltlinehealth.com/after-care-program": {
+      "label": "other",
+      "service": ""
+    },
+    "https://beltlinehealth.com/bariatric-patient-education": {
+      "label": "other",
+      "service": ""
+    },
+    "https://beltlinehealth.com/bmi-body-calculator": {
+      "label": "other",
+      "service": ""
+    },
+    "https://beltlinehealth.com/vitamins": {
+      "label": "other",
+      "service": ""
+    },
+    "https://beltlinehealth.com/60-second-which-weight-loss-surgery-is-best-for-me-quiz": {
+      "label": "other",
+      "service": ""
+    },
+    "https://beltlinehealth.com/atlanta": {
+      "label": "location",
+      "service": ""
+    },
+    "https://beltlinehealth.com/newnan": {
+      "label": "location",
+      "service": ""
+    },
+    "https://beltlinehealth.com/stockbridge": {
+      "label": "location",
+      "service": ""
+    },
+    "https://beltlinehealth.com/bariatric-surgery-weight-loss-options": {
+      "label": "service",
+      "service": "Bariatric Surgery"
+    }
+  }
+}

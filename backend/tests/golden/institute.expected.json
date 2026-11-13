@@ -1,0 +1,32 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/nutrition-program-and-consultant-colorado-springs.html",
+    "/wellness-programs-colorado-springs.html",
+    "/apo-e-gene-and-the-perfect-gene-diet-colorado-springs.html",
+    "/mindfulness-stress-reduction-program-colorado-springs.html",
+    "/menopause-and-perimenopause-treatment-colorado-springs.html",
+    "/integrative-health-coach-colorado-springs.html",
+    "/alzheimer-prevention-program-colorado-springs.html"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/integrated-health-services-and-programs-colorado-springs.html",
+    "/location.html"
+  ],
+  "trust": {
+    "about_page": [
+      "/integrative-health-specialist-colorado-springs.html",
+      null
+    ],
+    "team_page": [
+      "/integrative-health-specialist-colorado-springs.html",
+      null
+    ],
+    "faq_page": null,
+    "pricing_page": "/integrative-health-programs-cost-colorado-springs.html",
+    "financing_page": null,
+    "privacy_policy": null
+  }
+}

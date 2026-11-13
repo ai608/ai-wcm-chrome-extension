@@ -1,0 +1,86 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://instituteforintegralhealth.com/mindfulness-stress-reduction-program-colorado-springs.html": {
+      "label": "service",
+      "service": "Mindfulness-Based Stress Reduction"
+    },
+    "https://instituteforintegralhealth.com/apo-e-gene-and-the-perfect-gene-diet-colorado-springs.html": {
+      "label": "service",
+      "service": "APO E Gene / Perfect Gene Diet"
+    },
+    "https://instituteforintegralhealth.com/nutrition-program-and-consultant-colorado-springs.html": {
+      "label": "service",
+      "service": "Nutrition"
+    },
+    "https://instituteforintegralhealth.com/menopause-and-perimenopause-treatment-colorado-springs.html": {
+      "label": "service",
+      "service": "Menopause and Perimenopause Treatment"
+    },
+    "https://instituteforintegralhealth.com/for-professionals.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/online-health-store-colorado-springs.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-recipes-online-colorado-springs.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/cutv-interview-part-1.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/cutv-news-interview-part-1.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-appetizers-recipes.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-dessert-recipes.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-entree-recipes.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-side-dish-recipes.html": {
+      "label": "other",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-recipes-online-apple-cherry-crisp.html": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-recipes-online-soy-yogurt.html": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-recipes-online-apo-e-shrimp-curry.html": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-recipes-online-fish-tacos-vegetarian-tacos.html": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-recipes-online-miso-pasta-soup.html": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/healthy-recipes-online-guacamole.html": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://instituteforintegralhealth.com/research.html": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

@@ -56,8 +56,9 @@ AREA_INDEX = re.compile(
 )
 # One office per slug: /biltmore-office, /scottsdale-office.
 AREA_OFFICE = re.compile(r"(?:^|/)[a-z0-9]+(?:-[a-z0-9]+)*-(?:office|location)$")
-# "Near me" pages: /dexa-scans-near-me-in-sandy-ut, /plumbing-near-me.
-NEAR_ME = re.compile(r"-near-me(?:-|/|$)")
+# "Near me" pages that name the place: /dexa-scans-near-me-in-sandy-ut. A bare
+# /spider-vein-removal-near-me is a service page with an SEO slug: no place in it.
+NEAR_ME = re.compile(r"-near-me-(?:in-)?[a-z]")
 
 # ── page types that carry a city name but are no area page ───────────────────────────────
 _END = r"(?=/|$|-)"

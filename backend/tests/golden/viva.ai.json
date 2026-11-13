@@ -1,0 +1,26 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.vivaskinlounge.com/category/fillers": {
+      "label": "service",
+      "service": "Fillers"
+    },
+    "https://www.vivaskinlounge.com/category/facials": {
+      "label": "service",
+      "service": "Facials"
+    },
+    "https://www.vivaskinlounge.com/category/prp-prf": {
+      "label": "service",
+      "service": "PRP/PRF"
+    },
+    "https://www.vivaskinlounge.com/category/botox": {
+      "label": "service",
+      "service": "Botox"
+    },
+    "https://www.vivaskinlounge.com/category/microneedling-with-skinpen": {
+      "label": "service",
+      "service": "Microneedling with SkinPen"
+    }
+  }
+}

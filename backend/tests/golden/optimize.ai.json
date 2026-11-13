@@ -1,0 +1,34 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://optimizeyouhealth.com/repair/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://optimizeyouhealth.com/thrive/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://optimizeyouhealth.com/optimize/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://optimizeyouhealth.com/assess/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://optimizeyouhealth.com/sleep-apnea-testing-breathing-sleep-disorder-diagnosis/": {
+      "label": "service",
+      "service": "Sleep Apnea Testing"
+    },
+    "https://optimizeyouhealth.com/sports-medicine/": {
+      "label": "service",
+      "service": "Sports Medicine"
+    },
+    "https://optimizeyouhealth.com/vitamin-injections": {
+      "label": "service",
+      "service": "Vitamin Injections"
+    }
+  }
+}

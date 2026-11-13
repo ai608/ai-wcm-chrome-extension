@@ -373,25 +373,73 @@ async def test_provider_failure_keeps_home_results_and_marks_partial(
     assert done["on_page"] is not None and done["site"] is not None
 
 
-async def test_blocked_home_page_falls_back_to_firecrawl(client, monkeypatch):
+async def test_home_page_is_read_by_both_and_the_browser_view_is_audited(
+    client, monkeypatch
+):
+    """Firecrawl and the direct fetch run together; the page is Firecrawl's browser view and
+    the direct read only says the site answers us (so the crawl and link checks go direct)."""
+    from app.services import site_crawl
+
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
+    chat = HTML.replace(
+        "</body>", '<iframe title="Chat with us" src="x"></iframe></body>'
+    )
+
+    async def home(_http, _url, why=None, meta=None):
+        meta.update({"statusCode": 200, "url": "https://www.glowmedspa.com/"})
+        return chat
+
+    vias: list[str] = []
+
+    async def no_crawl(_http, url, _home, via, *_args):
+        vias.append(via)
+        return [url], {}, True, []
+
+    rendered_calls: list[str] = []
+
+    async def rendered(_http, url):
+        rendered_calls.append(url)
+
+    monkeypatch.setattr(site_crawl, "scrape_home", home)
+    monkeypatch.setattr(site_crawl, "scrape_rendered", rendered)
+    monkeypatch.setattr(site_crawl, "crawl", no_crawl)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "ready" and done["on_page"] is not None
+    step = next(e for e in done["trace"] if e["id"] == "home" and e["status"] == "done")
+    assert step["detail"]["via"] == "firecrawl" and step["detail"]["reason"] is None
+    assert (
+        step["detail"]["url"] == "https://www.glowmedspa.com/"
+    )  # Firecrawl's final URL
+    assert vias == ["direct"]  # the site answers us: the other pages are read directly
+    # the widget a script built is in the browser view: no second rendered fetch
+    assert done["convert"]["chat_widget"] == "Chat widget (unidentified)"
+    assert rendered_calls == []
+
+
+async def test_home_page_falls_back_to_the_direct_fetch_when_firecrawl_fails(
+    client, monkeypatch
+):
     from app.services import site_crawl
 
     monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
 
-    async def fake_scrape(_http, _url, why=None):
+    async def not_found(_http, _url, why=None, meta=None):
+        meta.update({"statusCode": 404})
         return HTML
 
     async def no_crawl(_http, url, *_args):
         return [url], {}, True, []
 
-    monkeypatch.setattr(site_crawl, "scrape", fake_scrape)
+    monkeypatch.setattr(site_crawl, "scrape_home", not_found)
     monkeypatch.setattr(site_crawl, "crawl", no_crawl)
-    r = await client.post(
-        "/api/v1/ext/research/audits", json={"url": "down.example.com"}
-    )
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
     await settle()
     done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
-    assert done["status"] == "ready" and done["on_page"] is not None
+    assert done["status"] == "ready"
+    step = next(e for e in done["trace"] if e["id"] == "home" and e["status"] == "done")
+    assert step["detail"]["via"] == "direct" and "404" in step["detail"]["reason"]
 
 
 WALL = (
@@ -400,24 +448,19 @@ WALL = (
 )
 
 
-async def test_home_page_that_is_a_bot_wall_goes_to_firecrawl_not_into_the_audit(
-    client, monkeypatch
-):
-    """HTTP 200 + a bot-protection page used to be audited as the home page (empty title, H1...)."""
+async def test_home_page_that_is_a_bot_wall_is_never_audited(client, monkeypatch):
+    """A bot-protection page must not be audited as the home page (empty title, H1...).
+    Firecrawl got the wall; the direct fetch got the real page."""
     from app.services import site_crawl
 
-    async def wall(url: str, accept=None) -> tuple[str, str]:
-        return WALL, url
-
-    async def real_page(_http, _url, why=None):
-        return HTML
+    async def wall(_http, _url, why=None, meta=None):
+        return WALL
 
     async def no_crawl(_http, url, *_args):
         return [url], {}, True, []
 
-    monkeypatch.setattr(site_audit, "fetch_html", wall)
     monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
-    monkeypatch.setattr(site_crawl, "scrape", real_page)
+    monkeypatch.setattr(site_crawl, "scrape_home", wall)
     monkeypatch.setattr(site_crawl, "crawl", no_crawl)
     r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
     await settle()
@@ -425,8 +468,8 @@ async def test_home_page_that_is_a_bot_wall_goes_to_firecrawl_not_into_the_audit
     assert done["status"] == "ready"
     home = next(e for e in done["trace"] if e["id"] == "home" and e["status"] == "done")
     assert (
-        home["detail"]["via"] == "firecrawl"
-        and "bot protection" in home["detail"]["reason"]
+        home["detail"]["via"] == "direct"
+        and "bot-protection" in home["detail"]["reason"]
     )
     page = done["on_page"]["pages"][0]
     assert page["title"].startswith("Glow Med Spa") and page["h1"] == "Glow Med Spa"
@@ -453,8 +496,12 @@ async def test_home_page_bot_wall_without_a_way_around_fails_the_audit_clearly(
     async def still_wall(_http, _url, why=None):
         return WALL
 
+    async def home_wall(_http, _url, why=None, meta=None):
+        return WALL
+
     monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
     monkeypatch.setattr(site_crawl, "scrape", still_wall)
+    monkeypatch.setattr(site_crawl, "scrape_home", home_wall)
     r = await client.post(
         "/api/v1/ext/research/audits", json={"url": "glowmedspa.com", "force": True}
     )
@@ -674,6 +721,7 @@ async def test_trace_records_each_step_of_a_full_run(client, monkeypatch):
     assert steps["home"]["detail"]["via"] == "direct"
     assert steps["map"]["detail"]["count"] == 4
     assert steps["map"]["detail"]["sources"] == {"map": 4, "menu": 0, "home": 2}
+    assert len(steps["map"]["detail"]["urls"]) == 4
     pick = steps["pick"]["detail"]
     groups = {g["name"]: g for g in pick["groups"]}
     assert pick["mode"] == "all"  # 3 pages: a small site is read in full
@@ -777,7 +825,9 @@ async def test_score_is_computed_once_after_the_whole_audit(client, monkeypatch)
     o = done["overview"]
     assert isinstance(o["score"], int) and o["grade"] in "ABCDF"
     assert len(o["categories"]) == 9 and o["categories"][0]["excluded"] is True
-    assert o["provisional_reasons"] == ["No Google Business Profile found"]
+    assert o["provisional_reasons"] == [
+        "Google Business Profile not checked"
+    ]  # no Apify key
     assert done["section_state"]["overview"] == "ready"
     steps = folded(done["trace"])
     assert steps["score"]["status"] == "done"
@@ -1241,6 +1291,8 @@ async def test_audit_runs_the_link_probes_and_their_findings_reach_the_on_page_d
 async def test_a_site_that_only_answers_through_firecrawl_gets_no_probes(
     client, monkeypatch
 ):
+    """down.example.com refuses the direct fetch: Firecrawl's page is audited, the crawl reads
+    through Firecrawl, and no direct link checks are made (their verdicts would be false)."""
     from app.services import site_crawl
 
     async def never(**_kw):
@@ -1248,27 +1300,35 @@ async def test_a_site_that_only_answers_through_firecrawl_gets_no_probes(
             "probes must not run against a site that blocks direct requests"
         )
 
-    async def scrape(_http, _url, why=None):
+    async def home(_http, _url, why=None, meta=None):
         return HTML
 
-    async def no_crawl(_http, url, *_a):
+    vias: list[str] = []
+
+    async def no_crawl(_http, url, _home, via, *_a):
+        vias.append(via)
         return [url], {}, True, []
 
     monkeypatch.setattr(probes, "run", never)
     monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
-    monkeypatch.setattr(site_crawl, "scrape", scrape)
+    monkeypatch.setattr(site_crawl, "scrape_home", home)
     monkeypatch.setattr(site_crawl, "crawl", no_crawl)
     r = await client.post(
         "/api/v1/ext/research/audits", json={"url": "down.example.com"}
     )
     await settle()
     done = (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+    assert done["status"] == "ready" and vias == ["firecrawl"]
+    home_step = next(
+        e for e in done["trace"] if e["id"] == "home" and e["status"] == "done"
+    )
+    assert home_step["detail"]["via"] == "firecrawl"
+    assert "could not be fetched" in home_step["detail"]["reason"]  # why direct failed
     step = [e for e in done["trace"] if e["id"] == "probe"][-1]
     assert (
         step["status"] == "skipped"
         and "blocks direct requests" in step["detail"]["reason"]
     )
-    assert done["status"] == "ready" and done["on_page"]["probes"]["ran"] is False
 
 
 async def test_a_failing_probe_step_never_fails_the_audit(client, monkeypatch):
@@ -1772,3 +1832,140 @@ async def test_whole_audit_grades_the_areas_a_clinic_claims(client, monkeypatch)
         await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}/report")
     ).json()
     assert rep["audit"]["site"]["cities"]["areas"] == cities["areas"]
+
+
+async def test_leftover_text_a_script_replaces_is_not_reported(monkeypatch):
+    """Viva /specials: one "Title Goes Here / Lorem ipsum" slide in the HTML, real cards once
+    the page's script runs. Re-read as a browser shows it, the finding is dropped."""
+    from app.services import site_crawl
+
+    monkeypatch.setattr(settings, "FIRECRAWL_API_KEY", "fake")
+    rendered = {
+        "https://g.example/specials": "<html><body><h1>Specials</h1><p>Botox $11</p></body></html>",
+        "https://g.example/about": "<html><body><p>Lorem ipsum dolor sit amet</p></body></html>",
+    }
+
+    async def fake_rendered(_http, url):
+        return rendered[url]
+
+    monkeypatch.setattr(site_crawl, "scrape_rendered", fake_rendered)
+    sections = {
+        "site": {
+            "unfinished_pages": [
+                {
+                    "url": "https://g.example/specials",
+                    "reason": "Leftover",
+                    "counted": True,
+                },
+                {
+                    "url": "https://g.example/about",
+                    "reason": "Leftover",
+                    "counted": True,
+                },
+                {
+                    "url": "https://g.example/test",
+                    "reason": "Test page",
+                    "counted": False,
+                },
+            ],
+            "placeholder_pages": [
+                "https://g.example/test",
+                "https://g.example/specials",
+                "https://g.example/about",
+            ],
+        }
+    }
+    await audit_runner._confirm_leftover_text(None, sections)  # type: ignore[arg-type]
+    assert [p["url"] for p in sections["site"]["unfinished_pages"]] == [
+        "https://g.example/about",  # still there after the script ran: real
+        "https://g.example/test",  # not a leftover-text finding: not re-read
+    ]
+    assert "https://g.example/specials" not in sections["site"]["placeholder_pages"]
+    assert "https://g.example/about" in sections["site"]["placeholder_pages"]
+
+
+def test_the_clinics_phone_comes_from_the_contact_page_when_the_home_page_has_none():
+    """Viva: no phone on the home page, a tel: link on /contact. Without it the phone could
+    not be compared with the Google profile's ("Not compared")."""
+    sections = {"business": {"nap": {"phone": None}}}
+    crawled = {
+        "https://v.example/botox": '<a href="tel:+1 (555) 000-1111">Call</a>',
+        "https://v.example/contact": '<a href="tel:+14129197707">Call us</a>',
+    }
+    audit_runner._phone_from_pages(sections, crawled)
+    assert sections["business"]["nap"]["phone"] == "412-919-7707"
+    sections = {"business": {"nap": {"phone": "678-261-7700"}}}  # the home page's wins
+    audit_runner._phone_from_pages(sections, crawled)
+    assert sections["business"]["nap"]["phone"] == "678-261-7700"
+
+
+async def test_an_audit_that_hangs_is_stopped_and_can_be_run_again(client, monkeypatch):
+    """A step that never answers used to hold the audit `running` for ever, and with it one of
+    the three audit slots; Re-run then returned the same stuck audit."""
+    monkeypatch.setattr(settings, "AUDIT_MAX_S", 0.05)
+    hang = True
+
+    async def steps(*_a, **_k):
+        if hang:
+            await asyncio.sleep(10)
+        return True
+
+    monkeypatch.setattr(audit_runner, "_steps", steps)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    first = r.json()["id"]
+    await settle()
+    stuck = (await client.get(f"/api/v1/ext/research/audits/{first}")).json()
+    assert stuck["status"] == "failed" and "took too long" in stuck["error"]
+    assert all(v == "failed" for v in stuck["section_state"].values())
+
+    hang = False  # the provider is back: Re-run starts a NEW audit, not the stuck one
+    again = await client.post(
+        "/api/v1/ext/research/audits", json={"url": "glowmedspa.com", "force": True}
+    )
+    assert again.json()["id"] != first
+    await settle()
+    done = (
+        await client.get(f"/api/v1/ext/research/audits/{again.json()['id']}")
+    ).json()
+    assert done["status"] == "ready"
+
+
+async def _audit_with_gbp(client, monkeypatch, lookup):
+    from app.services import site_crawl
+
+    monkeypatch.setattr(settings, "APIFY_API_TOKEN", "t")
+    monkeypatch.setattr(settings, "APIFY_GMAPS_ACTOR_ID", "a")
+    monkeypatch.setattr(site_crawl, "gbp_lookup", lookup)
+    r = await client.post("/api/v1/ext/research/audits", json={"url": "glowmedspa.com"})
+    await settle()
+    return (await client.get(f"/api/v1/ext/research/audits/{r.json()['id']}")).json()
+
+
+async def test_a_searched_profile_that_was_not_found_is_not_the_same_as_one_never_checked(
+    client, monkeypatch
+):
+    async def none_found(_http, queries, _domain, _phone=None):
+        return None, queries[:2]
+
+    done = await _audit_with_gbp(client, monkeypatch, none_found)
+    assert done["business"]["gbp_status"] == "not_found"
+    assert "Searched Google Maps" in done["business"]["gbp_note"]
+    assert (
+        done["overview"]["provisional_reasons"][0] == "No Google Business Profile found"
+    )
+
+
+async def test_a_failed_profile_search_says_not_checked_never_not_found(
+    client, monkeypatch
+):
+    async def broken(_http, _queries, _domain, _phone=None):
+        raise httpx.ConnectError("down")
+
+    done = await _audit_with_gbp(client, monkeypatch, broken)
+    assert done["business"]["gbp_status"] == "not_checked"
+    assert "failed" in done["business"]["gbp_note"]
+    assert done["status"] == "partial"
+    assert (
+        done["overview"]["provisional_reasons"][0]
+        == "Google Business Profile not checked"
+    )

@@ -1,0 +1,42 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "http://astrahealthandwellness.com/published-works/": {
+      "label": "other",
+      "service": ""
+    },
+    "http://astrahealthandwellness.com/medical-cannabis-quiz/": {
+      "label": "other",
+      "service": ""
+    },
+    "http://astrahealthandwellness.com/hormone-pellet-therapy": {
+      "label": "service",
+      "service": "Hormone Pellet Therapy"
+    },
+    "http://astrahealthandwellness.com/functional-medicine-clinic-near-st-george-utah": {
+      "label": "service",
+      "service": "Functional Medicine"
+    },
+    "http://astrahealthandwellness.com/mens-hormone-therapy-trt": {
+      "label": "service",
+      "service": "Men's Hormone Therapy (TRT)"
+    },
+    "http://astrahealthandwellness.com/rf-microneedling": {
+      "label": "service",
+      "service": "RF Microneedling"
+    },
+    "http://astrahealthandwellness.com/hormone-assessment-quiz": {
+      "label": "other",
+      "service": ""
+    },
+    "http://astrahealthandwellness.com/hormone-makeover-guide": {
+      "label": "other",
+      "service": ""
+    },
+    "http://astrahealthandwellness.com/functional-medicine": {
+      "label": "service",
+      "service": "Functional Medicine"
+    }
+  }
+}

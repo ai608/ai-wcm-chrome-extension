@@ -1,0 +1,45 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/medspa-services/tox-fillers",
+    "/medspa-services/laser-hair-removal",
+    "/medspa-services/ipl",
+    "/medspa-services/morpheus8",
+    "/medspa-services/opus-plasma",
+    "/medspa-services/ted-hair-restoration",
+    "/clinic-services/weight-loss",
+    "/clinic-services/mens-hormones",
+    "/clinic-services/womens-hormones",
+    "/clinic-services/anti-aging",
+    "/clinic-services/primary-care",
+    "/clinic-services/green-consultations"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/services",
+    "/clinic-services/supplements",
+    "/pages-not-being-used/holistic-supplements",
+    "/pages-not-being-used/hormone-therapy",
+    "/pages-not-being-used/weight-loss-consult",
+    "/pages-not-being-used/shots-medications",
+    "/pages-not-being-used/nutritional-guidance",
+    "/pages-not-being-used/medical-cannabis",
+    "/pages-not-being-used/sexual-health",
+    "/product/chemical-peels-by-kenzie",
+    "/product/facials-by-kenzie",
+    "/product/filler-lips-cheeks",
+    "/product/tox-jeuveau-xeomin"
+  ],
+  "trust": {
+    "about_page": [
+      "/about-us",
+      null
+    ],
+    "team_page": null,
+    "faq_page": null,
+    "pricing_page": null,
+    "financing_page": "/payment-plans",
+    "privacy_policy": "/privacy-policy"
+  }
+}

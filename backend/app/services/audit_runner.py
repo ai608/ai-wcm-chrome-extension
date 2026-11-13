@@ -16,6 +16,8 @@ from app.services import (
     crawl_access,
     fetchlog,
     onpage,
+    page_signals,
+    page_types,
     probes,
     site_ai,
     site_audit,
@@ -61,6 +63,7 @@ LABELS = {
     "enrich": "Build site facts",
     "probe": "Check links and redirects",
     "onpage": "Check every page",
+    "types": "Check page types",
     "ai": "AI page analysis",
     "gbp": "Google Business Profile",
     "psi": "PageSpeed",
@@ -80,12 +83,26 @@ def _why(exc: Exception) -> str:
 
 
 class _Trace:
-    """Writes the step-by-step run log shown in the panel. A write problem never touches the audit."""
+    """Writes the step-by-step run log shown in the panel. A write problem never touches the audit.
+
+    The panel folds the log by step id, the last event of a step winning. So a dropped "done"
+    leaves the step "running" for ever. The newest event of each step that could not be written
+    is kept, and flush() writes it again before the audit is marked finished."""
 
     def __init__(self, repo: AuditRepository, audit_id: str) -> None:
         self._repo, self._id = repo, audit_id
         self._started: dict[str, float] = {}
         self._open: set[str] = set()
+        self._unwritten: dict[str, dict[str, Any]] = {}
+
+    async def _write(self, event: dict[str, Any], wait: float) -> bool:
+        try:
+            async with asyncio.timeout(wait):
+                await self._repo.add_trace(self._id, event)
+            return True
+        except Exception:
+            logger.warning("audit %s: trace write failed", self._id, exc_info=True)
+            return False
 
     async def report(self, step: str, status: str, **detail: Any) -> None:
         now = time.monotonic()
@@ -107,11 +124,10 @@ class _Trace:
             "at": datetime.now(UTC).isoformat(),
             "detail": detail,
         }
-        try:
-            async with asyncio.timeout(2):
-                await self._repo.add_trace(self._id, event)
-        except Exception:
-            logger.warning("audit %s: trace write failed", self._id, exc_info=True)
+        if await self._write(event, TRACE_WRITE_S):
+            self._unwritten.pop(step, None)  # a later event of the step supersedes
+        else:
+            self._unwritten[step] = event
 
     async def skip(self, reason: str, *steps: str) -> None:
         for step in steps:
@@ -121,40 +137,119 @@ class _Trace:
         for step in list(self._open):
             await self.report(step, "failed", error=error)
 
+    async def flush(self) -> None:
+        """Write again the newest event of every step whose write failed, with more time. A step
+        still open at this point never reported its end: it is closed as failed, not left
+        "running" on a finished audit."""
+        await self.fail_open("The step did not finish")
+        for step, event in list(self._unwritten.items()):
+            if await self._write(event, TRACE_FLUSH_S):
+                self._unwritten.pop(step, None)
+
+
+TRACE_WRITE_S = 2.0  # one log write while the audit runs: it must never slow the audit
+TRACE_FLUSH_S = 10.0  # the second try at the end, when nothing else is waiting
+
 
 async def _home(
     http: httpx.AsyncClient, url: str, hints: dict[str, str], trace: _Trace
-) -> tuple[dict[str, Any], str, str, str]:
-    """Returns (sections, final URL, home HTML, via): via is "firecrawl" when the site
-    blocked the direct fetch, so the crawl reads every other page through Firecrawl too."""
+) -> tuple[dict[str, Any], str, str, str, bool]:
+    """Returns (sections, final URL, home HTML, via, rendered).
+
+    Firecrawl and the direct fetch start together. The page we audit is Firecrawl's browser view
+    when it has one (scripts have run, so JSON-LD, chat widgets and booking buttons that
+    JavaScript adds are there); otherwise the direct read. The direct fetch is free and always
+    says whether the site answers us: via is "firecrawl" when it does not, so the crawl reads
+    every other page through Firecrawl and no direct link checks are made. It also records the
+    home page's redirects and headers (fetchlog)."""
     await trace.report("home", "running")
-    via, reason = "direct", None
-    try:
-        html, final_url = await site_audit.fetch_html(url)
-        if site_crawl._blocked(html):
-            # HTTP 200 with a bot-protection page: not the home page. Treat it like a failed read
-            # so Firecrawl gets a turn, and never audit the wall as if it were the clinic's site.
-            raise AppError(
-                422,
-                "site_blocked",
-                "The website's bot protection blocked our reader. Try again later.",
-            )
-    except AppError as exc:
-        if not settings.FIRECRAWL_API_KEY:
-            raise
-        # Sites behind a WAF or rendered by JavaScript: let Firecrawl fetch them.
-        fallback = await site_crawl.scrape(http, url)
-        if not fallback or site_crawl._blocked(fallback):
-            raise
-        html, final_url = fallback, url
-        via, reason = "firecrawl", exc.message
+    (
+        (direct, final_direct, direct_error),
+        (browser, final_browser, browser_why),
+    ) = await asyncio.gather(_direct_home(url), _browser_home(http, url))
+    if direct_error is not None and direct_error.code == "url_not_allowed":
+        raise direct_error  # an address we refuse is refused, whoever could read it
+    via = "direct" if direct is not None else "firecrawl"
+    if browser is not None:
+        html, final_url, rendered = browser, final_browser, True
+        reason = direct_error.message if direct_error else None  # why direct failed
+    elif direct is not None:
+        html, final_url, rendered = direct, final_direct, False
+        reason = browser_why  # why Firecrawl had nothing (None: no key)
+    else:
+        assert direct_error is not None
+        raise direct_error
     await trace.report(
-        "home", "done", via=via, reason=reason, url=final_url, size=len(html)
+        "home",
+        "done",
+        via="firecrawl" if rendered else "direct",
+        reason=reason,
+        url=final_url,
+        size=len(html),
     )
     await trace.report("analyze", "running")
     sections = site_audit.analyze(html, final_url, hints)
+    if (
+        rendered
+    ):  # a widget a script builds is in this HTML: no second rendered fetch needed
+        sections["convert"]["chat_widget"] = site_crawl.detect_chat_rendered(html)
     await trace.report("analyze", "done")
-    return sections, final_url, html, via
+    return sections, final_url, html, via, rendered
+
+
+async def _direct_home(url: str) -> tuple[str | None, str, AppError | None]:
+    """(HTML, final URL, error): our own fetch, SSRF-guarded. A bot wall counts as an error."""
+    try:
+        html, final_url = await site_audit.fetch_html(url)
+    except AppError as exc:
+        return None, url, exc
+    if site_crawl._blocked(html):
+        # HTTP 200 with a bot-protection page: never audit the wall as the clinic's site.
+        return (
+            None,
+            final_url,
+            AppError(
+                422,
+                "site_blocked",
+                "The website's bot protection blocked our reader. Try again later.",
+            ),
+        )
+    return html, final_url, None
+
+
+async def _browser_home(
+    http: httpx.AsyncClient, url: str
+) -> tuple[str | None, str, str | None]:
+    """(HTML, final URL, why it is missing): the page as a browser shows it, through Firecrawl.
+    No key: (None, url, None)."""
+    if not settings.FIRECRAWL_API_KEY:
+        return None, url, None
+    why: dict[str, str] = {}
+    meta: dict[str, Any] = {}
+    try:
+        html = await site_crawl.scrape_home(http, url, why, meta)
+    except (httpx.HTTPError, ValueError) as exc:
+        return None, url, f"Firecrawl request failed ({_why(exc)})"
+    status = meta.get("statusCode")
+    if html and site_crawl._blocked(html):
+        return None, url, "Firecrawl got a bot-protection page"
+    if html and isinstance(status, int) and status >= 400:
+        return None, url, f"The site answered HTTP {status}"
+    if not html:
+        return None, url, why.get("error") or "Firecrawl returned no page"
+    return html, _final_url(meta, url), None
+
+
+def _final_url(meta: dict[str, Any], requested: str) -> str:
+    """Where Firecrawl ended up, checked like any URL we fetch; the requested URL if unusable."""
+    for key in ("url", "sourceURL"):
+        value = meta.get(key)
+        if isinstance(value, str) and value:
+            try:
+                return site_audit.normalize_url(value)[0]
+            except AppError:
+                break
+    return requested
 
 
 async def _rendered_chat(
@@ -174,6 +269,117 @@ async def _rendered_chat(
         convert["chat_widget"] = site_crawl.detect_chat_rendered(html)
 
 
+def _phone_from_pages(sections: dict[str, Any], crawled: dict[str, str]) -> None:
+    """The clinic's phone when the home page has none (Viva shows it only on /contact): the
+    contact page's tel: link first, else the number most pages link to. Without it the phone
+    cannot be compared with the Google profile's."""
+    nap = sections["business"]["nap"]
+    if nap.get("phone"):
+        return
+    found = [
+        (u, phone)
+        for u, html in crawled.items()
+        if (phone := site_audit.raw_phone(html))
+    ]
+    if not found:
+        return
+    contact = next((p for u, p in found if "contact" in urlsplit(u).path.lower()), None)
+    counts: dict[str, int] = {}
+    for _, phone in found:
+        counts[phone] = counts.get(phone, 0) + 1
+    nap["phone"] = contact or max(counts, key=lambda k: counts[k])
+
+
+def site_facts(
+    sections: dict[str, Any],
+    home_html: str,
+    urls: list[str],
+    crawled: dict[str, str],
+    posts: list[dict[str, Any]] | None,
+    menu: site_crawl.Menu,
+) -> dict[str, Any]:
+    """The Site tab from the crawl: URL and menu rules, then what the site's own structured
+    data says (services and their pages). Returns the structured data lists; their areas are
+    graded with the AI step. The golden tests call this too, so they score what audits run."""
+    site_crawl.enrich(sections, urls, crawled, posts, menu)
+    _phone_from_pages(sections, crawled)
+    schema = site_audit.schema_lists([home_html, *crawled.values()])
+    # The towns of the clinic's own addresses are areas too (its office locations): a page
+    # about one (/plano-tx) is then found as that location's page.
+    if not schema["localities"] and (town := page_signals.title_town(crawled)):
+        schema["localities"] = [
+            town
+        ]  # "| Plano, TX |" on most titles: the clinic's town
+    schema["areas"] = list(dict.fromkeys([*schema["areas"], *schema["localities"]]))
+    sections["site"]["schema_lists"] = schema
+    site_crawl.apply_schema_services(
+        sections, schema["services"], urls, menu, schema["areas"]
+    )
+    return schema
+
+
+async def _confirm_leftover_text(
+    http: httpx.AsyncClient, sections: dict[str, Any]
+) -> None:
+    """Leftover builder text is reported only if a visitor sees it. The raw HTML can hold a
+    template a script replaces on load (Viva's specials slider: one "Title Goes Here" slide in
+    the HTML, five real cards in the browser), so each page flagged for it is read again as a
+    browser shows it, and dropped when the text is gone. Without a key it is kept unchecked."""
+    site = sections["site"]
+    flagged = [p for p in site.get("unfinished_pages") or [] if p.get("counted")]
+    if not flagged or not settings.FIRECRAWL_API_KEY:
+        return
+    gone: set[str] = set()
+    for p in flagged[:LEFTOVER_CHECKS]:
+        try:
+            html = await site_crawl.scrape_rendered(http, p["url"])
+        except httpx.HTTPError:
+            continue  # not checked: kept
+        if html and page_signals.placeholder_text(html) is None:
+            gone.add(p["url"])
+    site["unfinished_pages"] = [
+        p for p in site["unfinished_pages"] if p["url"] not in gone
+    ]
+    site["placeholder_pages"] = [u for u in site["placeholder_pages"] if u not in gone]
+
+
+# Pages re-read in the browser view to confirm leftover text (one Firecrawl call each).
+LEFTOVER_CHECKS = 5
+
+
+async def _page_types(
+    http: httpx.AsyncClient,
+    sections: dict[str, Any],
+    urls: list[str],
+    crawled: dict[str, str],
+    menu: site_crawl.Menu,
+    trace: _Trace,
+) -> None:
+    """The AI reads the pages the rules cannot settle (page_types). Without a key, or when the
+    call fails, the rules' answer stands and the Site tab says so ("types_by": "rules")."""
+    services = sections["site"]["services"]
+    services["types_by"] = "rules"
+    if not settings.OPENROUTER_API_KEY:
+        await trace.skip("OpenRouter key not set", "types")
+        return
+    todo = page_types.candidates(sections, urls, crawled, menu)
+    await trace.report("types", "running")
+    try:
+        labels = await page_types.read_types(http, todo, crawled)
+    except (AppError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
+        logger.warning("page types failed", exc_info=True)
+        await trace.report("types", "failed", error=_why(exc))
+        return
+    page_types.apply(sections, labels, crawled)
+    services["types_by"] = "rules+ai"
+    await trace.report(
+        "types",
+        "done",
+        pages=len(labels),
+        services=sum(1 for v in labels.values() if v["label"] == "service"),
+    )
+
+
 async def _enrich(
     repo: AuditRepository,
     http: httpx.AsyncClient,
@@ -184,11 +390,13 @@ async def _enrich(
     via: str,
     hints: dict[str, str],
     trace: _Trace,
+    rendered: bool = False,
 ) -> bool:
     """Add whole-site, AI and GBP data. Returns False if a provider step failed."""
     ok = True
     pages = {final_url: home_html}
     urls: list[str] = []
+    schema: dict[str, Any] = {"services": [], "areas": []}
     menu = site_crawl.nav_links(home_html, final_url)
     try:
         urls, crawled, crawl_ok, sitemap = await site_crawl.crawl(
@@ -197,8 +405,11 @@ async def _enrich(
         ok = crawl_ok  # False when the site map failed; the menu-based crawl still ran
         await trace.report("enrich", "running")
         posts = await site_crawl.blog_posts(http, urls, crawled, final_url, sitemap)
-        site_crawl.enrich(sections, urls, crawled, posts, menu)
-        await _rendered_chat(http, sections, final_url)
+        schema = site_facts(sections, home_html, urls, crawled, posts, menu)
+        await _page_types(http, sections, urls, crawled, menu, trace)
+        await _confirm_leftover_text(http, sections)
+        if not rendered:
+            await _rendered_chat(http, sections, final_url)
         await trace.report(
             "enrich",
             "done",
@@ -266,7 +477,11 @@ async def _enrich(
         try:
             names = [c["service"] for c in sections["site"]["services"]["clusters"]]
             site_ai.apply(
-                sections, await site_ai.analyze(http, pages, names), pages, urls
+                sections,
+                await site_ai.analyze(http, pages, names),
+                pages,
+                urls,
+                extra_areas=schema["areas"],
             )
             await trace.report("ai", "done", pages=len(pages))
         except (AppError, httpx.HTTPError, ValueError, KeyError, TypeError) as exc:
@@ -275,6 +490,10 @@ async def _enrich(
             ok = False  # keyword results are kept
     else:
         await trace.skip("OpenRouter key not set", "ai")
+        if schema[
+            "areas"
+        ]:  # the site names its areas itself: grade them without the AI
+            site_ai.apply_areas(sections, schema["areas"], pages, urls)
     await repo.update(
         audit_id,
         sections={
@@ -294,6 +513,10 @@ async def _enrich(
                 site_crawl.gbp_queries(hints, home_html, domain),
                 domain,
                 sections["business"]["nap"].get("phone"),
+            )
+            sections["business"]["gbp_status"] = "found" if gbp else "not_found"
+            sections["business"]["gbp_note"] = (
+                None if gbp else f"Searched Google Maps for: {', '.join(tried)}."
             )
             if gbp:
                 gbp["website_links_to_gbp"], gbp["review_link_on_site"] = (
@@ -321,6 +544,8 @@ async def _enrich(
         except (httpx.HTTPError, ValueError, KeyError) as exc:
             logger.warning("audit %s: GBP lookup failed", audit_id, exc_info=True)
             await trace.report("gbp", "failed", error=_why(exc))
+            sections["business"]["gbp_status"] = "not_checked"
+            sections["business"]["gbp_note"] = f"The search failed ({_why(exc)})."
             ok = False
         await repo.update(
             audit_id,
@@ -398,6 +623,82 @@ async def _report_usage(
             logger.warning("audit %s: saving AI spend failed", audit_id, exc_info=True)
 
 
+async def _steps(
+    repo: AuditRepository,
+    http: httpx.AsyncClient,
+    audit_id: str,
+    url: str,
+    hints: dict[str, str],
+    trace: _Trace,
+) -> bool:
+    """Every step of one audit, in order. Returns True when all of them worked, False when a
+    provider step failed (the audit is then `partial`). Raises when the audit cannot go on."""
+    speed: asyncio.Task[bool] | None = None
+    try:
+        sections, final_url, home_html, via, rendered = await _home(
+            http, url, hints, trace
+        )
+        # scored once every step below has finished; the crawl always runs
+        later = {"overview", "site", "convert"}
+        if settings.APIFY_API_TOKEN and settings.APIFY_GMAPS_ACTOR_ID:
+            later.add("business")
+        if settings.GOOGLE_PAGESPEED_API_KEY:
+            later.add("on_page")
+        # Home-page results show right away; crawl and GBP sections fill in after.
+        await repo.update(
+            audit_id,
+            sections=sections,
+            state={k: "running" if k in later else "ready" for k in INITIAL_STATE},
+        )
+        if settings.GOOGLE_PAGESPEED_API_KEY:
+            speed = asyncio.create_task(
+                _pagespeed(repo, http, audit_id, sections, final_url, trace)
+            )
+        else:
+            await trace.skip("PageSpeed key not set", "psi")
+        ok = await _enrich(
+            repo,
+            http,
+            audit_id,
+            sections,
+            final_url,
+            home_html,
+            via,
+            hints,
+            trace,
+            rendered,
+        )
+        psi_ok: bool | None = None  # None: PageSpeed not run (no key)
+        if speed:
+            try:
+                psi_ok = await asyncio.wait_for(speed, PAGESPEED_WAIT_S)
+            except TimeoutError:  # wait_for has cancelled the task
+                psi_ok = False
+                logger.warning("audit %s: PageSpeed timed out", audit_id)
+                await trace.report("psi", "failed", error="Timed out")
+                await repo.update(audit_id, state={"on_page": "ready"})
+            ok = bool(psi_ok) and ok
+        # PageSpeed and the page checks finish at their own times; join them here
+        onpage.add_speed_issues(sections)
+        await repo.update(audit_id, sections={"on_page": sections["on_page"]})
+        await trace.report("score", "running")
+        overview = site_score.compute(
+            sections,
+            pagespeed_ok=psi_ok,
+            domain=domain_of(urlsplit(final_url).hostname or ""),
+        )
+        await repo.update(
+            audit_id, sections={"overview": overview}, state={"overview": "ready"}
+        )
+        await trace.report(
+            "score", "done", score=overview["score"], grade=overview["grade"]
+        )
+        return ok
+    finally:
+        if speed and not speed.done():
+            speed.cancel()
+
+
 async def _run(
     repo: AuditRepository,
     http: httpx.AsyncClient,
@@ -414,85 +715,37 @@ async def _run(
         await repo.update(
             audit_id, status="running", state={k: "running" for k in INITIAL_STATE}
         )
-        speed: asyncio.Task[bool] | None = None
         try:
-            sections, final_url, home_html, via = await _home(http, url, hints, trace)
-            # scored once every step below has finished; the crawl always runs
-            later = {"overview", "site", "convert"}
-            if settings.APIFY_API_TOKEN and settings.APIFY_GMAPS_ACTOR_ID:
-                later.add("business")
-            if settings.GOOGLE_PAGESPEED_API_KEY:
-                later.add("on_page")
-            # Home-page results show right away; crawl and GBP sections fill in after.
-            await repo.update(
-                audit_id,
-                sections=sections,
-                state={k: "running" if k in later else "ready" for k in INITIAL_STATE},
-            )
-            if settings.GOOGLE_PAGESPEED_API_KEY:
-                speed = asyncio.create_task(
-                    _pagespeed(repo, http, audit_id, sections, final_url, trace)
+            # A step that never answers must not hold the audit (and one of the few audit
+            # slots, and the "one audit per site" rule) for ever: the audit ends by this time.
+            async with asyncio.timeout(settings.AUDIT_MAX_S) as deadline:
+                ok = await _steps(repo, http, audit_id, url, hints, trace)
+        except Exception as exc:  # never leave an audit stuck in `running`
+            if isinstance(exc, AppError):
+                message = shown = exc.message
+            elif deadline.expired():
+                logger.error("audit %s ran past %ss", audit_id, settings.AUDIT_MAX_S)
+                message = shown = (
+                    "The audit took too long and was stopped. Run it again."
                 )
             else:
-                await trace.skip("PageSpeed key not set", "psi")
-            ok = await _enrich(
-                repo, http, audit_id, sections, final_url, home_html, via, hints, trace
-            )
-            psi_ok: bool | None = None  # None: PageSpeed not run (no key)
-            if speed:
-                try:
-                    psi_ok = await asyncio.wait_for(speed, PAGESPEED_WAIT_S)
-                except TimeoutError:  # wait_for has cancelled the task
-                    psi_ok = False
-                    logger.warning("audit %s: PageSpeed timed out", audit_id)
-                    await trace.report("psi", "failed", error="Timed out")
-                    await repo.update(audit_id, state={"on_page": "ready"})
-                ok = bool(psi_ok) and ok
-            # PageSpeed and the page checks finish at their own times; join them here
-            onpage.add_speed_issues(sections)
-            await repo.update(audit_id, sections={"on_page": sections["on_page"]})
-            await trace.report("score", "running")
-            overview = site_score.compute(
-                sections,
-                pagespeed_ok=psi_ok,
-                domain=domain_of(urlsplit(final_url).hostname or ""),
-            )
-            await repo.update(
-                audit_id, sections={"overview": overview}, state={"overview": "ready"}
-            )
-            await trace.report(
-                "score", "done", score=overview["score"], grade=overview["grade"]
-            )
-        except AppError as exc:
-            await trace.fail_open(exc.message)
+                logger.exception("audit %s crashed", audit_id)
+                message, shown = "Unexpected error", "Audit failed unexpectedly"
+            await trace.fail_open(message)
             await _report_usage(trace, meter, repo, audit_id)
-            await trace.report("final", "failed", outcome="failed", error=exc.message)
+            await trace.report("final", "failed", outcome="failed", error=message)
+            await trace.flush()
             await repo.update(
                 audit_id,
                 status="failed",
-                error=exc.message,
+                error=shown,
                 finished=True,
                 state={k: "failed" for k in INITIAL_STATE},
             )
             return
-        except Exception:  # never leave an audit stuck in `running`
-            logger.exception("audit %s crashed", audit_id)
-            await trace.fail_open("Unexpected error")
-            await _report_usage(trace, meter, repo, audit_id)
-            await trace.report("final", "failed", outcome="failed")
-            await repo.update(
-                audit_id,
-                status="failed",
-                error="Audit failed unexpectedly",
-                finished=True,
-                state={k: "failed" for k in INITIAL_STATE},
-            )
-            return
-        finally:
-            if speed and not speed.done():
-                speed.cancel()
         await _report_usage(trace, meter, repo, audit_id)
         await trace.report("final", "done", outcome="ready" if ok else "partial")
+        await trace.flush()
         await repo.update(audit_id, status="ready" if ok else "partial", finished=True)
 
 

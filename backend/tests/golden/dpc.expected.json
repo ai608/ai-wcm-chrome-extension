@@ -1,0 +1,31 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/services/weight-management",
+    "/services/hormone-therapy",
+    "/peptide-therapy",
+    "/services/family-medicine",
+    "/services/health-coaching",
+    "/services/iv-therapy",
+    "/services/peptide-therapy"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/services",
+    "/employers"
+  ],
+  "trust": {
+    "about_page": "/about",
+    "team_page": [
+      null,
+      "/about/dr-tram-nguyen",
+      "/about/nathan-nguyen-md",
+      "/about/vinh-pham-rn"
+    ],
+    "faq_page": null,
+    "pricing_page": null,
+    "financing_page": null,
+    "privacy_policy": "/privacy-policy"
+  }
+}

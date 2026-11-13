@@ -1,0 +1,30 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.ivolution.health/reset-reboot": {
+      "label": "service",
+      "service": "Salt Therapy, Infrared Sauna & Ionic Foot Detox"
+    },
+    "https://www.ivolution.health/bodylab": {
+      "label": "service",
+      "service": "Peptide Therapy"
+    },
+    "https://www.ivolution.health/glow-lounge": {
+      "label": "service",
+      "service": "Aesthetic Services"
+    },
+    "https://www.ivolution.health/infusions-boosters": {
+      "label": "service",
+      "service": "IV Infusions & Boosters"
+    },
+    "https://www.ivolution.health/dripwellness": {
+      "label": "service",
+      "service": "IV Therapy"
+    },
+    "https://www.ivolution.health/services-2": {
+      "label": "service",
+      "service": "Booster Injections"
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/medical-services",
+    "/laser",
+    "/skincare-services",
+    "/cosmetic-tattoo-services",
+    "/iv-therapy-wellness"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/aftercare"
+  ],
+  "trust": {
+    "about_page": [
+      "/aboutus",
+      "/artistbios",
+      "/aboutus-1"
+    ],
+    "team_page": [
+      "/artistbios",
+      "/aboutus",
+      "/aboutus-1",
+      null
+    ],
+    "faq_page": "/faq",
+    "pricing_page": null,
+    "financing_page": "/payment-plans",
+    "privacy_policy": null
+  }
+}

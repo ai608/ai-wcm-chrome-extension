@@ -1,0 +1,23 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [],
+  "city_pages": [],
+  "ignore": [
+    "/services%2f-price-list",
+    "/wellness-price-list",
+    "/membership",
+    "/products"
+  ],
+  "trust": {
+    "about_page": null,
+    "team_page": "/meet-the-aib-team",
+    "faq_page": null,
+    "pricing_page": [
+      "/services%2f-price-list",
+      "/wellness-price-list"
+    ],
+    "financing_page": "/payment-options",
+    "privacy_policy": "/privacy-policy"
+  }
+}

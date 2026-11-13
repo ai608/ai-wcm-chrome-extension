@@ -1,0 +1,14 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.womenblossom.com/contactus": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.womenblossom.com/contents": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

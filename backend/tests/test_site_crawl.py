@@ -1306,3 +1306,85 @@ def test_json_ld_is_parsed_not_pattern_matched() -> None:
     assert site_crawl._published(nested) == "2026-01-02"
     broken = '<script type="application/ld+json">{"articleSection":"Blog",}</script>'
     assert site_crawl._section(broken) == "blog"
+
+
+def test_schema_services_add_their_pages_but_never_a_city_page():
+    sections = base_sections()
+    sections["site"]["services"]["clusters"] = [
+        {
+            "service": "Tampa",
+            "found": 1,
+            "expected": 3,
+            "pages": [f"{G}/tampa"],
+            "topics_present": [],
+            "topics_missing": [],
+        }
+    ]
+    urls = [
+        f"{G}/iv-therapy/",
+        f"{G}/peptide-therapy",
+        f"{G}/tampa",
+        f"{G}/weight-loss/tampa",
+    ]
+    services = [
+        {
+            "name": "IV Therapy",
+            "url": "http://www.glow.example/iv-therapy",
+        },  # other spelling
+        {"name": "Peptide Therapy", "url": None},  # matched by name
+        {
+            "name": "Weight Loss in Tampa",
+            "url": f"{G}/weight-loss/tampa",
+        },  # a city page
+        {"name": "Laser Hair Removal", "url": None},  # offered, no page
+    ]
+    site_crawl.apply_schema_services(sections, services, urls, areas=["Tampa"])
+    s = sections["site"]["services"]
+    pages = {u for c in s["clusters"] for u in c["pages"]}
+    assert pages == {
+        f"{G}/iv-therapy/",
+        f"{G}/peptide-therapy",
+    }  # the Tampa pages left out
+    assert "Laser Hair Removal" in s["schema_only"]
+
+
+def test_squarespace_folders_are_read_as_dropdowns():
+    html = """<header><nav class="header-nav-list">
+      <div class="header-nav-item header-nav-item--folder">
+        <button class="header-nav-folder-title"><span class="header-nav-folder-title-text">Aesthetics</span></button>
+        <div class="header-nav-folder-content">
+          <div class="header-nav-folder-item"><a href="/sculptra">Sculptra</a></div>
+          <div class="header-nav-folder-item"><a href="/microneedling">Microneedling</a></div>
+        </div></div>
+      <div class="header-nav-item"><a href="/about">About</a></div></nav>
+      <nav class="header-menu-nav-list"><div class="header-menu-nav-folder" data-folder="root">
+        <a data-folder-id="/wellness" href="/wellness">Wellness</a></div>
+      <div class="header-menu-nav-folder" data-folder="/wellness">
+        <a data-action="back" href="#">Back</a><a href="/peptides">Peptides</a></div></nav></header>"""
+    menu = site_crawl.nav_links(html, f"{G}/")
+    assert menu.children[f"{G}/sculptra"] == "Aesthetics"
+    assert menu.children[f"{G}/peptides"] == "Wellness"
+    assert f"{G}/about" not in menu.children
+
+
+def test_a_flat_menu_counts_its_service_items_but_not_offers_or_contact():
+    html = (
+        "<header><nav>"
+        + "".join(
+            f'<a href="{G}/{slug}">{text}</a>'
+            for slug, text in [
+                ("infusions-boosters", "Infusions & Boosters"),
+                ("body-lab", "Body Lab"),
+                ("special-offers", "Special Offers"),
+                ("referral", "Refer a Friend"),
+                ("insurance", "Insurance"),
+                ("contact", "Contact"),
+            ]
+        )
+        + "</nav></header>"
+    )
+    menu = site_crawl.nav_links(html, f"{G}/")
+    sections = base_sections()
+    site_crawl.enrich(sections, list(menu.top), {}, menu=menu)
+    pages = {u for c in sections["site"]["services"]["clusters"] for u in c["pages"]}
+    assert pages == {f"{G}/infusions-boosters", f"{G}/body-lab"}

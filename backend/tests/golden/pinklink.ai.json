@@ -1,0 +1,18 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://pinklinkmedical.com/recommendations/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://pinklinkmedical.com/patientforms": {
+      "label": "other",
+      "service": ""
+    },
+    "https://pinklinkmedical.com/conditions/diabetes": {
+      "label": "service",
+      "service": "Diabetes Care"
+    }
+  }
+}

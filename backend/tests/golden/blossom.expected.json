@@ -1,0 +1,28 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/services/wellness-exams",
+    "/services/stds-and-birth-control",
+    "/services/endometrial-ablation",
+    "/services/weight-loss",
+    "/services/irregular-periods",
+    "/services/fibroids",
+    "/services/pcos",
+    "/services/menopause"
+  ],
+  "city_pages": [
+    "/location/ga/alpharetta"
+  ],
+  "ignore": [
+    "/services"
+  ],
+  "trust": {
+    "about_page": "/about",
+    "team_page": "/provider",
+    "faq_page": null,
+    "pricing_page": null,
+    "financing_page": null,
+    "privacy_policy": "/your-privacy"
+  }
+}

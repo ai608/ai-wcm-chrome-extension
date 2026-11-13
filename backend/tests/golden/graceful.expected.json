@@ -1,0 +1,27 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/semaglutide-corpus-christi",
+    "/procell-microchanneling",
+    "/neurotoxin-injections",
+    "/anti-wrinkle-injections",
+    "/weight-loss-clinic-in-corpus-christi-tx",
+    "/services/mens-health-and-testosterone-replacement-therapy",
+    "/services/womens-health-hormone-replacement-therapy",
+    "/services/aesthetics"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/services",
+    "/pages/services"
+  ],
+  "trust": {
+    "about_page": "/about",
+    "team_page": "/our-team",
+    "faq_page": null,
+    "pricing_page": null,
+    "financing_page": null,
+    "privacy_policy": "/privacy-policy"
+  }
+}

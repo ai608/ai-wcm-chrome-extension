@@ -1,0 +1,42 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.metamorphmedspa.com/private-injector-training-mentorship": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.metamorphmedspa.com/awards-and-achievements": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.metamorphmedspa.com/neurotoxins": {
+      "label": "service",
+      "service": "Neurotoxins"
+    },
+    "https://www.metamorphmedspa.com/chin-fillers": {
+      "label": "service",
+      "service": "Chin Filler"
+    },
+    "https://www.metamorphmedspa.com/cheek-filler": {
+      "label": "service",
+      "service": "Cheek Filler"
+    },
+    "https://www.metamorphmedspa.com/temple-filler": {
+      "label": "service",
+      "service": "Temple Filler"
+    },
+    "https://www.metamorphmedspa.com/jawline-filler": {
+      "label": "service",
+      "service": "Jawline Filler"
+    },
+    "https://www.metamorphmedspa.com/dysport": {
+      "label": "service",
+      "service": "Dysport"
+    },
+    "https://www.metamorphmedspa.com/botox": {
+      "label": "service",
+      "service": "Botox"
+    }
+  }
+}

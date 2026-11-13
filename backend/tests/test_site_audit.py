@@ -1,4 +1,5 @@
 import asyncio
+import json
 import socket
 
 import pytest
@@ -153,6 +154,30 @@ MICRODATA = """<html><body><footer itemscope itemtype="http://schema.org/LocalBu
 </footer></body></html>"""
 
 
+@pytest.mark.parametrize(
+    ("type_name", "counts"),
+    [
+        ("DaySpa", True),
+        ("HairSalon", True),
+        ("PhysiciansOffice", True),
+        ("IndividualPhysician", True),
+        ("Optician", True),
+        ("Hospital", True),
+        ("ExerciseGym", True),
+        ("MedicalOrganization", True),
+        ("Organization", False),  # not a place
+        ("MedicalSpa", False),  # not a schema.org type
+        ("Spa", False),  # not a schema.org type
+    ],
+)
+def test_clinic_and_wellness_types_count_as_a_local_business(type_name, counts):
+    html = (
+        '<html><head><script type="application/ld+json">'
+        f'{{"@type":"{type_name}","name":"Glow"}}</script></head><body>x</body></html>'
+    )
+    assert site_audit.analyze(html, HOME)["schema"]["has_local_business"] is counts
+
+
 def test_a_local_business_subtype_gives_name_address_and_a_clean_phone():
     r = site_audit.analyze(JSON_LD, HOME)
     assert r["schema"]["has_local_business"] is True
@@ -188,3 +213,74 @@ def test_a_tracking_pixel_is_not_an_image_missing_alt():
 def test_seotoaster_is_detected():
     html = '<html><body><img src="https://x.seotoaster.com/a.png"></body></html>'
     assert site_audit.analyze(html, HOME)["site"]["platform"]["name"] == "SeoToaster"
+
+
+def test_schema_lists_reads_services_and_areas_the_site_states():
+    ld = {
+        "@type": "MedicalClinic",
+        "name": "Glow",
+        "areaServed": [
+            {"@type": "City", "name": "Tampa"},
+            {"@type": "State", "name": "Florida"},
+            "US",
+            "US-FL",
+            "Sarasota",
+        ],
+        "hasOfferCatalog": {
+            "@type": "OfferCatalog",
+            "itemListElement": [
+                {
+                    "@type": "Offer",
+                    "itemOffered": {"@type": "Service", "name": "Botox &amp; Fillers"},
+                },
+                {"@type": "Offer", "itemOffered": {"name": "Custom Facials"}},
+            ],
+        },
+        "availableService": [
+            {
+                "@type": "MedicalTherapy",
+                "name": "IV Therapy",
+                "url": "https://g.example/iv/",
+            }
+        ],
+    }
+    page = (
+        '<html><head><script type="application/ld+json">'
+        + json.dumps(ld)
+        + '</script><script type="application/ld+json">'
+        + '{"@type":"Product","name":"Glow | Med Spa in Tampa","url":"https://g.example/"}'
+        + "</script></head></html>"
+    )
+    got = site_audit.schema_lists([page])
+    assert got["areas"] == ["Tampa", "Sarasota"]  # no state, country or code
+    by_name = {s["name"]: s["url"] for s in got["services"]}
+    assert by_name == {  # the page title in the Product block is no service
+        "Botox & Fillers": None,
+        "Custom Facials": None,
+        "IV Therapy": "https://g.example/iv/",
+    }
+
+
+@pytest.mark.parametrize(
+    ("href", "kept"),
+    [
+        (
+            "https://www.facebook.com/p/Elite-Health-Colorado-61575734353391/",
+            True,
+        ),  # page, no username
+        ("https://www.facebook.com/glowmedspa", True),
+        (
+            "https://www.facebook.com/share/1CKtcXyWam/?mibextid=wwXIfr",
+            False,
+        ),  # a share link
+        ("https://www.facebook.com/sharer/sharer.php?u=x", False),
+        ("https://www.instagram.com/p/C8xYz123/", False),  # one Instagram post
+        ("https://www.instagram.com/elite.health.colorado/", True),
+    ],
+)
+def test_a_facebook_p_address_is_a_page_but_an_instagram_p_address_is_a_post(
+    href, kept
+):
+    html = f'<html><body><footer><a href="{href}">Social</a></footer></body></html>'
+    urls = [s["url"] for s in site_audit.analyze(html, HOME)["business"]["socials"]]
+    assert (href in urls) is kept

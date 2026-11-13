@@ -1,0 +1,26 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://wrightchoiceweightloss.com/iv-therapy-treatment-pricing-in-st-louis-and-ofallon-missouri/": {
+      "label": "service",
+      "service": "IV Therapy"
+    },
+    "https://wrightchoiceweightloss.com/why-professional-medical-oversight-is-essential-for-your-weight-loss-journey/": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://wrightchoiceweightloss.com/medical-weight-loss-best-practices-what-you-need-to-know-about-quality-care/": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://wrightchoiceweightloss.com/our-values/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://wrightchoiceweightloss.com/pricing-for-glp-1-weight-loss-treatments/": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

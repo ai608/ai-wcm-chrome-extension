@@ -1,0 +1,42 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://mycommunitymd.com/brokers-and-agents/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://mycommunitymd.com/insurances/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://mycommunitymd.com/medical-record-requests/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://mycommunitymd.com/mso/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://mycommunitymd.com/what-can-we-improve/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://mycommunitymd.com/lab-testing/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://mycommunitymd.com/lunula-laser/": {
+      "label": "service",
+      "service": "Lunula Laser"
+    },
+    "https://mycommunitymd.com/medicare-compare": {
+      "label": "other",
+      "service": ""
+    },
+    "https://mycommunitymd.com/after-hours": {
+      "label": "service",
+      "service": "After Hours Urgent Care"
+    }
+  }
+}

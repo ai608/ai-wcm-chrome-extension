@@ -41,9 +41,20 @@ OFFER = re.compile(
 TRACKER = re.compile(r"piwik|pixel|/tr\?|doubleclick|analytics|1x1", re.IGNORECASE)
 _NOT_PROFILE = re.compile(
     r"/(tr|sharer|share|sharing|shareArticle|plugins|dialog|embed|watch|intent|hashtag|pixel)"
-    r"(?:\.php)?(?:/|\?|$)|/p/|/reel/|/video/",
+    r"(?:\.php)?(?:/|\?|$)|/reel/|/video/",
     re.IGNORECASE,
 )
+# /p/ is a post on Instagram (instagram.com/p/<post id>) but a business page on Facebook
+# (facebook.com/p/Elite-Health-Colorado-61575734353391/: a page without a username).
+_POST_PATH = re.compile(r"/p/", re.IGNORECASE)
+
+
+def _is_profile(url: str) -> bool:
+    """A link to an account, not to one post, a share dialog or a tracking pixel."""
+    if not urlsplit(url).path.strip("/") or _NOT_PROFILE.search(url):
+        return False
+    host = (urlsplit(url).hostname or "").lower()
+    return "facebook.com" in host or not _POST_PATH.search(url)
 
 
 def raw_social(html: str, host: str) -> str | None:
@@ -57,8 +68,7 @@ def raw_social(html: str, host: str) -> str | None:
     )
     for raw in pattern.findall(html):
         url = str(raw).replace("\\/", "/")
-        parts = urlsplit(url)
-        if parts.path.strip("/") and not _NOT_PROFILE.search(url):
+        if _is_profile(url):
             return url
     return None
 
@@ -430,6 +440,152 @@ def _local_business(doc: LexborHTMLParser) -> dict[str, str]:
     }
 
 
+# Structured data types whose `name` is a service the clinic offers.
+_SERVICE_TYPES = frozenset(
+    {"service", "medicalprocedure", "medicaltherapy", "therapeuticprocedure"}
+)
+_AREA_SKIP_TYPES = frozenset({"country", "state", "geocircle", "geoshape"})
+# areaServed values that are a country or a US state: no city page is expected for them.
+_NOT_AREAS = frozenset(
+    {"us", "usa", "u.s.", "united states", "united states of america", "america"}
+    | {
+        s.lower()
+        for s in [
+            "Alabama",
+            "Alaska",
+            "Arizona",
+            "Arkansas",
+            "California",
+            "Colorado",
+            "Connecticut",
+            "Delaware",
+            "Florida",
+            "Georgia",
+            "Hawaii",
+            "Idaho",
+            "Illinois",
+            "Indiana",
+            "Iowa",
+            "Kansas",
+            "Kentucky",
+            "Louisiana",
+            "Maine",
+            "Maryland",
+            "Massachusetts",
+            "Michigan",
+            "Minnesota",
+            "Mississippi",
+            "Missouri",
+            "Montana",
+            "Nebraska",
+            "Nevada",
+            "Ohio",
+            "Oklahoma",
+            "Oregon",
+            "Pennsylvania",
+            "Tennessee",
+            "Texas",
+            "Utah",
+            "Vermont",
+            "Virginia",
+            "Washington",
+            "Wisconsin",
+            "Wyoming",
+        ]
+    }
+    | {
+        "new hampshire",
+        "new jersey",
+        "new mexico",
+        "new york",
+        "north carolina",
+        "north dakota",
+        "rhode island",
+        "south carolina",
+        "south dakota",
+        "west virginia",
+    }
+)
+
+
+def _ld_items(htmls: list[str]) -> list[Any]:
+    out: list[Any] = []
+    for html in htmls:
+        doc = LexborHTMLParser(html)
+        for node in doc.css('script[type="application/ld+json"]')[:20]:
+            try:
+                out.append(orjson.loads(node.text()))
+            except orjson.JSONDecodeError:
+                continue
+    return out
+
+
+def _types_of(node: dict[str, Any]) -> set[str]:
+    t = node.get("@type", [])
+    return {str(x).lower() for x in (t if isinstance(t, list) else [t])}
+
+
+def schema_lists(htmls: list[str]) -> dict[str, Any]:
+    """What the site says about itself in its JSON-LD: the services it offers (name, and the
+    page when it gives one) and the places it serves. Read from every page given. A site that
+    states these is believed before any guess from URLs."""
+    services: dict[str, dict[str, str | None]] = {}
+    areas: dict[str, str] = {}
+    localities: dict[str, str] = {}  # the towns of the clinic's own addresses
+
+    def add_service(node: dict[str, Any]) -> None:
+        name = " ".join(unescape(str(node.get("name") or "")).split())[:80]
+        if len(name) < 3 or "|" in name:  # "Clinic | Med Spa in City" is a page title
+            return
+        url = node.get("url") if isinstance(node.get("url"), str) else None
+        if url and not urlsplit(url).path.strip("/"):
+            url = None  # the home page is not the service's own page
+        have = services.setdefault(name.lower(), {"name": name, "url": url})
+        have["url"] = have["url"] or url
+
+    def add_area(value: Any) -> None:
+        for v in value if isinstance(value, list) else [value]:
+            if isinstance(v, dict):
+                if _types_of(v) & _AREA_SKIP_TYPES:
+                    continue
+                v = v.get("name")
+            name = " ".join(unescape(str(v or "")).split())[:60]
+            code = re.fullmatch(r"[A-Za-z]{2}(-[A-Za-z]{2,3})?", name)  # "US-FL"
+            if len(name) > 2 and not code and name.lower() not in _NOT_AREAS:
+                areas.setdefault(name.lower(), name)
+
+    def walk(node: Any) -> None:
+        if isinstance(node, list):
+            for x in node:
+                walk(x)
+            return
+        if not isinstance(node, dict):
+            return
+        if _types_of(node) & _SERVICE_TYPES:
+            add_service(node)
+        offered = node.get("itemOffered")  # an Offer whose service has no @type
+        if isinstance(offered, dict) and not _types_of(offered) - {""}:
+            add_service(offered)
+        for item in node.get("availableService") or []:
+            if isinstance(item, dict):
+                add_service(item)
+        if "areaServed" in node:
+            add_area(node["areaServed"])
+        town = node.get("addressLocality")
+        if isinstance(town, str) and len(town.strip()) > 2:
+            localities.setdefault(town.strip().lower(), unescape(town.strip()))
+        for value in node.values():
+            walk(value)
+
+    for item in _ld_items(htmls):
+        walk(item)
+    return {
+        "services": list(services.values())[:40],
+        "areas": list(areas.values())[:30],
+        "localities": list(localities.values())[:10],
+    }
+
+
 def empty_research() -> dict[str, Any]:
     blank = {"state": "not_run", "data": None, "error": None, "ran_at": None}
     return {
@@ -537,8 +693,7 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
                 i["href"]
                 for i in links
                 if urlsplit(i["href"]).hostname in (host, "www." + host)
-                and urlsplit(i["href"]).path.strip("/")
-                and not _NOT_PROFILE.search(i["href"])
+                and _is_profile(i["href"])
             ),
             None,
         ) or raw_social(html, host)
@@ -634,6 +789,10 @@ def analyze(html: str, url: str, hints: dict[str, str] | None = None) -> dict[st
     }
     business = {
         "gbp": None,
+        # found | not_found (searched, no match) | not_checked (no key, or the search failed):
+        # "not found" and "not checked" must never read the same in the panel or the score
+        "gbp_status": "not_checked",
+        "gbp_note": "Not set up on this server.",
         "company": None,
         "socials": socials,
         "nap": {

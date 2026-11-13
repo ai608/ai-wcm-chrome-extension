@@ -1,0 +1,10 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.msintegrative.com/medical-services/": {
+      "label": "service",
+      "service": "Primary Care"
+    }
+  }
+}

@@ -1,0 +1,34 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/weight-loss-medication",
+    "/iv-therapy",
+    "/vitamin-injections",
+    "/metabolic-hormone-optimization",
+    "/peptide-therapy",
+    "/cp-exams-and-dbqs-for-va-disability"
+  ],
+  "city_pages": [
+    "/clearwater",
+    "/st-petersburg",
+    "/tampa",
+    "/sarasota",
+    "/weight-loss-medication/florida/st-petersburg",
+    "/weight-loss-medication/florida/clearwater",
+    "/weight-loss-medication/tampa",
+    "/weight-loss-medication/sarasota"
+  ],
+  "ignore": [
+    "/florida",
+    "/florida/telehealth"
+  ],
+  "trust": {
+    "about_page": "/about",
+    "team_page": "/meet-solene-clinicians",
+    "faq_page": null,
+    "pricing_page": null,
+    "financing_page": null,
+    "privacy_policy": null
+  }
+}

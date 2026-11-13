@@ -82,6 +82,7 @@ ISSUES_PER_CATEGORY = 3
 MAX_TOP_ISSUES = 10
 
 NO_GBP = "No Google Business Profile found"
+NO_GBP_CHECK = "Google Business Profile not checked"
 NO_PAGESPEED = "PageSpeed unavailable"
 
 _LABEL = {key: label for key, label, _ in CATEGORIES}
@@ -595,7 +596,10 @@ def compute(
     }
     reasons: list[str] = []
     if "google_business_profile" not in scores:
-        reasons.append(NO_GBP)
+        not_checked = (sections.get("business") or {}).get(
+            "gbp_status"
+        ) == "not_checked"
+        reasons.append(NO_GBP_CHECK if not_checked else NO_GBP)
     if speed_unavailable:
         reasons.append(NO_PAGESPEED)
     for key, label, _ in CATEGORIES[2:]:  # GBP and reviews are covered by NO_GBP

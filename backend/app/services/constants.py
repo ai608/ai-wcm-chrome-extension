@@ -62,21 +62,41 @@ TRUST_LINK_TEXT = {
     "privacy_policy": ("privacy",),
 }
 
+# Structured data types that make a page the clinic's own local business entity, lower case.
+# Taken from the schema.org vocabulary (schemaorg-current-https, read 2026-11-12): the
+# LocalBusiness subtypes for health, beauty, wellness and fitness, and the medical organization
+# types clinics use. Not valid types, so not here: MedicalSpa, Spa, Chiropractor, Dermatology
+# (that one is only a medical specialty value).
 LOCAL_BUSINESS_TYPES = frozenset(
     {
         "localbusiness",
+        "professionalservice",
+        # health and beauty
+        "healthandbeautybusiness",
+        "dayspa",
+        "beautysalon",
+        "hairsalon",
+        "nailsalon",
+        "tattooparlor",
+        "healthclub",
+        "exercisegym",
+        # medical business
         "medicalbusiness",
         "medicalclinic",
-        "dayspa",
-        "healthandbeautybusiness",
-        "beautysalon",
-        "healthclub",
         "physician",
+        "physiciansoffice",
+        "individualphysician",
         "dentist",
+        "optician",
+        "pharmacy",
+        "hospital",
+        "covidtestingfacility",
+        # medical organization (not a LocalBusiness subtype; clinics use it as one)
+        "medicalorganization",
+        "diagnosticlab",
     }
 )
 
-PLACEHOLDER_TEXT = ("lorem ipsum", "sample title", "heading text here")
 
 # Online booking tool: marker (lower case) -> name.
 BOOKING = {

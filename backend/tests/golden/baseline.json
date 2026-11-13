@@ -1,0 +1,7 @@
+{
+  "services_precision": 0.992,
+  "services_recall": 0.966,
+  "cities_precision": 1.0,
+  "cities_recall": 0.9,
+  "trust_accuracy": 1.0
+}

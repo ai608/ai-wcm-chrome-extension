@@ -1,0 +1,30 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://solenewellnessstudio.com/cp-exams-and-dbqs-for-va-disability/": {
+      "label": "service",
+      "service": "VA Disability Exams"
+    },
+    "https://solenewellnessstudio.com/florida": {
+      "label": "location",
+      "service": ""
+    },
+    "https://solenewellnessstudio.com/weight-loss-medication/florida/st-petersburg": {
+      "label": "location",
+      "service": ""
+    },
+    "https://solenewellnessstudio.com/weight-loss-medication/florida/clearwater": {
+      "label": "location",
+      "service": ""
+    },
+    "https://solenewellnessstudio.com/weight-loss-medication/tampa": {
+      "label": "location",
+      "service": ""
+    },
+    "https://solenewellnessstudio.com/weight-loss-medication/sarasota": {
+      "label": "location",
+      "service": ""
+    }
+  }
+}

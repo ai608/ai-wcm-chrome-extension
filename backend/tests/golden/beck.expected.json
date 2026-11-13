@@ -1,0 +1,36 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/fillertreatments",
+    "/sculptra",
+    "/microneedling",
+    "/chemicalpeels",
+    "/facialtreatments",
+    "/skincareconsultation",
+    "/hormone-replacement",
+    "/bioboostvitamin-b12",
+    "/peptides",
+    "/aesthetics",
+    "/wellness"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/training",
+    "/memberships"
+  ],
+  "trust": {
+    "about_page": [
+      "/meetbeck",
+      null
+    ],
+    "team_page": [
+      "/meetbeck",
+      null
+    ],
+    "faq_page": null,
+    "pricing_page": null,
+    "financing_page": null,
+    "privacy_policy": null
+  }
+}

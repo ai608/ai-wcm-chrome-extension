@@ -1,0 +1,14 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.beckaesthetics.com/training": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.beckaesthetics.com/emergency": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

@@ -194,6 +194,7 @@ def apply(
     ai: dict[str, Any],
     pages: dict[str, str],
     urls: list[str] | None = None,
+    extra_areas: list[str] | None = None,
 ) -> None:
     """Merge the AI result into `site`. Anything malformed is dropped, never trusted.
     `urls` are every address mapped on the site, crawled or not: a city page exists whether or
@@ -238,33 +239,11 @@ def apply(
         c["expected"] for c in site["services"]["clusters"]
     )
 
-    areas = _strings(ai.get("areas_served"))
-    known = list(dict.fromkeys([*(urls or []), *pages, *site["cities"]["city_pages"]]))
-    graded = area_pages.grade(areas, known, pages)
-    cities = site["cities"]
-    # City pages to count are the ones whose address names the area. A page that only has the
-    # city in its title (every page of a clinic in that city) covers the area but is no city
-    # page, and the home page never is. One entry per page whatever its spelling.
-    merged = {
-        area_pages.norm(u): u
-        for u in [
-            *cities["city_pages"],
-            *(
-                u
-                for g in graded
-                for u in area_pages.pages_named(g["name"], known)
-                if _path(u)
-            ),
-        ]
-    }
-    cities["city_pages"] = list(merged.values())[:50]
-    cities["pages_found"] = len(cities["city_pages"])
-    cities["hub_page"] = cities["hub_page"] or _is_area_hub(pages, cities["city_pages"])
-    cities["areas"] = graded
-    # No page of its own: the old list, still what the score, report and gap list read.
-    cities["claimed_not_built"] = [
-        g["name"] for g in graded if g["status"] in ("mentioned", "missing")
-    ][:20]
+    areas = list(
+        dict.fromkeys([*(extra_areas or []), *_strings(ai.get("areas_served"))])
+    )
+    apply_areas(sections, areas, pages, urls)
+    site = sections["site"]
 
     providers = [
         p for p in ai.get("providers") or [] if isinstance(p, dict) and p.get("name")
@@ -312,3 +291,47 @@ def apply(
         "offers": offers,
         "model": settings.RESEARCH_MODEL,
     }
+
+
+def apply_areas(
+    sections: dict[str, Any],
+    areas: list[str],
+    pages: dict[str, str],
+    urls: list[str] | None = None,
+) -> None:
+    """Grade the areas the site says it serves (from the AI read, the site's own structured
+    data, or both) and count the pages that cover them."""
+    site = sections["site"]
+    known = list(dict.fromkeys([*(urls or []), *pages, *site["cities"]["city_pages"]]))
+    localities = (site.get("schema_lists") or {}).get("localities") or []
+    own = area_pages.own_places(areas, known, localities)
+    graded = area_pages.grade(areas, known, pages, own)
+    cities = site["cities"]
+    # City pages to count are the ones whose address names the area. A page that only has the
+    # city in its title (every page of a clinic in that city) covers the area but is no city
+    # page, and the home page never is. One entry per page whatever its spelling.
+    merged = {
+        area_pages.norm(u): u
+        for u in [
+            *cities["city_pages"],
+            *(
+                u
+                for g in graded
+                for u in area_pages.pages_named(
+                    g["name"], known, own=area_pages.place_slug(g["name"]) in own
+                )
+                if _path(u)
+            ),
+        ]
+    }
+    cities["city_pages"] = list(merged.values())[:50]
+    cities["pages_found"] = len(cities["city_pages"])
+    cities["hub_page"] = cities["hub_page"] or _is_area_hub(pages, cities["city_pages"])
+    cities["areas"] = graded
+    cities["location_pages"] = [
+        u for g in graded if g["kind"] == "location" for u in g["pages"]
+    ][:20]
+    # No page of its own: the old list, still what the score, report and gap list read.
+    cities["claimed_not_built"] = [
+        g["name"] for g in graded if g["status"] in ("mentioned", "missing")
+    ][:20]

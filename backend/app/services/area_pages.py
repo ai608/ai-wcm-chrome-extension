@@ -65,14 +65,58 @@ _NOT_AREA_PAGE = frozenset(
 )
 
 
-def pages_named(area: str, urls: list[str]) -> list[str]:
+def place_slug(name: str) -> str:
+    """ "St. Petersburg, FL" -> "st-petersburg": how an address spells a place."""
+    return _slug(name)
+
+
+def own_places(areas: list[str], urls: list[str], localities: list[str]) -> set[str]:
+    """The clinic's own town(s), as slugs: where its address is (structured data), or a place
+    that so many addresses carry that it is the clinic's location, not a page topic
+    (/botox-savannah, /dysport-savannah, … on a Savannah clinic)."""
+    own = {_slug(x) for x in localities if _slug(x)}
+    for area in areas:
+        slug = _slug(area)
+        if not slug or not urls:
+            continue
+        word = re.compile(rf"(?:^|[/-]){re.escape(slug)}(?:$|[/-])")
+        hits = sum(1 for u in urls if word.search(page_patterns.clean_path(u)))
+        if hits >= OWN_PLACE_MIN and hits / len(urls) >= OWN_PLACE_SHARE:
+            own.add(slug)
+    return own
+
+
+# A place in at least this many addresses, and this share of them, is the clinic's own town.
+OWN_PLACE_MIN = 5
+OWN_PLACE_SHARE = 0.2
+
+
+def pages_named(area: str, urls: list[str], own: bool = False) -> list[str]:
     """Pages whose address names the area as a whole word: /tampa/, /iv-therapy-tampa/,
     /weight-loss/florida/st-petersburg/ for "St. Petersburg", /…-colorado-springs.html. Team,
-    careers, promo, proof, booking, blog and shop pages are not area pages."""
+    careers, promo, proof, booking, blog and shop pages are not area pages. For the clinic's
+    own town (`own`), only a page about the place itself counts: /savannah, /savannah-ga,
+    /locations/savannah, /savannah-office — not /botox-savannah."""
     slug = _slug(area)
     if not slug:
         return []
     word = re.compile(rf"(?:^|[/-]){re.escape(slug)}(?:$|[/-])")
+    if own:
+        alone = re.compile(
+            rf"(?:^|/){re.escape(slug)}(?:-[a-z]{{2}})?(?:-(?:office|location|clinic))?$"
+        )
+        return [
+            u
+            for u in urls
+            if page_patterns.kind(u) not in _NOT_AREA_PAGE
+            and (
+                alone.search(page_patterns.clean_path(u))
+                or (
+                    page_patterns.in_area_folder(u)
+                    and word.search(page_patterns.clean_path(u))
+                )
+            )
+        ]
     # ponytail: a keyword match on the address, not a read of the page. A page that merely
     # has the city in its slug counts; read the page text if that ever proves too generous.
     return [
@@ -152,7 +196,10 @@ def _unique(areas: list[str]) -> list[str]:
 
 
 def grade(
-    areas: list[str], known: list[str], pages: dict[str, str]
+    areas: list[str],
+    known: list[str],
+    pages: dict[str, str],
+    own_slugs: set[str] | None = None,
 ) -> list[dict[str, Any]]:
     """One entry per area: name, status, its own pages, problems (and the area it copies)."""
     areas = _unique(areas)
@@ -167,13 +214,18 @@ def grade(
     best: dict[str, str] = {}
     for area in areas:
         rx = patterns[area]
+        home_town = _slug(area) in (own_slugs or set())
         own = list(
-            dict.fromkeys(norm(u) for u in pages_named(area, list(canon.values())))
+            dict.fromkeys(
+                norm(u) for u in pages_named(area, list(canon.values()), own=home_town)
+            )
         )
+        # Every page of a clinic in its own town names the town in its title: not a page for it.
         own += [
             n
             for n, r in reads.items()
-            if n not in own
+            if not home_town
+            and n not in own
             and page_patterns.kind(canon[n]) not in _NOT_AREA_PAGE
             and rx.search(r.title)
             and any(rx.search(h) for h in r.h1s)
@@ -181,6 +233,9 @@ def grade(
         crawled = [n for n in own if n in reads]
         entry: dict[str, Any] = {
             "name": area,
+            # An office location (the clinic's own town) or a service area (a nearby town it
+            # wants to rank in): they need different advice.
+            "kind": "location" if home_town else "service_area",
             "status": "missing",
             "pages": [canon[n] for n in own[:5]],
             "issues": [],

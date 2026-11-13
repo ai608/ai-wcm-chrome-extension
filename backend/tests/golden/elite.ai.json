@@ -1,0 +1,18 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://elitehealthcolorado.com/joint-health-prp-stem-cell-treatment/": {
+      "label": "service",
+      "service": "PRP & Stem Cell Treatment"
+    },
+    "https://elitehealthcolorado.com/external-optimization/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://elitehealthcolorado.com/internal-optimization/": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

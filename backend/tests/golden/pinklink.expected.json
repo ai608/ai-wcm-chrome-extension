@@ -1,0 +1,24 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/services/functional-medicine",
+    "/services/functional-medicine/lab-testing",
+    "/services/functional-medicine/nutritional-counseling",
+    "/services/functional-medicine/physician-grade-supplementation",
+    "/services/bio-identical-hormone-replacement-therapy"
+  ],
+  "city_pages": [],
+  "ignore": [
+    "/services",
+    "/conditions/diabetes"
+  ],
+  "trust": {
+    "about_page": "/about",
+    "team_page": null,
+    "faq_page": "/faq",
+    "pricing_page": null,
+    "financing_page": null,
+    "privacy_policy": "/privacy-policy"
+  }
+}

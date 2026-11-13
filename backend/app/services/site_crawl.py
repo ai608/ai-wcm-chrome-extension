@@ -18,7 +18,7 @@ from selectolax.lexbor import LexborHTMLParser
 
 from app.core.config import settings
 from app.core.exceptions import AppError
-from app.services import page_patterns, usage
+from app.services import area_pages, page_patterns, page_signals, usage
 from app.services.constants import (
     BOOKING,
     CHAT,
@@ -26,7 +26,6 @@ from app.services.constants import (
     CHAT_IFRAME_WORDS,
     CHAT_SCRIPT_WORDS,
     NON_BLOG_SECTIONS,
-    PLACEHOLDER_TEXT,
     SERVICES,
     TRUST,
     TRUST_LINK_TEXT,
@@ -141,6 +140,8 @@ async def _firecrawl_html(
     url: str,
     rendered: bool,
     why: dict[str, str] | None = None,
+    meta: dict[str, Any] | None = None,
+    wait: bool | None = None,
 ) -> str | None:
     """Page HTML through Firecrawl; None when it has none, and `why["error"]` says why.
     `rendered` returns the DOM after the page's JavaScript ran (a few seconds' wait), which is
@@ -158,7 +159,11 @@ async def _firecrawl_html(
                     "url": url,
                     "formats": ["html" if rendered else "rawHtml"],
                     "onlyMainContent": False,
-                    **({"waitFor": 4000} if rendered else {}),
+                    **(
+                        {"waitFor": 4000}
+                        if (rendered if wait is None else wait)
+                        else {}
+                    ),
                 },
                 timeout=60,
             )
@@ -183,6 +188,8 @@ async def _firecrawl_html(
         return None
     usage.record_firecrawl("scrape")
     data = r.json().get("data") or {}
+    if meta is not None:  # final URL and status code, as Firecrawl saw them
+        meta.update(data.get("metadata") or {})
     html = (
         data.get("html" if rendered else "rawHtml")
         or data.get("rawHtml")
@@ -201,6 +208,17 @@ async def scrape(
     return await _firecrawl_html(http, url, False, why)
 
 
+async def scrape_home(
+    http: httpx.AsyncClient,
+    url: str,
+    why: dict[str, str] | None = None,
+    meta: dict[str, Any] | None = None,
+) -> str | None:
+    """The home page as a browser shows it: Firecrawl waits a few seconds for scripts, so JSON-LD,
+    chat widgets and booking buttons that JavaScript adds are in the HTML (scripts are kept)."""
+    return await _firecrawl_html(http, url, False, why, meta, wait=True)
+
+
 async def scrape_rendered(http: httpx.AsyncClient, url: str) -> str | None:
     return await _firecrawl_html(http, url, True)
 
@@ -217,13 +235,22 @@ HUB = re.compile(
 # Files and system paths: never a page worth reading.
 JUNK = re.compile(
     r"\.(pdf|jpe?g|png|webp|gif|svg|mp4|zip|xml|ics|kml)$"
-    r"|/(wp-json|wp-admin|wp-content|feed|cart|checkout|my-account|login|cdn-cgi)(/|$)",
+    r"|/(wp-json|wp-admin|wp-content|wp-includes|feed|cart|checkout|my-account|login|cdn-cgi)(/|$)",
     re.IGNORECASE,
 )
 # Menu dropdowns that hold no services, by their label.
 NOT_SERVICE_MENU = re.compile(
-    r"\b(?:about|news|blog|contact|resource|patient|career|shop|store)", re.IGNORECASE
-)  # a word start: "restore your skin" is not "store"
+    r"\b(?:about|news|blog|contact|resource|patient|career|shop|store|insurance|offers?\b"
+    r"|specials?\b|refer\b|referral|map\b|gallery|reviews?\b|testimonial|membership|gift"
+    r"|financ|pricing|faq|locations?\b|team\b|providers?\b|login|account|book\b|booking)",
+    re.IGNORECASE,
+)  # word starts: "restore your skin" is not "store", "specialist" is not "special"
+# A dropdown label that names a list of services, not one service.
+CATALOG_LABEL = re.compile(
+    r"\b(services?|treatments?|specialt(?:y|ies)|procedures?|menu|all|offerings?|conditions"
+    r"|solutions|programs?|what we (?:do|offer)|aesthetics|wellness|medical)\b",
+    re.IGNORECASE,
+)
 MENU_FOLDER_MIN = (
     4  # menu pages in one folder before the folder counts as a service list
 )
@@ -323,12 +350,14 @@ def _cards(doc: LexborHTMLParser, home: str, menu: Menu) -> None:
 def _link_title(a: Any) -> str:
     """A menu link's own words. A mega-menu card also holds a description line ("Facials" +
     "Restore your skin's glow"), which is not part of the name and can hold words like "about"."""
-    text = a.text(strip=True)
+    full = a.text(strip=True)
+    text = full
     for p in a.css("p"):
         note = p.text(strip=True)
         if note and text.endswith(note):
             text = text[: -len(note)]
-    return " ".join(text.split()).lower()
+    # A link whose only text is in a <p> (<a><p>Gastric Sleeve Surgery</p></a>) keeps it.
+    return " ".join((text if text.strip() else full).split()).lower()
 
 
 def nav_links(html: str, home: str) -> Menu:
@@ -366,8 +395,34 @@ def nav_links(html: str, home: str) -> Menu:
                 parent = clean_url(urljoin(home, href), home)
                 menu.parents.setdefault(parent or "", label)
     menu.parents.pop("", None)
+    _squarespace_folders(doc, home, menu)
     _cards(doc, home, menu)
     return menu
+
+
+def _squarespace_folders(doc: LexborHTMLParser, home: str, menu: Menu) -> None:
+    """Squarespace 7.1 builds dropdowns from divs, not nested lists, so _dropdown_of misses
+    them. Desktop: .header-nav-item--folder holds the folder name and its links. Mobile: a
+    root link with data-folder-id opens the .header-menu-nav-folder with that data-folder."""
+
+    def add(label: str, links: list[Any]) -> None:
+        for a in links:
+            if a.attributes.get("data-action") == "back":
+                continue
+            url = clean_url(urljoin(home, a.attributes.get("href") or ""), home)
+            if url and label:
+                menu.top.setdefault(url, _link_title(a))
+                menu.children.setdefault(url, label)
+
+    for folder in doc.css(".header-nav-item--folder"):
+        title = folder.css_first(".header-nav-folder-title-text")
+        label = " ".join(title.text(strip=True).split()) if title else ""
+        add(label, folder.css(".header-nav-folder-content a[href]"))
+    for opener in doc.css("a[data-folder-id]"):
+        key = opener.attributes.get("data-folder-id") or ""
+        panel = doc.css_first(f'.header-menu-nav-folder[data-folder="{key}"]')
+        if panel is not None:
+            add(" ".join(opener.text(strip=True).split()), panel.css("a[href]"))
 
 
 def _trust_key(url: str, menu: Menu = NO_MENU) -> str | None:
@@ -824,10 +879,20 @@ async def crawl(
             ok, error = False, _why(exc)
     cleaned(mapped, found)
     sources = {"map": len(mapped), "menu": len(menu.top), "home": len(home_links)}
+    found_urls = list(found.values())
     if error:
-        await say("map", "failed", error=error, count=len(found), sources=sources)
+        await say(
+            "map",
+            "failed",
+            error=error,
+            count=len(found_urls),
+            sources=sources,
+            urls=found_urls,
+        )
     else:
-        await say("map", "done", count=len(found), sources=sources)
+        await say(
+            "map", "done", count=len(found_urls), sources=sources, urls=found_urls
+        )
     if mapped:
         more, groups, mode = plan(list(found.values()), url, menu, posts, chosen)
         extra = [u for u in more if u not in chosen]
@@ -1200,6 +1265,34 @@ def _age_days(published_at: str | None, now: datetime) -> int | None:
         return None
 
 
+# Address kinds that are never part of a service's pages, whatever folder they sit in.
+_NOT_CLUSTER_KINDS = frozenset(
+    {
+        "utility",
+        "shop",
+        "legal",
+        "forms",
+        "careers",
+        "team",
+        "archive",
+        "promo",
+        "booking",
+    }
+)
+
+
+def _page_name(url: str, pages: dict[str, str]) -> str:
+    """A page's own name: its H1 or the first part of its title, else its address words."""
+    html = pages.get(url)
+    if html:
+        title, h1 = page_signals.heads(html)
+        name = h1 or re.split(r"\s+[|–—-]\s+|:\s", title)[0]
+        if name.strip():
+            return capwords(name.strip())[:80]
+    slug = urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]
+    return capwords(re.sub(r"[-_]+", " ", slug.rsplit(".", 1)[0]))
+
+
 def enrich(
     sections: dict[str, Any],
     urls: list[str],
@@ -1212,6 +1305,23 @@ def enrich(
     `extra_posts` come from blog_posts(); earlier entries win when a URL repeats."""
     site, convert = sections["site"], sections["convert"]
     all_urls = list(dict.fromkeys([*urls, *pages]))
+    # Pages that should not be live (builder demo content, test or copy pages, "not found"
+    # pages that load) are listed once and left out of every count below.
+    bad = {u: r for u in all_urls if (r := page_signals.unfinished(u, pages.get(u)))}
+    # Real pages with builder default text left on them: listed too, but they still count.
+    leftover = {
+        u: r
+        for u, h in pages.items()
+        if u not in bad and (r := page_signals.placeholder_text(h))
+    }
+    site["unfinished_pages"] = [
+        {"url": u, "reason": r, "counted": False} for u, r in bad.items()
+    ][:30] + [{"url": u, "reason": r, "counted": True} for u, r in leftover.items()][
+        :30
+    ]
+    site["placeholder_pages"] = [*bad, *leftover][:10]  # what the score reads
+    all_urls = [u for u in all_urls if u not in bad]
+    pages = {u: h for u, h in pages.items() if u not in bad}
 
     # A menu that lists many pages under one folder (/category/peels, /category/lasers) is a
     # list of services even when the page does not read as a dropdown.
@@ -1221,24 +1331,81 @@ def enrich(
         if urlsplit(u).path.strip("/").count("/") >= 1
     )
     clusters: dict[str, list[str]] = {}
+    not_service = {
+        u
+        for u, h in pages.items()
+        if page_signals.is_post(h) or page_signals.is_person(h)
+    }
+    flat = bool(menu.top) and not menu.children and not menu.parents
+    # A page that is the site's about, team, FAQ… page is never one of its services.
+    named = page_signals.trust_pages(all_urls, pages)
+    not_service |= {
+        u for k, u in named.items() if k not in ("pricing_page", "financing_page")
+    }
     for u in all_urls:
-        if not _backed(u, menu):
+        if not _backed(u, menu) or u in not_service:
             continue
         cls = classify(u, menu)
         listed = (
             cls == "other"
             and menu.has(u)
-            and folders[urlsplit(u).path.strip("/").split("/")[0]] >= MENU_FOLDER_MIN
+            and (
+                folders[urlsplit(u).path.strip("/").split("/")[0]] >= MENU_FOLDER_MIN
+                # A flat menu (no dropdowns at all, as on many Wix sites): its items are the
+                # site's main pages, so one that is no about, contact, shop or offer page is
+                # most likely a service.
+                or (
+                    flat
+                    and urlsplit(u).path.strip("/") != ""
+                    and not NOT_SERVICE_MENU.search(menu.top.get(u) or "")
+                    and page_patterns.kind(u) not in _NOT_CLUSTER_KINDS
+                )
+            )
         )
+        # A page in a services folder (/services/cardiology) is one even when the menu does
+        # not list it; its name then comes from the page or the address.
+        in_services = cls == "hub_child" and page_patterns.kind(u) == "service"
+        # A dropdown's own page is a service when the dropdown is one ("Weight Loss" over
+        # Semaglutide and Tirzepatide); "Services" or "Treatments" over a list is a catalog.
+        hub_label = menu.parents.get(u, "") if cls == "hub" else ""
+        if hub_label and not (
+            CATALOG_LABEL.search(hub_label) or NOT_SERVICE_MENU.search(hub_label)
+        ):
+            clusters.setdefault(capwords(hub_label), []).append(u)
+            continue
         name = (
             _service_of(u)
             if cls == "service"
-            else capwords(menu.top.get(u) or "")
-            if cls == "menu_child" or listed or (cls == "hub_child" and menu.has(u))
+            else capwords(menu.top.get(u) or "") or _page_name(u, pages)
+            if cls == "menu_child"
+            or listed
+            or (cls == "hub_child" and (menu.has(u) or in_services))
             else None
         )
         if name:
             clusters.setdefault(name, []).append(u)
+    # /botox-savannah/forehead-lines belongs to the Botox cluster: a page under a service page.
+    owner = {
+        urlsplit(u).path.rstrip("/").lower() + "/": name
+        for name, ps in clusters.items()
+        for u in ps
+    }
+    taken = {u for ps in clusters.values() for u in ps}
+    for u in all_urls:
+        if u in taken or u in not_service:
+            continue
+        p = urlsplit(u).path.lower()
+        parent = next(
+            (pre for pre in owner if pre != "/" and p.startswith(pre) and p != pre),
+            None,
+        )
+        if (
+            parent
+            and classify(u, menu) not in ("blog_post", "blog_index", "trust", "proof")
+            and page_patterns.kind(u) not in _NOT_CLUSTER_KINDS
+        ):
+            clusters[owner[parent]].append(u)
+            taken.add(u)
     site["services"]["clusters"] = [
         {
             "service": name,
@@ -1330,8 +1497,17 @@ def enrich(
         }
         for key, label, words in TRUST
         for hit in [
-            next((u for u in all_urls if any(w in u.lower() for w in words)), None)
-            or next((u for u in menu.top if _trust_key(u, menu) == key), None)
+            named.get(key)
+            or next((u for u in all_urls if any(w in u.lower() for w in words)), None)
+            or next(
+                (
+                    u
+                    for u in menu.top
+                    # an "About" link to /#about is the home page: never a trust page
+                    if urlsplit(u).path.strip("/") and _trust_key(u, menu) == key
+                ),
+                None,
+            )
         ]
     ]
     faq = next((u for u, h in pages.items() if _has_faq(h)), None)
@@ -1343,9 +1519,6 @@ def enrich(
             else t
             for t in site["trust"]
         ]
-    site["placeholder_pages"] = [
-        u for u, h in pages.items() if any(p in h.lower() for p in PLACEHOLDER_TEXT)
-    ][:10]
     site["pages_crawled"] = len(pages) + 1
 
     html_all = " ".join(pages.values()).lower()
@@ -1363,6 +1536,129 @@ def enrich(
     for check in convert["checks"]:
         if check["key"] == "online_booking" and convert["online_booking"]:
             check["status"] = "ok"
+
+
+_GENERIC_WORDS = frozenset(
+    {
+        "and",
+        "the",
+        "for",
+        "with",
+        "our",
+        "your",
+        "services",
+        "service",
+        "treatment",
+        "treatments",
+        "therapy",
+        "therapies",
+        "program",
+        "programs",
+        "care",
+        "support",
+        "in",
+    }
+)
+
+
+def _words(text: str) -> set[str]:
+    return {
+        w
+        for w in re.findall(r"[a-z0-9]+", text.lower())
+        if len(w) > 1 and w not in _GENERIC_WORDS
+    }
+
+
+def _same_word(a: str, b: str) -> bool:
+    return a == b or (min(len(a), len(b)) >= 5 and (a.startswith(b) or b.startswith(a)))
+
+
+def _names_page(
+    name: str, url: str, strict: bool = False, drop: frozenset[str] = frozenset()
+) -> bool:
+    """Does a service name and a page address say the same thing? Either every word of the
+    name is in the address ("Peptide Therapy" ~ /peptide-therapy/) or every word of the
+    address is in the name ("Botox & Dermal Fillers" ~ /category/botox). `strict` keeps only
+    the second: an address with words the name lacks is about something else
+    ("Botox" is not /botox-aftercare). `drop` are words to ignore, like the clinic's town."""
+    named = _words(name)
+    slug = _words(urlsplit(url).path.rstrip("/").rsplit("/", 1)[-1]) - drop
+    if not named or not slug:
+        return False
+    address_in_name = all(any(_same_word(s, n) for n in named) for s in slug)
+    if strict:
+        return address_in_name
+    return address_in_name or all(any(_same_word(n, s) for s in slug) for n in named)
+
+
+def apply_schema_services(
+    sections: dict[str, Any],
+    services: list[dict[str, Any]],
+    urls: list[str],
+    menu: Menu = NO_MENU,
+    areas: list[str] | None = None,
+) -> None:
+    """Services the site lists in its own structured data. A service with its page's address
+    adds that page; one without is matched to a page by name. Pages already counted keep their
+    cluster. Services with no page are kept in `schema_only`: offered, but no page for them."""
+    site = sections["site"]["services"]
+    clusters = site["clusters"]
+
+    def path(u: str) -> str:  # http/https and www differ between schema and crawl
+        return urlsplit(u).path.rstrip("/").lower() or "/"
+
+    # The site names the places it serves: a page named after one ("/tampa",
+    # "/weight-loss-medication/tampa") is that place's page, not a service page.
+    localities = (sections["site"].get("schema_lists") or {}).get("localities") or []
+    own = area_pages.own_places(areas or [], urls, localities)
+    town_words = frozenset(w for slug in own for w in slug.split("-"))
+    area_pages_ = {
+        path(u)
+        for a in areas or []
+        for u in area_pages.pages_named(a, urls, own=area_pages.place_slug(a) in own)
+    }
+    for c in clusters:
+        c["pages"] = [u for u in c["pages"] if path(u) not in area_pages_]
+        c["found"] = len(c["pages"])
+    clusters[:] = [c for c in clusters if c["pages"] or c.get("source") == "schema"]
+    urls = [u for u in urls if path(u) not in area_pages_]
+    known = {path(u): u for u in urls}
+    counted = {path(u) for c in clusters for u in c["pages"]}
+    schema_only: list[str] = []
+    for svc in services:
+        name, given = svc["name"], svc.get("url")
+        pages: list[str] = []
+        if given and path(given) in known and path(given) != "/":
+            pages = [known[path(given)]]
+        else:
+            pages = [
+                u
+                for u in urls
+                if classify(u, menu)
+                not in ("blog_post", "blog_index", "trust", "city", "proof")
+                and _names_page(name, u, strict=True, drop=town_words)
+                and (menu.has(u) or _under_hub(u) or urlsplit(u).path.count("-") <= 4)
+            ]
+        new = [u for u in pages if path(u) not in counted]
+        if not pages:
+            schema_only.append(name)
+        if not new:
+            continue
+        clusters.append(
+            {
+                "service": name,
+                "found": len(new),
+                "expected": max(len(new), 3),
+                "pages": new[:20],
+                "topics_present": [],
+                "topics_missing": [],
+                "source": "schema",
+            }
+        )
+        counted |= {path(u) for u in new}
+    site["schema_only"] = schema_only[:20]
+    site["cluster_pages_found"] = sum(c["found"] for c in clusters)
+    site["cluster_pages_expected"] = sum(c["expected"] for c in clusters)
 
 
 def _has_faq(html: str) -> bool:

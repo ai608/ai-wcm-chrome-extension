@@ -70,6 +70,9 @@ class Settings(BaseSettings):
     FIRECRAWL_FALLBACKS: int = Field(default=10, ge=0)
     # Seconds to wait before the one retry of a failed read (a Retry-After header wins, up to 5).
     CRAWL_RETRY_DELAY_S: float = Field(default=1.0, ge=0)
+    # One audit is stopped and marked failed after this many seconds, whatever step is slow.
+    # An audit takes about 80 s; this leaves room for slow sites and rate-limited providers.
+    AUDIT_MAX_S: float = Field(default=600.0, gt=0)
     # A site that blocks direct reads is read through Firecrawl: at most this many pages, this
     # many at a time (Firecrawl limits requests per minute), and a Retry-After up to this many
     # seconds is waited for. A longer one is not: that page is reported as rate limited.

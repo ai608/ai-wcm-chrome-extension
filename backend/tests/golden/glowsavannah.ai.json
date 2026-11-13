@@ -1,0 +1,166 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://www.glowsavannah.com/dermal-fillers-savannah/": {
+      "label": "service",
+      "service": "Dermal Fillers"
+    },
+    "https://www.glowsavannah.com/wellness/vitamin-shots/b12-shot/": {
+      "label": "service",
+      "service": "B12 Shots"
+    },
+    "https://www.glowsavannah.com/concerns/acne-scarring/": {
+      "label": "service",
+      "service": "Acne & Scarring Treatments"
+    },
+    "https://www.glowsavannah.com/concerns/forehead-temple-fillers/": {
+      "label": "service",
+      "service": "Forehead & Temple Fillers"
+    },
+    "https://www.glowsavannah.com/glow-up-plan/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.glowsavannah.com/concerns/skincare/": {
+      "label": "service",
+      "service": "Medical-Grade Skincare"
+    },
+    "https://www.glowsavannah.com/botox-savannah/": {
+      "label": "service",
+      "service": "Botox"
+    },
+    "https://www.glowsavannah.com/all-services/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.glowsavannah.com/botox-savannah/crows-feet": {
+      "label": "service",
+      "service": "Botox for Crow's Feet"
+    },
+    "https://www.glowsavannah.com/botox-savannah/forehead-lines": {
+      "label": "service",
+      "service": "Botox for Forehead Lines"
+    },
+    "https://www.glowsavannah.com/masseter-botox-tmj-savannah/": {
+      "label": "service",
+      "service": "Masseter Botox"
+    },
+    "https://www.glowsavannah.com/botox-savannah/brow-lift": {
+      "label": "service",
+      "service": "Botox Brow Lift"
+    },
+    "https://www.glowsavannah.com/botox-savannah/frown-lines": {
+      "label": "service",
+      "service": "Botox for Frown Lines"
+    },
+    "https://www.glowsavannah.com/wellness/semaglutide/": {
+      "label": "service",
+      "service": "Semaglutide"
+    },
+    "https://www.glowsavannah.com/concerns/lip-flip-vs-lip-filler/": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://www.glowsavannah.com/wellness/vitamin-shots/": {
+      "label": "service",
+      "service": "Wellness Shots"
+    },
+    "https://www.glowsavannah.com/ariessence-microneedling-savannah/": {
+      "label": "service",
+      "service": "Ariessence Microneedling"
+    },
+    "https://www.glowsavannah.com/ipl-laser-savannah/": {
+      "label": "service",
+      "service": "BBL Photofacial"
+    },
+    "https://www.glowsavannah.com/concerns/neck-decolletage/": {
+      "label": "service",
+      "service": "Neck & D\u00e9colletage Treatments"
+    },
+    "https://www.glowsavannah.com/skinvive/": {
+      "label": "service",
+      "service": "SkinVive"
+    },
+    "https://www.glowsavannah.com/concerns/fine-lines-wrinkles/": {
+      "label": "service",
+      "service": "Fine Lines & Wrinkle Fillers"
+    },
+    "https://www.glowsavannah.com/concerns/pigmentation-brightening/": {
+      "label": "service",
+      "service": "Pigmentation Treatments"
+    },
+    "https://www.glowsavannah.com/telehealth/": {
+      "label": "service",
+      "service": "Telehealth Wellness"
+    },
+    "https://www.glowsavannah.com/broadband-light-bbl-therapy-glow-med-spa-savannah/": {
+      "label": "service",
+      "service": "BBL Photofacial"
+    },
+    "https://www.glowsavannah.com/concerns/skin-rejuvenation-hydration/": {
+      "label": "service",
+      "service": "Skin Rejuvenation & Hydration"
+    },
+    "https://www.glowsavannah.com/laser-tattoo-removal-savannah-safe-effective-tattoo-fading/": {
+      "label": "service",
+      "service": "Laser Tattoo Removal"
+    },
+    "https://www.glowsavannah.com/glowtox/": {
+      "label": "service",
+      "service": "GlowTox"
+    },
+    "https://www.glowsavannah.com/concerns/cheeks-midface-fillers/": {
+      "label": "service",
+      "service": "Cheek & Midface Fillers"
+    },
+    "https://www.glowsavannah.com/lip-flip-savannah/": {
+      "label": "service",
+      "service": "Lip Flip"
+    },
+    "https://www.glowsavannah.com/weightloss/": {
+      "label": "service",
+      "service": "Medical Weight Loss"
+    },
+    "https://www.glowsavannah.com/concerns/": {
+      "label": "other",
+      "service": ""
+    },
+    "https://www.glowsavannah.com/dysport-savannah/": {
+      "label": "service",
+      "service": "Dysport"
+    },
+    "https://www.glowsavannah.com/vi-peel-savannah/": {
+      "label": "service",
+      "service": "VI Peel"
+    },
+    "https://www.glowsavannah.com/kybella-savannah/": {
+      "label": "service",
+      "service": "Kybella"
+    },
+    "https://www.glowsavannah.com/wellness/tirzepatide/": {
+      "label": "service",
+      "service": "Tirzepatide"
+    },
+    "https://www.glowsavannah.com/concerns/lip-fillers-perioral/": {
+      "label": "blog_post",
+      "service": ""
+    },
+    "https://www.glowsavannah.com/concerns/liquid-facelift/": {
+      "label": "service",
+      "service": "Facial Balancing"
+    },
+    "https://www.glowsavannah.com/wellness/peptide-therapy/": {
+      "label": "service",
+      "service": "Peptide Therapy"
+    },
+    "https://www.glowsavannah.com/concerns/nasolabial-folds-marionette-lines/": {
+      "label": "service",
+      "service": "Nasolabial Folds & Marionette Lines"
+    },
+    "https://www.glowsavannah.com/concerns/fat-dissolver/": {
+      "label": "service",
+      "service": "Kybella"
+    }
+  }
+}

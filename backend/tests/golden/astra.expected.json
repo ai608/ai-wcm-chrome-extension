@@ -1,0 +1,60 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/menopause",
+    "/bioidentical-hormone-therapy",
+    "/hormone-wellness-programs",
+    "/family-planning",
+    "/womens-sexual-health",
+    "/low-testosterone",
+    "/iv-therapy-and-vitamins",
+    "/hairloss",
+    "/weight-loss-programs",
+    "/hormone-pellet-therapy",
+    "/mens-hormone-therapy-trt",
+    "/rf-microneedling",
+    "/functional-medicine"
+  ],
+  "city_pages": [
+    "/functional-medicine-clinic-near-st-george-utah",
+    "/service-areas/apple-valley-ut",
+    "/service-areas/beaver-dam-az",
+    "/service-areas/cedar-city-ut",
+    "/service-areas/colorado-city-az",
+    "/service-areas/damascus-ut",
+    "/service-areas/hildale-ut",
+    "/service-areas/holistic-wellness-services-near-parowan-utah",
+    "/service-areas/holistic-wellness-services-near-toquerville-utah",
+    "/service-areas/hormone-therapy-med-spa-near-washington-ut",
+    "/service-areas/hurricane-ut",
+    "/service-areas/ivins-ut",
+    "/service-areas/kanab-ut",
+    "/service-areas/la-verkin-ut",
+    "/service-areas/leeds-ut",
+    "/service-areas/littlefield-az",
+    "/service-areas/mesquite-nv",
+    "/service-areas/parowan-ut",
+    "/service-areas/santa-clara-ut",
+    "/service-areas/springdale-ut",
+    "/service-areas/st-george-ut",
+    "/service-areas/toquerville-ut",
+    "/service-areas/virgin-ut",
+    "/service-areas/washington-ut",
+    "/service-areas/welcome-to-personalized-wellness-near-cedar-city-ut",
+    "/service-areas/wellness-services-near-virgin-utah"
+  ],
+  "ignore": [
+    "/medical-spa",
+    "/service-areas",
+    "/hormone-wellness-programs-in-logan"
+  ],
+  "trust": {
+    "about_page": "/about",
+    "team_page": null,
+    "faq_page": null,
+    "pricing_page": null,
+    "financing_page": null,
+    "privacy_policy": "/privacy-policy"
+  }
+}

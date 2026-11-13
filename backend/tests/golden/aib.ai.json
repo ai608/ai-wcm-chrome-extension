@@ -1,0 +1,14 @@
+{
+  "prompt_version": 2,
+  "model": "anthropic/claude-sonnet-5.5",
+  "labels": {
+    "https://aibmedicalspa.com/m/account": {
+      "label": "other",
+      "service": ""
+    },
+    "https://aibmedicalspa.com/m/create-account": {
+      "label": "other",
+      "service": ""
+    }
+  }
+}

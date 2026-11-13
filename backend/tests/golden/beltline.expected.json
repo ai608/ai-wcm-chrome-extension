@@ -1,0 +1,43 @@
+{
+  "reviewed": false,
+  "note": "Draft written by Claude from page titles and H1s on 2026-11-12, not from the audit's output. Check it, fix it, then set reviewed to true.",
+  "service_pages": [
+    "/gastric-sleeve-surgery",
+    "/gastric-bypass-surgery",
+    "/duodenal-switch-weight-loss-surgery",
+    "/revision-weight-loss-surgery",
+    "/robotic-weight-loss-surgery",
+    "/polycystic-ovary-syndrome-learn-more-beltline-health",
+    "/minimally-invasive-surgery",
+    "/non-surgical-weight-loss-options",
+    "/hernia-and-reflux-surgery",
+    "/frequent-heartburn",
+    "/vein-center",
+    "/varicose-vein-treatment-2",
+    "/spider-vein-removal-near-me",
+    "/chronic-venous-insufficiency-cvi-treatment",
+    "/bariatric-surgery-weight-loss-options"
+  ],
+  "city_pages": [
+    "/atlanta",
+    "/newnan",
+    "/stockbridge"
+  ],
+  "ignore": [
+    "/weight-loss-specialists",
+    "/after-care-program",
+    "/vitamins",
+    "/locations"
+  ],
+  "trust": {
+    "about_page": "/about-us",
+    "team_page": [
+      "/our-team",
+      "/your-weight-loss-team"
+    ],
+    "faq_page": "/frequently-asked-questions",
+    "pricing_page": null,
+    "financing_page": "/financing",
+    "privacy_policy": "/privacy-policy"
+  }
+}
