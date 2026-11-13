@@ -200,7 +200,7 @@ describe('App view switch', () => {
     expect(screen.getByText('Report', { exact: true })).toBeDefined()
     expect(screen.getByRole('heading', { name: 'Report is ready' })).toBeDefined()
     expect(screen.queryByText('Open a clinic website or a GHL contact')).toBeNull()
-    const sendTab = vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockResolvedValue({ ok: true })
+    const sendTab = vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockResolvedValue({ ok: true } as never)
     fireEvent.click(screen.getByRole('button', { name: 'Download as PDF' }))
     expect(sendTab).toHaveBeenCalledWith(9, { type: 'wcm-report-pdf', auditId: 'aud_9' })
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
