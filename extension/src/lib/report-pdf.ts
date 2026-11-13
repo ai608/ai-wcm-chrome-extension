@@ -216,7 +216,7 @@ function slicePage(
   ctx.drawImage(source, 0, sy, source.width, drawH, 0, top, source.width, drawH)
   const inset = PAGE_INSET * RASTER
   ctx.fillStyle = '#1a1a1a'
-  ctx.font = `${12 * RASTER}px Poppins, sans-serif`
+  ctx.font = `${12 * RASTER}px 'Plus Jakarta Sans', sans-serif`
   ctx.textBaseline = 'middle'
   const foot = page.height - (PAGE_FOOTER * RASTER) / 2
   ctx.textAlign = 'left'

@@ -145,7 +145,7 @@ export function CallMode({
           </div>
         </div>
       </Tabs>
-      <footer className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[12px] text-muted-foreground">
+      <footer className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[13px] text-foreground/75">
         <span>Call Mode</span>
         <span>{envLabel()}</span>
       </footer>

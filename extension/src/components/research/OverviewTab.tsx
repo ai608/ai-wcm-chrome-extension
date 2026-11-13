@@ -108,7 +108,7 @@ function CategoryChips({ o, legacy }: { o: OverviewSection; legacy: boolean }) {
           <li
             key={c.key}
             title={`${c.label}: not assessed (no data), left out of the score`}
-            className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-[12px] text-muted-foreground"
+            className="rounded-full border border-border bg-muted px-2.5 py-0.5 text-[13px] text-foreground/70"
           >
             {c.label} · not assessed
           </li>
@@ -120,7 +120,7 @@ function CategoryChips({ o, legacy }: { o: OverviewSection; legacy: boolean }) {
                 ? `${c.label}: ${c.score} / 100, weight ${c.weight}, ${c.pointsLost ?? 0} points lost`
                 : `${c.label}: ${c.score} / 100`
             }
-            className={`rounded-full border px-2.5 py-0.5 text-[12px] font-semibold ${gradeText(c.grade)}`}
+            className={`rounded-full border px-2.5 py-0.5 text-[13px] font-semibold ${gradeText(c.grade)}`}
           >
             {c.label} {c.grade}
             {c.weight != null && c.pointsLost ? (
@@ -265,12 +265,12 @@ export function OverviewTab({ audit }: { audit: Audit }) {
         </Button>
       </div>
       <Block title="What’s costing them calls">
-        <ol className="flex list-decimal flex-col gap-2.5 pl-5 text-[14px]">
+        <ol className="flex list-decimal flex-col gap-2.5 pl-5 text-[15px]">
           {o.topIssues.map((i) => (
             <li key={i.title}>
-              <p className="text-[12px] text-muted-foreground">{labelOf(i.category)}</p>
-              <p className="font-semibold">{i.title}</p>
-              <p className="text-muted-foreground">{i.detail}</p>
+              <p className="text-[13px] font-medium text-foreground/70">{labelOf(i.category)}</p>
+              <p className="font-semibold text-foreground">{i.title}</p>
+              <p className="text-[14px] text-foreground/80">{i.detail}</p>
             </li>
           ))}
         </ol>

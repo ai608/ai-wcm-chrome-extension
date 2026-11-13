@@ -1,33 +1,37 @@
 @font-face {
-  font-family: 'Poppins';
+  font-family: 'Plus Jakarta Sans';
   font-style: normal;
   font-display: swap;
   font-weight: 400;
-  src: url('@fontsource/poppins/files/poppins-latin-400-normal.woff2') format('woff2');
+  src: url('@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-400-normal.woff2')
+    format('woff2');
 }
 
 @font-face {
-  font-family: 'Poppins';
+  font-family: 'Plus Jakarta Sans';
   font-style: normal;
   font-display: swap;
   font-weight: 500;
-  src: url('@fontsource/poppins/files/poppins-latin-500-normal.woff2') format('woff2');
+  src: url('@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-500-normal.woff2')
+    format('woff2');
 }
 
 @font-face {
-  font-family: 'Poppins';
+  font-family: 'Plus Jakarta Sans';
   font-style: normal;
   font-display: swap;
   font-weight: 600;
-  src: url('@fontsource/poppins/files/poppins-latin-600-normal.woff2') format('woff2');
+  src: url('@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-600-normal.woff2')
+    format('woff2');
 }
 
 @font-face {
-  font-family: 'Poppins';
+  font-family: 'Plus Jakarta Sans';
   font-style: normal;
   font-display: swap;
   font-weight: 700;
-  src: url('@fontsource/poppins/files/poppins-latin-700-normal.woff2') format('woff2');
+  src: url('@fontsource/plus-jakarta-sans/files/plus-jakarta-sans-latin-700-normal.woff2')
+    format('woff2');
 }
 @import "tailwindcss";
 @import "tw-animate-css";
@@ -37,8 +41,8 @@
 
 @theme inline {
   --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
-  --font-heading: 'Poppins', ui-sans-serif, system-ui, sans-serif;
-  --font-sans: 'Poppins', ui-sans-serif, system-ui, sans-serif;
+  --font-heading: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
   --color-accent-wcm: oklch(70.09% 0.177 50.12);
   --color-dark-wcm: oklch(0.205 0 0);
   --color-brand-blue: oklch(42.2% 0.168 260.5);
@@ -103,7 +107,7 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.52 0 0);
+  --muted-foreground: oklch(0.42 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -212,7 +216,7 @@
 
 body {
   min-width: 320px;
-  font-size: 14px;
+  font-size: 15px;
 }
 
 /* Custom scrollbar */
@@ -340,21 +344,23 @@ body {
    light set so a dark panel theme cannot turn the PDF into a dark card. */
 .report-root {
   --background: oklch(1 0 0);
-  --foreground: oklch(0.2 0 0);
+  --foreground: oklch(0.145 0 0);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.2 0 0);
+  --card-foreground: oklch(0.145 0 0);
   --primary: oklch(0.428 0.165 249.23);
   --primary-foreground: oklch(0.985 0 0);
-  --success: oklch(0.46 0.17 149.21);
+  /* Same lightness on green, amber, and red so the score bars read as one set. */
+  --success: oklch(0.58 0.16 150);
   --success-foreground: oklch(0.985 0 0);
+  --color-accent-wcm: oklch(0.58 0.16 55);
   --muted: oklch(0.96 0 0);
-  --muted-foreground: var(--foreground);
+  --muted-foreground: oklch(0.35 0 0);
   --border: oklch(0.86 0 0);
-  --destructive: oklch(0.5 0.2 27);
+  --destructive: oklch(0.58 0.17 27);
   color-scheme: light;
   background: white;
   color: var(--foreground);
-  font-size: 11pt;
+  font-size: 12pt;
   line-height: 1.45;
   overflow-wrap: break-word;
   min-height: 100vh;
@@ -460,20 +466,11 @@ body {
   line-height: 1;
 }
 .report-root .fill-good {
-  background: var(--success);
+  background: oklch(0.69 0.19 145);
 }
-.report-root .fill-mid {
-  background: var(--color-accent-wcm);
-}
+.report-root .fill-mid,
 .report-root .fill-bad {
-  background: var(--destructive);
-}
-/* Score bars only. The shared greens and reds are too dark on a thin track. */
-.report-track .fill-good {
-  background: oklch(0.74 0.16 150);
-}
-.report-track .fill-bad {
-  background: oklch(0.7 0.16 27);
+  background: oklch(0.69 0.19 27);
 }
 .report-root .tone-good {
   color: var(--success);
@@ -517,11 +514,11 @@ body {
 }
 .report-footnote {
   margin-top: 8pt;
-  font-size: 9pt;
+  font-size: 10.5pt;
   color: var(--muted-foreground);
 }
 .report-bridge {
-  font-size: 10.5pt;
+  font-size: 11pt;
   color: var(--muted-foreground);
 }
 .report-tiles {
@@ -580,7 +577,7 @@ body {
 }
 .report-gbp-cat {
   margin-top: 2pt;
-  font-size: 10pt;
+  font-size: 11pt;
   font-weight: 600;
   color: var(--primary);
 }
@@ -596,7 +593,7 @@ body {
 }
 .report-gbp-rating p + p {
   margin-top: 2pt;
-  font-size: 9pt;
+  font-size: 10.5pt;
 }
 .report-gbp-checks {
   display: grid;
@@ -622,7 +619,7 @@ body {
 .report-tile span {
   display: block;
   margin-top: 4pt;
-  font-size: 9pt;
+  font-size: 10.5pt;
   line-height: 1.3;
   color: var(--muted-foreground);
 }
@@ -658,7 +655,7 @@ body {
 }
 .report-why,
 .report-note {
-  font-size: 10.5pt;
+  font-size: 11pt;
 }
 .report-note {
   margin-top: 8pt;
@@ -675,7 +672,7 @@ body {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 .report-speed-label {
-  font-size: 10.5pt;
+  font-size: 11pt;
   font-weight: 600;
 }
 .report-speed .report-meters {
@@ -692,6 +689,11 @@ body {
   grid-template-columns: minmax(0, 1fr) 56pt 12pt;
   align-items: center;
   column-gap: 8pt;
+  font-size: 11pt;
+}
+.report-grade-line > span:first-child {
+  font-weight: 500;
+  color: var(--foreground);
 }
 .report-grade-meter {
   display: block;
@@ -706,14 +708,14 @@ body {
   min-width: 6pt;
   border-radius: 999px;
 }
-.report-root .report-grade-meter > .fill-good {
-  background: oklch(0.62 0.17 145);
+/* Same bright green and red as the check marks. */
+.report-root .report-grade-meter > .fill-good,
+.report-root .report-track .fill-good {
+  background: oklch(0.69 0.19 145);
 }
-.report-root .report-grade-meter > .fill-mid {
-  background: oklch(0.72 0.16 55);
-}
-.report-root .report-grade-meter > .fill-bad {
-  background: oklch(0.62 0.2 25);
+.report-root .report-grade-meter > .fill-bad,
+.report-root .report-track .fill-bad {
+  background: oklch(0.69 0.19 27);
 }
 .report-grade-letter {
   font-weight: 700;
@@ -721,8 +723,16 @@ body {
 }
 .report-grade-skip {
   grid-column: 2 / -1;
-  font-size: 9pt;
+  font-size: 10.5pt;
   text-align: right;
+}
+.report-issue-cat {
+  font-size: 10.5pt;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.report-issues .report-muted {
+  font-size: 11pt;
 }
 .report-issues,
 .report-fixes {
@@ -775,7 +785,7 @@ body {
 .report-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 10.5pt;
+  font-size: 11pt;
 }
 .report-table th {
   padding: 0 10pt 4pt 0;
@@ -846,11 +856,17 @@ body {
     min-height: 0;
     background: white;
   }
+  /* Repeating thead band: air above content on every printed page. */
   .report-page-gap {
-    height: 0;
+    height: 12mm;
   }
   .report-page-gap-end {
     height: 16mm;
+  }
+  /* Page 1 only: pull the masthead up so it covers the thead gap (flush to the top edge).
+     Margin on <tr> is ignored; the masthead is a real block. */
+  .report-pages > tbody > tr.report-banner .report-masthead {
+    margin-top: -12mm;
   }
   .report-masthead-inner {
     max-width: none;

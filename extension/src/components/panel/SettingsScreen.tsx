@@ -162,7 +162,7 @@ export function SettingsScreen({ user }: { user: User }) {
           </section>
         </div>
       </main>
-      <footer className="flex items-center justify-between border-t border-border px-4 py-2 text-[11px] text-muted-foreground">
+      <footer className="flex items-center justify-between border-t border-border px-4 py-2 text-[13px] text-foreground/75">
         <span>WCM Sales Assistant</span>
         <span>Version {version}</span>
       </footer>

@@ -63,7 +63,7 @@ export function StatBox({
       >
         {value}
       </p>
-      <p className="text-[12px] text-muted-foreground">{label}</p>
+      <p className="text-[13px] text-foreground/75">{label}</p>
     </div>
   )
 }
@@ -108,7 +108,7 @@ export function Row({
         <span aria-hidden="true" className="size-2 shrink-0" />
       )}
       <span className="w-32 shrink-0 font-semibold text-foreground">{label}</span>
-      <span className="min-w-0 flex-1 break-words text-muted-foreground">{children}</span>
+      <span className="min-w-0 flex-1 break-words text-foreground/90">{children}</span>
     </div>
   )
 }
