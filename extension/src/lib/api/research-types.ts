@@ -53,6 +53,9 @@ export function isLegacyOverview(o: OverviewSection): boolean {
 }
 
 export interface BusinessSection {
+  /** `not_found`: searched Google Maps, no match. `not_checked`: no key, or the search failed. */
+  gbpStatus?: 'found' | 'not_found' | 'not_checked'
+  gbpNote?: string | null
   gbp: {
     matched: boolean
     matchReason: string | null
@@ -277,9 +280,17 @@ export interface SchemaSection {
 export interface SiteSection {
   platform: { name: string | null; detail: string | null }
   pagesCrawled: number
+  /**
+   * Pages that should not be live (builder demo content, test or copy pages, "not found" pages
+   * that load: `counted` false, left out of every count) and real pages with builder default
+   * text left on them (`counted` true). Older audits lack it.
+   */
+  unfinishedPages?: { url: string; reason: string; counted: boolean }[]
   services: {
     clusterPagesFound: number
     clusterPagesExpected: number
+    /** `rules`: page types by address and menu only (no AI key, or the AI call failed). */
+    typesBy?: 'rules' | 'rules+ai'
     clusters: {
       service: string
       found: number
@@ -297,6 +308,8 @@ export interface SiteSection {
     /** Each area the site claims: its page, if any, and what is wrong with it. Older audits lack it. */
     areas?: {
       name: string
+      /** `location`: the clinic's own town (an office); `service_area`: a nearby town. */
+      kind?: 'location' | 'service_area'
       status: 'covered' | 'needs_work' | 'mentioned' | 'missing'
       pages: string[]
       issues: ('noindex' | 'thin' | 'title_h1' | 'duplicate')[]

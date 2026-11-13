@@ -197,7 +197,7 @@ describe('Overview score', () => {
     )
     expect(chips).toHaveLength(9)
     const gbp = screen.getByText('Google Business Profile · not assessed')
-    expect(gbp.className).toContain('text-muted-foreground')
+    expect(gbp.className).toContain('text-foreground/70')
     expect(screen.getByText('Reviews · not assessed')).toBeDefined()
     expect(screen.getByText('Provisional: No Google Business Profile found.')).toBeDefined()
     expect(screen.getAllByText('Service pages').length).toBeGreaterThan(0)

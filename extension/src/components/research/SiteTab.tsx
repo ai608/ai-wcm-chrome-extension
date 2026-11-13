@@ -45,6 +45,8 @@ export function gapInventory(audit: Audit): Gap[] {
       for (const c of site.cities.claimedNotBuilt)
         gaps.push({ area: 'Cities', item: `${c} (claimed, no page)` })
     }
+    for (const p of site.unfinishedPages ?? [])
+      gaps.push({ area: 'Clean-up', item: `${pathOf(p.url)}: ${p.reason}` })
     if (!site.proof.beforeAfterGallery) gaps.push({ area: 'Proof', item: 'Before/after gallery' })
     if (!site.proof.testimonialPages) gaps.push({ area: 'Proof', item: 'Testimonial pages' })
     if (!site.proof.reviewsPage) gaps.push({ area: 'Proof', item: 'Reviews page' })
@@ -72,6 +74,12 @@ function Services({ s }: { s: SiteSection['services'] }) {
           tone={low ? 'bad' : 'good'}
         />
       </div>
+      {s.typesBy === 'rules' ? (
+        <p className="text-[12px] text-muted-foreground">
+          Page types by address and menu only: the AI check did not run, so a blog post can be
+          counted as a service page.
+        </p>
+      ) : null}
       <Accordion className="rounded-md border border-border px-2.5">
         {s.clusters.map((c) => (
           <AccordionItem key={c.service} value={c.service}>
@@ -145,7 +153,7 @@ function Cities({ c }: { c: SiteSection['cities'] }) {
           {c.areas.map((a) => (
             <Row
               key={a.name}
-              label={a.name}
+              label={a.kind === 'location' ? `${a.name} (office)` : a.name}
               status={a.status === 'covered' ? 'ok' : a.status === 'missing' ? 'fail' : 'warn'}
             >
               {a.status === 'covered'
@@ -283,6 +291,28 @@ function Trust({ audit, t }: { audit: Audit; t: SiteSection['trust'] }) {
   )
 }
 
+/** Pages that should not be live, or carry builder default text: a concrete fix for the clinic. */
+function CleanUp({ pages }: { pages: NonNullable<SiteSection['unfinishedPages']> }) {
+  if (!pages.length) return null
+  return (
+    <Block title={`Pages to clean up (${pages.length})`}>
+      {pages.map((p) => (
+        <Row key={p.url} label={pathOf(p.url)} status={p.counted ? 'warn' : 'fail'}>
+          <ExtLink href={p.url}>{p.reason}</ExtLink>
+        </Row>
+      ))}
+    </Block>
+  )
+}
+
+function pathOf(url: string): string {
+  try {
+    return new URL(url).pathname || '/'
+  } catch {
+    return url
+  }
+}
+
 export function SiteTab({ audit, site }: { audit: Audit; site: SiteSection }) {
   const sub = (usePanelStore((s) => s.researchSubTab.site) as Sub | undefined) ?? 'services'
   const setSub = usePanelStore((s) => s.setResearchSubTab)
@@ -293,6 +323,7 @@ export function SiteTab({ audit, site }: { audit: Audit; site: SiteSection }) {
         {site.platform.detail ? ` (${site.platform.detail})` : ''} · {site.pagesCrawled} pages
         crawled
       </p>
+      <CleanUp pages={site.unfinishedPages ?? []} />
       <SubTabs value={sub} onChange={(v) => setSub('site', v)} items={SUBS} />
       {sub === 'services' ? <Services s={site.services} /> : null}
       {sub === 'cities' ? <Cities c={site.cities} /> : null}

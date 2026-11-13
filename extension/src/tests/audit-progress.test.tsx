@@ -50,6 +50,13 @@ describe('AuditProgress', () => {
     expect(screen.getByText('How this audit ran')).toBeTruthy()
     expect(screen.getByText('8 read, 1 failed')).toBeTruthy()
     expect(screen.getByText('Audit finished')).toBeTruthy()
+    const found = screen.getByText('Show found URLs').closest('details')
+    expect(found?.className).toContain('group/pages')
+    expect(found?.querySelector('svg')?.getAttribute('class')).toContain(
+      'group-open/pages:rotate-90',
+    )
+    fireEvent.click(screen.getByText('Show found URLs'))
+    expect(screen.getByText('/found/0')).toBeTruthy()
     const chosen = screen.getByText('Show chosen pages').closest('details')
     expect(chosen?.className).toContain('group/pages')
     expect(chosen?.querySelector('svg')?.getAttribute('class')).toContain(

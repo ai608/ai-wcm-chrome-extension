@@ -330,7 +330,15 @@ export function mockTrace(
     { id: 'analyze', start: 500, end: 900, detail: {} },
     fails
       ? { id: 'map', start: 900, end: 1900, status: 'failed', detail: { error: 'HTTP 402' } }
-      : { id: 'map', start: 900, end: 1900, detail: { count: 142 } },
+      : {
+          id: 'map',
+          start: 900,
+          end: 1900,
+          detail: {
+            count: 142,
+            urls: Array.from({ length: 12 }, (_, i) => `${base}/found/${i}`),
+          },
+        },
     { id: 'psi', start: 900, end: 4000, detail: { mobile: 64, desktop: 88 } },
   ]
   if (!fails) {

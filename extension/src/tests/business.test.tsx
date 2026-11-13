@@ -74,6 +74,29 @@ describe('Business tab', () => {
     expect(screen.queryByText('Socials')).toBeNull()
   })
 
+  it('shows the Call Mode website summary when an audit is passed', async () => {
+    const { BusinessTab } = await import('@/components/research/BusinessTab')
+    const a = buildAudit('aud_b', 'clinic.example', 'https://clinic.example/', new Date())
+    if (!a.business) throw new Error('fixture')
+    render(<BusinessTab business={a.business} audit={a} website="https://clinic.example" />)
+    expect(screen.getByRole('heading', { name: 'Website' })).toBeTruthy()
+    expect(screen.getByText('clinic.example')).toBeTruthy()
+    expect(screen.getByText('URL')).toBeTruthy()
+  })
+
+  it('keeps profile signals under the GBP card, not as a separate section', async () => {
+    const { BusinessTab } = await import('@/components/research/BusinessTab')
+    const b = business()
+    render(<BusinessTab business={b} website="https://clinic.example" />)
+    expect(screen.queryByRole('heading', { name: 'Profile signals' })).toBeNull()
+    expect(screen.getByText('Website links to Google profile')).toBeTruthy()
+    const gbp = screen.getByRole('heading', { name: 'Google Business Profile' })
+    expect(
+      gbp.compareDocumentPosition(screen.getByText('Website links to Google profile')) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
+  })
+
   it('keeps the socials list when no profile was matched', async () => {
     const { BusinessTab } = await import('@/components/research/BusinessTab')
     const b = business()

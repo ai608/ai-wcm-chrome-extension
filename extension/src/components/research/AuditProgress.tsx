@@ -19,6 +19,7 @@ const STEPS: { id: string; label: string }[] = [
   { id: 'pick', label: 'Choose pages to read' },
   { id: 'scrape', label: 'Read pages' },
   { id: 'enrich', label: 'Build site facts' },
+  { id: 'types', label: 'Check page types' },
   { id: 'probe', label: 'Check links and redirects' },
   { id: 'onpage', label: 'Check every page' },
   { id: 'ai', label: 'AI page analysis' },
@@ -83,10 +84,17 @@ function summary(step: string, e: TraceEvent, steps: Map<string, TraceEvent>): s
   switch (step) {
     case 'home': {
       const size = num(d.size)
+      // Firecrawl reads the home page first (the browser view); the direct fetch is the fallback.
+      // Older audits read directly first and used Firecrawl only when blocked (they carry a reason).
+      const reason = text(d.reason)
       const via =
         d.via === 'firecrawl'
-          ? `Blocked directly${text(d.reason) ? ` (${text(d.reason)})` : ''}, fetched with Firecrawl`
-          : 'Fetched directly'
+          ? reason
+            ? `Blocked directly (${reason}), fetched with Firecrawl`
+            : 'Fetched with Firecrawl (browser view)'
+          : reason
+            ? `Firecrawl could not read it (${reason}), fetched directly`
+            : 'Fetched directly'
       return `${via}${size ? ` · ${Math.max(1, Math.round(size / 1024))} KB` : ''}`
     }
     case 'probe': {
@@ -109,6 +117,8 @@ function summary(step: string, e: TraceEvent, steps: Map<string, TraceEvent>): s
       ].join(', ')
     case 'enrich':
       return `${num(d.pages) ?? 0} pages used`
+    case 'types':
+      return `${num(d.pages) ?? 0} unclear pages read, ${num(d.services) ?? 0} were services`
     case 'ai':
       return `${num(d.pages) ?? 0} pages analysed`
     case 'gbp':
@@ -136,11 +146,13 @@ function readCount(steps: Map<string, TraceEvent>): string | null {
   return total == null ? null : `${seen}/${total} pages read`
 }
 
-function PickGroups({ event }: { event: TraceEvent }) {
-  const groups = Array.isArray(event.detail.groups)
-    ? (event.detail.groups as { name: string; found: number; picked: string[]; skipped: number }[])
-    : []
-  if (!groups.some((g) => g.found > 0)) return null
+function TraceDropdown({
+  label,
+  children,
+}: {
+  label: string
+  children: ReactNode
+}) {
   return (
     <details className="group/pages mt-1.5 text-[12px]">
       <summary className="flex cursor-pointer list-none items-center gap-1 text-primary [&::-webkit-details-marker]:hidden [&::marker]:content-none">
@@ -148,8 +160,34 @@ function PickGroups({ event }: { event: TraceEvent }) {
           aria-hidden="true"
           className="size-3.5 shrink-0 transition-transform duration-200 group-open/pages:rotate-90"
         />
-        Show chosen pages
+        {label}
       </summary>
+      {children}
+    </details>
+  )
+}
+
+function MapUrls({ event }: { event: TraceEvent }) {
+  const urls = Array.isArray(event.detail.urls) ? (event.detail.urls as string[]) : []
+  if (urls.length === 0) return null
+  return (
+    <TraceDropdown label="Show found URLs">
+      <ul className="mt-1.5 ml-3 list-disc break-all text-muted-foreground">
+        {urls.map((u) => (
+          <li key={u}>{pathOf(u)}</li>
+        ))}
+      </ul>
+    </TraceDropdown>
+  )
+}
+
+function PickGroups({ event }: { event: TraceEvent }) {
+  const groups = Array.isArray(event.detail.groups)
+    ? (event.detail.groups as { name: string; found: number; picked: string[]; skipped: number }[])
+    : []
+  if (!groups.some((g) => g.found > 0)) return null
+  return (
+    <TraceDropdown label="Show chosen pages">
       <div className="mt-1.5 flex flex-col gap-2">
         {groups
           .filter((g) => g.found > 0)
@@ -170,7 +208,7 @@ function PickGroups({ event }: { event: TraceEvent }) {
             </div>
           ))}
       </div>
-    </details>
+    </TraceDropdown>
   )
 }
 
@@ -280,6 +318,9 @@ function Steps({ audit, busy }: { audit: Audit; busy: boolean }) {
             >
               {note}
             </p>
+          ) : null}
+          {e && id === 'map' && (e.status === 'done' || e.status === 'failed') ? (
+            <MapUrls event={e} />
           ) : null}
           {e && id === 'pick' && e.status === 'done' ? <PickGroups event={e} /> : null}
           {id === 'scrape' ? <Pages steps={steps} /> : null}

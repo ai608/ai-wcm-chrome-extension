@@ -253,11 +253,9 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
             {timedOut ? (
               <Alert className="mb-3">
-                <AlertDescription className="flex items-center gap-2">
-                  <span className="flex-1">Still running…</span>
-                  <Button size="xs" variant="outline" onClick={() => run(true)}>
-                    Retry
-                  </Button>
+                <AlertDescription>
+                  This is taking longer than usual. It updates here by itself and stops on its own
+                  after a few minutes at most.
                 </AlertDescription>
               </Alert>
             ) : null}
@@ -280,7 +278,12 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
                 ) : (
                   <SectionGate audit={audit} section={t.section}>
                     {t.value === 'business' && audit.business ? (
-                      <BusinessTab business={audit.business} website={siteOrigin(audit.url)} />
+                      <BusinessTab
+                        business={audit.business}
+                        audit={audit}
+                        website={siteOrigin(audit.url)}
+                        bordered
+                      />
                     ) : t.value === 'on_page' && audit.onPage ? (
                       <OnPageTab audit={audit} onPage={audit.onPage} />
                     ) : t.value === 'schema' && audit.schema ? (
@@ -299,7 +302,7 @@ export default function ResearchMode({ tab }: { tab: ActiveTab }) {
           </div>
         </Tabs>
       )}
-      <footer className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[12px] text-muted-foreground">
+      <footer className="flex items-center justify-between border-t border-border px-3 py-1.5 text-[13px] text-foreground/75">
         <span>Research Mode</span>
         <span>{env.apiMock ? 'mock' : env.apiBaseUrl}</span>
       </footer>

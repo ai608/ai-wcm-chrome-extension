@@ -1,12 +1,15 @@
 import { BadgeCheck, Copy, ExternalLink, Globe, MapPin, Phone, Star } from 'lucide-react'
+import type { ReactNode } from 'react'
 import { SocialIcon } from '@/components/research/SocialIcon'
 import { StaticMap } from '@/components/research/StaticMap'
 import { Block, ChipRow, ExtLink, Row } from '@/components/research/shared'
+import { WebsiteSummary } from '@/components/research/WebsiteSummary'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from '@/components/ui/toast'
-import type { BusinessSection } from '@/lib/api/research-types'
+import type { Audit, BusinessSection } from '@/lib/api/research-types'
 import { cn } from '@/lib/utils'
 
 const NETWORK: Record<string, string> = {
@@ -60,19 +63,29 @@ export function GbpCard({
   socials = [],
   website,
   bordered = false,
+  business,
 }: {
   gbp: BusinessSection['gbp']
   socials?: BusinessSection['socials']
   website?: string | null
   bordered?: boolean
+  /** When set, profile signals render under the card as part of GBP. */
+  business?: BusinessSection
 }) {
   if (!gbp?.matched) {
+    const note = business?.gbpNote ? ` ${business.gbpNote}` : ''
+    // "Not found" is a finding about the clinic; "not checked" says nothing about it.
+    const text =
+      business?.gbpStatus === 'not_found'
+        ? `No Google Business Profile matched this website.${note}`
+        : business?.gbpStatus === 'not_checked'
+          ? `Google Business Profile was not checked, so there is no finding about it.${note}`
+          : `Google Business Profile data is not available for this audit.${
+              gbp?.matchReason ? ` ${gbp.matchReason}.` : ''
+            }`
     return (
-      <Alert>
-        <AlertDescription>
-          Google Business Profile data is not available for this audit.
-          {gbp?.matchReason ? ` ${gbp.matchReason}.` : ''}
-        </AlertDescription>
+      <Alert variant={business?.gbpStatus === 'not_found' ? 'destructive' : 'default'}>
+        <AlertDescription>{text}</AlertDescription>
       </Alert>
     )
   }
@@ -99,16 +112,16 @@ export function GbpCard({
             {gbp.name}
           </h4>
           {gbp.verified ? (
-            <Badge variant="secondary" className="gap-1 text-[11px] font-medium normal-case">
+            <Badge variant="secondary" className="gap-1 text-[12px] font-medium normal-case">
               <BadgeCheck className="size-3.5" aria-hidden="true" />
               Verified
             </Badge>
           ) : null}
         </div>
-        {matched ? <p className="text-[12px] leading-5 text-muted-foreground">{matched}</p> : null}
+        {matched ? <p className="text-[13px] leading-5 text-foreground/75">{matched}</p> : null}
         {gbp.primaryCategory ? (
           <p>
-            <span className="inline-block rounded-full bg-accent-wcm px-3 py-1 text-[12px] font-semibold text-white">
+            <span className="inline-block rounded-full bg-accent-wcm px-3 py-1 text-[13px] font-semibold text-white">
               {gbp.primaryCategory}
             </span>
           </p>
@@ -181,6 +194,7 @@ export function GbpCard({
           </a>
         ) : null}
       </div>
+      {business ? <ProfileSignals business={business} /> : null}
     </Block>
   )
 }
@@ -219,28 +233,26 @@ export function ProfileSignals({ business }: { business: BusinessSection }) {
     },
   ]
   return (
-    <Block title="Profile signals">
-      <ul className="divide-y divide-border/70 rounded-xl border border-border px-3">
-        {signals.map((x) => (
-          <li key={x.label} className="flex items-start justify-between gap-3 py-3">
-            <div className="min-w-0">
-              <p className="text-[14px] font-medium text-foreground">{x.label}</p>
-              {x.tone === 'warn' || x.tone === 'bad' ? (
-                <p className="mt-0.5 text-[12px] leading-5 text-muted-foreground">{x.hint}</p>
-              ) : null}
-            </div>
-            <span
-              className={cn(
-                'shrink-0 rounded-full px-2.5 py-0.5 text-[12px] font-semibold',
-                SIGNAL_TONE[x.tone],
-              )}
-            >
-              {x.value}
-            </span>
-          </li>
-        ))}
-      </ul>
-    </Block>
+    <ul className="mt-3 divide-y divide-border/70 rounded-xl border border-border px-3">
+      {signals.map((x) => (
+        <li key={x.label} className="flex items-start justify-between gap-3 py-3">
+          <div className="min-w-0">
+            <p className="text-[14px] font-medium text-foreground">{x.label}</p>
+            {x.tone === 'warn' || x.tone === 'bad' ? (
+              <p className="mt-0.5 text-[13px] leading-5 text-foreground/75">{x.hint}</p>
+            ) : null}
+          </div>
+          <span
+            className={cn(
+              'shrink-0 rounded-full px-2.5 py-0.5 text-[12px] font-semibold',
+              SIGNAL_TONE[x.tone],
+            )}
+          >
+            {x.value}
+          </span>
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -275,16 +287,46 @@ export function CompanyCard({ company }: { company: BusinessSection['company'] }
 
 export function BusinessTab({
   business,
+  audit,
   website = null,
+  bordered = false,
+  showWebsiteActions = false,
+  gbpPending = false,
+  extra,
 }: {
   business: BusinessSection
+  audit?: Audit
   website?: string | null
+  bordered?: boolean
+  showWebsiteActions?: boolean
+  /** While GBP is still loading, show a skeleton instead of the card. */
+  gbpPending?: boolean
+  /** Extra sections after company (e.g. Call Mode local competitors). */
+  extra?: ReactNode
 }) {
   return (
-    <div className="flex flex-col gap-3">
-      <GbpCard gbp={business.gbp} socials={business.socials} website={website} />
-      <ProfileSignals business={business} />
-      <CompanyCard company={business.company} />
+    <div className="flex flex-col gap-3 [&>*+*]:border-t [&>*+*]:border-border [&>*+*]:pt-3">
+      {gbpPending ? (
+        <Skeleton className="h-24 w-full" />
+      ) : (
+        <GbpCard
+          gbp={business.gbp}
+          socials={business.socials}
+          website={website ?? audit?.url}
+          bordered={bordered}
+          business={business}
+        />
+      )}
+      {audit ? <WebsiteSummary audit={audit} showActions={showWebsiteActions} /> : null}
+      {business.company ? (
+        <CompanyCard company={business.company} />
+      ) : audit ? (
+        <Block title="Company">
+          <p className="text-[14px] text-foreground/80">
+            Company data is not available for this audit.
+          </p>
+        </Block>
+      ) : null}
       {business.socials.length && !business.gbp?.matched ? (
         <Block title="Socials">
           <ul className="divide-y divide-border/70 rounded-xl border border-border">
@@ -297,9 +339,7 @@ export function BusinessTab({
                   <SocialIcon network={s.network} />
                   <span className="min-w-0 flex-1">
                     <span className="block text-[14px] font-medium text-foreground">{name}</span>
-                    <span className="block truncate text-[12px] text-muted-foreground">
-                      {handle}
-                    </span>
+                    <span className="block truncate text-[13px] text-foreground/75">{handle}</span>
                   </span>
                   <ExternalLink
                     className="size-4 shrink-0 text-muted-foreground"
@@ -328,6 +368,7 @@ export function BusinessTab({
           </ul>
         </Block>
       ) : null}
+      {extra}
     </div>
   )
 }

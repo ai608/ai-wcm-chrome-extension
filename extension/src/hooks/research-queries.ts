@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
+import { qk } from '@/hooks/queries'
 import { ApiError } from '@/lib/api/errors'
 import { type Audit, auditBusy } from '@/lib/api/research-types'
 import { call } from '@/lib/messaging'
-import { qk } from '@/hooks/queries'
 
 export const POLL_MS = 2000
+/** After the fast window the panel keeps checking, slowly: the server ends every audit by
+ * itself (AUDIT_MAX_S), so a long run is shown as it finishes, never given up on. */
+export const SLOW_POLL_MS = 10_000
 export const POLL_CAP_MS = 3 * 60_000
 /** A full AI report asks dozens of questions and runs for minutes. */
 export const REPORT_POLL_CAP_MS = 20 * 60_000
@@ -20,7 +23,8 @@ export const rk = {
 const retryRule = (count: number, err: unknown) =>
   count < 1 && !(err instanceof ApiError && err.status >= 400 && err.status < 500)
 
-/** Poll interval while busy, stopping after POLL_CAP_MS. Returns [interval, timedOut]. */
+/** Poll interval while busy: fast, then slow after the cap (`timedOut`). Polling stops only
+ * when the audit is no longer busy. Returns [interval, timedOut]. */
 export function usePollWindow(
   busy: boolean,
   capMs: number = POLL_CAP_MS,
@@ -40,7 +44,7 @@ export function usePollWindow(
     )
     return () => clearTimeout(t)
   }, [busy, capMs])
-  return [busy && !timedOut ? POLL_MS : false, busy && timedOut]
+  return [busy ? (timedOut ? SLOW_POLL_MS : POLL_MS) : false, busy && timedOut]
 }
 
 /** How long to keep polling: longer while a full AI report runs. */
@@ -84,9 +88,7 @@ export function useStartAudit(domain: string) {
   })
 }
 
-type OnDemandCall =
-  | { kind: 'domain' }
-  | { kind: 'local'; query?: string; location?: string }
+type OnDemandCall = { kind: 'domain' } | { kind: 'local'; query?: string; location?: string }
 
 export function useRunOnDemand(auditId: string, domain: string) {
   const client = useQueryClient()
