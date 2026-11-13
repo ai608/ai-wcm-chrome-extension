@@ -5,21 +5,11 @@ import * as mockApi from '@/lib/api/mock/handlers'
 import * as realApi from '@/lib/api/o4'
 import { getEnv, getO1WebUrl } from '@/lib/env'
 import { onMessage } from '@/lib/messaging'
-import { activeTabItem, authHandoffItem, authItem, authUserItem } from '@/lib/storage'
-
-function base64url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes))
-    .replace(/\+/g, '-')
-    .replace(/\//g, '_')
-    .replace(/=+$/, '')
-}
+import { activeTabItem, authItem, authUserItem } from '@/lib/storage'
+import { beginHandoff, takeHandoff } from '@/lib/web-signin'
 
 async function startWebSignIn() {
-  const state = base64url(crypto.getRandomValues(new Uint8Array(32)))
-  const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)))
-  const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier))
-  const challenge = base64url(new Uint8Array(hash))
-  await authHandoffItem.setValue({ state, verifier, createdAt: Date.now() })
+  const { state, challenge } = await beginHandoff()
   const url = new URL('/extension/connect', getO1WebUrl())
   url.searchParams.set('extension_id', browser.runtime.id)
   url.searchParams.set('state', state)
@@ -39,11 +29,8 @@ async function acceptWebSignIn(
   if (data.type !== 'wcm-extension-handoff' || typeof data.code !== 'string') {
     return { ok: false }
   }
-  const pending = await authHandoffItem.getValue()
-  if (!pending || Date.now() - pending.createdAt > 10 * 60_000 || data.state !== pending.state) {
-    return { ok: false }
-  }
-  await authHandoffItem.setValue(null)
+  const pending = await takeHandoff(data.state)
+  if (!pending) return { ok: false }
   try {
     const { tokens, user } = await realApi.exchangeWeb(data.code, pending.verifier)
     await authItem.setValue(tokens)
