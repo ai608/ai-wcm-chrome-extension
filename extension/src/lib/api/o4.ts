@@ -225,12 +225,12 @@ export async function saveOutcome(
   note: string,
   booked: boolean,
 ): Promise<SaveOutcomeResult> {
-  const data = await request<{ note_id: string; tag: string }>(
+  const data = await request<{ note_id: string; tag: string; already_saved?: boolean }>(
     'POST',
     `/contacts/${contactId}/outcome`,
     { body: { outcome_id: outcomeId, note, booked } },
   )
-  return { noteId: data.note_id, tag: data.tag }
+  return { noteId: data.note_id, tag: data.tag, alreadySaved: data.already_saved }
 }
 
 export async function enrichContact(contactId: string): Promise<{ status: 'enriching' }> {

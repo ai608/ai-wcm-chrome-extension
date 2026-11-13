@@ -173,6 +173,8 @@ export interface PatchFieldsResult {
 export interface SaveOutcomeResult {
   noteId: string
   tag: string
+  /** The same save was finished a moment ago; nothing new was written. */
+  alreadySaved?: boolean
 }
 
 export interface Activity {

@@ -10,6 +10,7 @@ from app.core.security import verify_token
 from app.models.user import UserProfile
 from app.repositories.audit_repository import AuditRepository
 from app.repositories.auth_session_repository import AuthSessionRepository
+from app.repositories.outcome_repository import OutcomeRepository
 from app.repositories.user_repository import UserRepository
 
 
@@ -73,3 +74,10 @@ def get_audit_repo(request: Request) -> AuditRepository:
     if pool is None:
         raise AppError(503, "upstream_error", "Database is not configured")
     return AuditRepository(pool)
+
+
+def get_outcome_repo(request: Request) -> OutcomeRepository:
+    pool: asyncpg.Pool | None = getattr(request.app.state, "pool", None)
+    if pool is None:
+        raise AppError(503, "upstream_error", "Database is not configured")
+    return OutcomeRepository(pool)

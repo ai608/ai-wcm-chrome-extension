@@ -60,8 +60,8 @@ export function OutcomeBlock({
     if (!selected) return
     setSaveError(null)
     try {
-      await save.mutateAsync({ outcomeId, note, booked: showWidget && booked })
-      toast('Outcome saved')
+      const saved = await save.mutateAsync({ outcomeId, note, booked: showWidget && booked })
+      toast(saved?.alreadySaved ? 'Outcome was already saved' : 'Outcome saved')
       setOutcomeId('')
       setNote('')
       setBookAnyway(false)

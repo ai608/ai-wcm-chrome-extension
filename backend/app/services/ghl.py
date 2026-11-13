@@ -30,8 +30,13 @@ async def _call(
     method: str,
     path: str,
     version: str = "2021-07-28",
+    *,
+    safe_to_repeat: bool = True,
     **kw: Any,
 ) -> dict[str, Any]:
+    """`safe_to_repeat=False` is for a call that creates something (a note): it is asked again
+    only when the CRM said it did nothing (429, 503). A timeout or another 5xx may have
+    stored it, so the caller decides what to do (see outcomes.save, which looks first)."""
     headers = _headers(version)
     for attempt in range(4):
         try:
@@ -40,14 +45,15 @@ async def _call(
                     method, BASE + path, headers=headers, timeout=10, **kw
                 )
         except httpx.HTTPError as exc:
-            if attempt == 3:
+            if attempt == 3 or not safe_to_repeat:
                 raise AppError(502, "upstream_error", "GHL is unavailable") from exc
         else:
             if r.status_code == 404:
                 raise AppError(404, "contact_not_found", "Contact not found")
             if r.status_code < 400:
                 return r.json() if r.content else {}
-            if r.status_code not in (429, 500, 502, 503, 504) or attempt == 3:
+            again = (429, 500, 502, 503, 504) if safe_to_repeat else (429, 503)
+            if r.status_code not in again or attempt == 3:
                 raise AppError(502, "upstream_error", f"GHL error {r.status_code}")
             retry_after = r.headers.get("Retry-After", "")
             if retry_after.isdigit():
@@ -120,3 +126,35 @@ async def get_json(
     version: str = "2021-07-28",
 ) -> dict[str, Any]:
     return await _call(http, "GET", path, version=version, params=params)
+
+
+async def find_note(
+    http: httpx.AsyncClient, contact_id: str, marker: str
+) -> str | None:
+    """The id of the contact's note that contains `marker`, if there is one."""
+    data = await _call(http, "GET", f"/contacts/{contact_id}/notes")
+    for note in data.get("notes") or []:
+        if isinstance(note, dict) and marker in str(note.get("body") or ""):
+            return str(note.get("id"))
+    return None
+
+
+async def add_note(http: httpx.AsyncClient, contact_id: str, body: str) -> str:
+    """Create a note on the contact and return its id. Never repeated blindly."""
+    data = await _call(
+        http,
+        "POST",
+        f"/contacts/{contact_id}/notes",
+        safe_to_repeat=False,
+        json={"body": body},
+    )
+    note = data.get("note") or data
+    note_id = note.get("id") if isinstance(note, dict) else None
+    if not note_id:
+        raise AppError(502, "upstream_error", "GHL did not return the note id")
+    return str(note_id)
+
+
+async def add_tags(http: httpx.AsyncClient, contact_id: str, tags: list[str]) -> None:
+    """Add tags to the contact. Adding a tag it already has changes nothing."""
+    await _call(http, "POST", f"/contacts/{contact_id}/tags", json={"tags": tags})

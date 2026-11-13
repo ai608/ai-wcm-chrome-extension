@@ -14,12 +14,15 @@ from app.core.config import settings
 from app.core.dependencies import (
     get_audit_repo,
     get_http_client,
+    get_outcome_repo,
     require_extension_access,
 )
 from app.core.exceptions import AppError
+from app.core.rate_limit import rate_limit
 from app.models.user import UserProfile
 from app.repositories.audit_repository import AuditRepository
-from app.services import apollo, ghl, openrouter_usage, site_audit
+from app.schemas.outcome import SaveOutcome
+from app.services import apollo, ghl, openrouter_usage, outcomes, site_audit
 
 logger = logging.getLogger(__name__)
 router = APIRouter(dependencies=[Depends(require_extension_access)], tags=["ext"])
@@ -301,3 +304,18 @@ async def patch_fields(
         "field_values": {k: (v if v != "" else None) for k, v in values.items()},
         "updated_at": datetime.now(UTC).isoformat(),
     }
+
+
+@router.post("/contacts/{contact_id}/outcome")
+async def save_outcome(
+    contact_id: str,
+    body: SaveOutcome,
+    request: Request,
+    profile: UserProfile = Depends(require_extension_access),
+    http: Http = Depends(get_http_client),
+) -> dict[str, Any]:
+    """Save how a call ended: a note and a tag on the contact. Safe to repeat."""
+    rate_limit(f"outcome:{profile.id}", 60, 60)
+    return await outcomes.save(
+        get_outcome_repo(request), http, SCRIPT, profile, contact_id, body
+    )
