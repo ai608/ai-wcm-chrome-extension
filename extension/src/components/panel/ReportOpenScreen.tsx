@@ -35,7 +35,8 @@ export function ReportOpenScreen({ tab }: { tab: ActiveTab }) {
     setDownloading(true)
     let saved = false
     try {
-      const res = (await browser.runtime.sendMessage({
+      // Target the report tab so a stale print listener elsewhere cannot handle this.
+      const res = (await browser.tabs.sendMessage(tab.tabId, {
         type: REPORT_PRINT_TYPE,
         auditId,
       })) as { ok?: boolean } | undefined

@@ -2,8 +2,8 @@ import { isGhlHost, parseGhlUrl } from '@/lib/ghl-url'
 
 export type TabKind = 'ghl_contact' | 'ghl_other' | 'website' | 'report' | 'unsupported'
 
-/** Side panel asks the open report tab to save a PDF. Not part of the API protocol. */
-export const REPORT_PRINT_TYPE = 'wcm-report-print'
+/** Side panel asks the open report tab to save a PDF (direct download, no print dialog). */
+export const REPORT_PRINT_TYPE = 'wcm-report-pdf'
 
 /** Side panel asks the open report tab for its page as HTML (for a public link). */
 export const REPORT_SNAPSHOT_TYPE = 'wcm-report-snapshot'

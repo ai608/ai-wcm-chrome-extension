@@ -11,6 +11,8 @@ async function renderApp() {
 const authState: { user: unknown; isLoading: boolean } = { user: undefined, isLoading: true }
 let activeTab: unknown
 let config: unknown
+let configError: unknown = null
+const refetchConfig = vi.fn()
 
 vi.mock('@/hooks/use-auth', () => ({
   useAuth: () => authState,
@@ -26,7 +28,14 @@ vi.mock('@/hooks/queries', async (importOriginal) => {
   const mod = await importOriginal<typeof import('@/hooks/queries')>()
   return {
     ...mod,
-    useConfigQuery: () => ({ data: config, isPending: config === undefined, isError: false }),
+    useConfigQuery: () => ({
+      data: config,
+      isPending: config === undefined && !configError,
+      isError: !!configError,
+      error: configError,
+      isFetching: false,
+      refetch: refetchConfig,
+    }),
   }
 })
 
@@ -132,6 +141,19 @@ describe('App view switch', () => {
     expect(screen.getByRole('button', { name: 'Settings' })).toBeDefined()
   })
 
+  it('says so and offers a retry when the settings cannot be loaded (no endless loading)', async () => {
+    authState.user = USER
+    authState.isLoading = false
+    activeTab = { tabId: 1, url: 'x', kind: 'ghl_contact', locationId: 'L1', contactId: 'c1' }
+    config = undefined
+    configError = new Error('offline')
+    await renderApp()
+    expect(screen.getByText(/Could not load the assistant settings/)).toBeDefined()
+    fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(refetchConfig).toHaveBeenCalledTimes(1)
+    configError = null
+  })
+
   it('blocks the wrong ghl account', async () => {
     authState.user = USER
     authState.isLoading = false
@@ -178,8 +200,9 @@ describe('App view switch', () => {
     expect(screen.getByText('Report', { exact: true })).toBeDefined()
     expect(screen.getByRole('heading', { name: 'Report is ready' })).toBeDefined()
     expect(screen.queryByText('Open a clinic website or a GHL contact')).toBeNull()
+    const sendTab = vi.spyOn(fakeBrowser.tabs, 'sendMessage').mockResolvedValue({ ok: true })
     fireEvent.click(screen.getByRole('button', { name: 'Download as PDF' }))
-    expect(sendMessage).toHaveBeenCalledWith({ type: 'wcm-report-print', auditId: 'aud_9' })
+    expect(sendTab).toHaveBeenCalledWith(9, { type: 'wcm-report-pdf', auditId: 'aud_9' })
     fireEvent.click(screen.getByRole('button', { name: 'Copy link' }))
     await waitFor(() => expect(writeText).toHaveBeenCalledWith('https://api.test/r/tok'))
     expect(share).toHaveBeenCalledWith('aud_9', '<p>r</p>')

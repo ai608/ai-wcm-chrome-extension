@@ -59,16 +59,12 @@ const FIX: Record<CategoryKey, [string, string]> = {
   ],
 }
 
-function barTone(score: number, goodAt = 80, midAt = 60): string {
-  if (score >= goodAt) return 'fill-good'
-  if (score >= midAt) return 'fill-mid'
-  return 'fill-bad'
+function barTone(score: number, goodAt = 75): string {
+  return score >= goodAt ? 'fill-good' : 'fill-bad'
 }
 
 function gradeTone(grade: string): string {
-  if (grade === 'A' || grade === 'B') return 'fill-good'
-  if (grade === 'C') return 'fill-mid'
-  return 'fill-bad'
+  return grade === 'A' || grade === 'B' ? 'fill-good' : 'fill-bad'
 }
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
@@ -105,7 +101,7 @@ function ScoreLines({ categories }: { categories: OverviewCategory[] }) {
             <span>{c.label}</span>
             <span className="report-grade-meter" aria-hidden="true">
               <span
-                className={cn(barTone(c.score, 75, 60), EXACT)}
+                className={cn(barTone(c.score, 75), EXACT)}
                 style={{ width: `${c.score}%` }}
               />
             </span>
@@ -125,7 +121,7 @@ function Mark({ status }: { status: CheckStatus }) {
       aria-label={status}
       className={cn(
         'report-mark',
-        status === 'ok' ? 'fill-good' : status === 'warn' ? 'fill-mid' : 'fill-bad',
+        status === 'ok' ? 'fill-good' : 'fill-bad',
         EXACT,
       )}
     >
@@ -203,7 +199,7 @@ function CheckList({
 }
 
 function Meter({ label, value }: { label: string; value: number | null | undefined }) {
-  const tone = value == null ? '' : barTone(value, 90, 50)
+  const tone = value == null ? '' : barTone(value, 90)
   return (
     <div className="report-row">
       <div className="report-score-row">
@@ -304,6 +300,10 @@ export function Body({ report }: { report: Report }) {
                           <ol className="report-issues">
                             {gaps.map((i) => (
                               <li key={i.title} className="report-row">
+                                <p className="report-issue-cat">
+                                  {o.categories.find((c) => c.key === i.category)?.label ??
+                                    i.category}
+                                </p>
                                 <p className="font-semibold">{i.title}</p>
                                 <p className="report-muted">{i.detail}</p>
                               </li>
