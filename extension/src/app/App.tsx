@@ -1,6 +1,7 @@
 import { Suspense } from 'react'
 import { Providers } from '@/app/providers'
 import { CallMode } from '@/components/panel/CallMode'
+import { ConfigErrorScreen } from '@/components/panel/ConfigErrorScreen'
 import { LoginScreen } from '@/components/panel/LoginScreen'
 import { NoAccessScreen } from '@/components/panel/NoAccessScreen'
 import { NoContactScreen } from '@/components/panel/NoContactScreen'
@@ -59,7 +60,14 @@ function Panel() {
   const contact = asActiveContact(tab)
   if (!contact) return <NoContactScreen />
   if (configQuery.isPending) return <LoadingScreen onSettings={() => setView('settings')} />
-  if (configQuery.isError) return <LoadingScreen onSettings={() => setView('settings')} />
+  if (configQuery.isError)
+    return (
+      <ConfigErrorScreen
+        error={configQuery.error}
+        retrying={configQuery.isFetching}
+        onRetry={() => configQuery.refetch()}
+      />
+    )
   if (contact.locationId !== configQuery.data.ghlLocationId) return <WrongAccountScreen />
 
   const callerFirstName = user.fullName.split(' ')[0] ?? ''
