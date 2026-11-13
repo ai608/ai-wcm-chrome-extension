@@ -5,6 +5,10 @@ from uuid import UUID
 
 import asyncpg
 
+REFRESH_GRACE = timedelta(
+    seconds=60
+)  # how long a just-replaced refresh token still works
+
 
 def token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
@@ -52,24 +56,41 @@ class AuthSessionRepository:
         return str(value) if value is not None else None
 
     async def rotate(self, refresh: str) -> tuple[str, str, str, datetime] | None:
+        """Swap a refresh token for a new pair. The token just replaced still works for
+        REFRESH_GRACE_S more seconds (and only for as long as the first replacement), so a
+        client whose answer was lost can ask again instead of being signed out."""
+        presented = token_hash(refresh)
         async with self._pool.acquire() as conn, conn.transaction():
             row = await conn.fetchrow(
-                "SELECT id, user_id FROM extension.auth_sessions "
-                "WHERE refresh_hash = $1 AND refresh_expires_at > now() "
-                "AND revoked_at IS NULL FOR UPDATE",
-                token_hash(refresh),
+                "SELECT id, user_id, refresh_hash, prev_refresh_until "
+                "FROM extension.auth_sessions "
+                "WHERE (refresh_hash = $1 OR prev_refresh_hash = $1) "
+                "AND refresh_expires_at > now() AND revoked_at IS NULL FOR UPDATE",
+                presented,
             )
             if row is None:
                 return None
+            now = datetime.now(UTC)
+            replay = (
+                presented != row["refresh_hash"]
+            )  # the token that was just replaced
+            if replay and (
+                row["prev_refresh_until"] is None or row["prev_refresh_until"] <= now
+            ):
+                return None  # replaced a while ago: a stolen or stale token, not a lost answer
+            # A replay keeps its original window: it cannot be extended by asking again.
+            until = row["prev_refresh_until"] if replay else now + REFRESH_GRACE
             access, next_refresh, access_expires, refresh_expires = new_tokens()
             await conn.execute(
                 "UPDATE extension.auth_sessions SET access_hash = $1, "
-                "refresh_hash = $2, access_expires_at = $3, refresh_expires_at = $4 "
-                "WHERE id = $5",
+                "refresh_hash = $2, access_expires_at = $3, refresh_expires_at = $4, "
+                "prev_refresh_hash = $5, prev_refresh_until = $6 WHERE id = $7",
                 token_hash(access),
                 token_hash(next_refresh),
                 access_expires,
                 refresh_expires,
+                presented,
+                until,
                 row["id"],
             )
             return str(row["user_id"]), access, next_refresh, access_expires

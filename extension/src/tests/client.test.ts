@@ -107,6 +107,41 @@ describe('api client', () => {
     await expect(authUserItem.getValue()).resolves.toBeNull()
   })
 
+  it('stays signed in and asks again when the refresh answer is lost (network error)', async () => {
+    const { request, authItem } = await load()
+    await authItem.setValue(TOKENS)
+    let refreshCalls = 0
+    const fetchFn = vi.fn(async (url: string | URL | Request, init?: RequestInit) => {
+      if (String(url).endsWith('/auth/refresh')) {
+        refreshCalls += 1
+        if (refreshCalls === 1) throw new TypeError('network down') // the answer never arrives
+        return jsonResponse(200, {
+          access_token: 'a2',
+          refresh_token: 'r2',
+          expires_at: '2030-01-02T00:00:00Z',
+        })
+      }
+      const bearer = (init?.headers as Record<string, string> | undefined)?.Authorization
+      return bearer === 'Bearer a2'
+        ? jsonResponse(200, { ok: true })
+        : jsonResponse(401, { error: { code: 'token_expired', message: 'expired' } })
+    })
+    await expect(request('GET', '/me', {}, fetchFn)).resolves.toEqual({ ok: true })
+    expect(refreshCalls).toBe(2)
+    await expect(authItem.getValue()).resolves.toMatchObject({ refreshToken: 'r2' })
+  })
+
+  it('does not sign out when the refresh endpoint is unreachable or failing', async () => {
+    const { request, authItem } = await load()
+    await authItem.setValue(TOKENS)
+    const fetchFn = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith('/auth/refresh')) return jsonResponse(503, {})
+      return jsonResponse(401, { error: { code: 'token_expired', message: 'expired' } })
+    })
+    await expect(request('GET', '/me', {}, fetchFn)).rejects.toBeInstanceOf(ApiError)
+    await expect(authItem.getValue()).resolves.toMatchObject({ refreshToken: 'r1' })
+  })
+
   it('clears auth when extension access is revoked', async () => {
     const { request, authItem, authUserItem } = await load()
     await authItem.setValue(TOKENS)

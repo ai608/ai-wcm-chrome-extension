@@ -15,35 +15,50 @@ interface ErrorEnvelope {
 const TIMEOUT_MS = 20_000
 const RETRY_DELAYS = [500, 1500]
 
-let refreshPromise: Promise<boolean> | null = null
+/** `ok`: new tokens saved. `denied`: the server says the session is over (sign out).
+ * `unreachable`: no answer or a server error, which says nothing about the session (stay signed in). */
+type RefreshResult = 'ok' | 'denied' | 'unreachable'
 
-async function doRefresh(fetchFn: typeof fetch): Promise<boolean> {
+let refreshPromise: Promise<RefreshResult> | null = null
+
+async function refreshOnce(fetchFn: typeof fetch): Promise<RefreshResult> {
+  const auth = await authItem.getValue()
+  if (!auth) return 'denied'
+  try {
+    const res = await fetchFn(`${getEnv().apiBaseUrl}/api/v1/ext/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: auth.refreshToken }),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    })
+    if (res.status === 401 || res.status === 403) return 'denied'
+    if (!res.ok) return 'unreachable'
+    const data = (await res.json()) as {
+      access_token: string
+      refresh_token: string
+      expires_at: string
+    }
+    await authItem.setValue({
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token,
+      expiresAt: data.expires_at,
+    })
+    return 'ok'
+  } catch {
+    return 'unreachable'
+  }
+}
+
+async function doRefresh(fetchFn: typeof fetch): Promise<RefreshResult> {
   if (refreshPromise) return refreshPromise
   refreshPromise = (async () => {
     try {
-      const auth = await authItem.getValue()
-      if (!auth) return false
-      const env = getEnv()
-      const res = await fetchFn(`${env.apiBaseUrl}/api/v1/ext/auth/refresh`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh_token: auth.refreshToken }),
-        signal: AbortSignal.timeout(TIMEOUT_MS),
-      })
-      if (!res.ok) return false
-      const data = (await res.json()) as {
-        access_token: string
-        refresh_token: string
-        expires_at: string
-      }
-      await authItem.setValue({
-        accessToken: data.access_token,
-        refreshToken: data.refresh_token,
-        expiresAt: data.expires_at,
-      })
-      return true
-    } catch {
-      return false
+      // One more try after a pause: the answer may have been lost on its way back, and the
+      // server accepts the token it just replaced for a short time (REFRESH_GRACE).
+      const first = await refreshOnce(fetchFn)
+      if (first !== 'unreachable') return first
+      await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS[0]))
+      return await refreshOnce(fetchFn)
     } finally {
       refreshPromise = null
     }
@@ -122,13 +137,14 @@ export async function request<T>(
       (code === 'unauthorized' || code === 'token_expired')
     ) {
       refreshed = true
-      const ok = await doRefresh(fetchFn)
-      if (ok) {
+      const result = await doRefresh(fetchFn)
+      if (result === 'ok') {
         const tokens = await authItem.getValue()
         if (tokens) headers.Authorization = `Bearer ${tokens.accessToken}`
         continue
       }
-      await clearAuth()
+      // Only a refusal ends the session; a network or server error must not sign anyone out.
+      if (result === 'denied') await clearAuth()
       throw toApiError(res.status, payload, code ?? 'unauthorized')
     }
 
